@@ -67,6 +67,13 @@ export type TerminalSession = {
 
 export function useTerminals() {
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
+  /**
+   * 还没发出去的「启动提示词」，按终端编号排队。
+   *
+   * 用 `ref` 而不是 state：它不参与渲染，而且**必须**在数据回调里读到最新值——
+   * 放进 state 就会读到闭包里的旧值（那个回调只订阅一次）。
+   */
+  const pendingPrompts = useRef<Map<string, string>>(new Map());
   /** 各终端待处理的提醒（等待确认等）。用户在界面上看过就该清掉。 */
   const [attention, setAttention] = useState<Record<string, TerminalAttention>>({});
   /**
@@ -86,6 +93,20 @@ export function useTerminals() {
     let unlisten: (() => void) | undefined;
     void api
       .listen<TerminalDataPayload>(api.CHANNEL_TERMINAL_DATA, (payload) => {
+        // **「启动提示词」在这一刻才发出去。**
+        //
+        // 为什么不能更早：这个项目的终端是 ConPTY，**必须等 CLI 回完 DSR
+        // （`\x1b[6n` → `\x1b[1;1R`）之后会话才开始推进**。在 `terminal:start`
+        // 刚返回时就写，会赶在 CLI 准备好读输入之前——轻则提示词被吞掉，
+        // 重则出现在 shell 提示符里变成乱码。
+        //
+        // 「收到第一段输出」是这里拿得到的最可靠的「它活了」信号。
+        // 发出一次即从队里删掉，绝不重复发送。
+        const pending = pendingPrompts.current.get(payload.terminalId);
+        if (pending !== undefined && payload.data.length > 0) {
+          pendingPrompts.current.delete(payload.terminalId);
+          void api.writeTerminal(payload.terminalId, `${pending}\r`).catch(() => undefined);
+        }
         // 接收端还没挂上时由 router 缓冲，`registerSink` 时补发——见它的文档。
         router.push(payload.terminalId, Uint8Array.from(payload.data));
       })
@@ -251,12 +272,17 @@ export function useTerminals() {
       kind: TerminalSession["kind"];
       providerId: string;
       start: (terminalId: string) => Promise<unknown>;
+      /** 「启动提示词」：会话可交互之后自动发一次，见 `pendingPrompts`。 */
+      prompt?: string;
     }): Promise<string> => {
-      const { title, kind, providerId, start } = options;
+      const { title, kind, providerId, start, prompt } = options;
       const id = nextId();
       // 先入列表再启动：启动失败时用户至少能看到这一路的存在与失败原因，
       // 而不是「点了没反应」。
       setTerminals((current) => [...current, { id, title, running: true, kind, providerId }]);
+      if (prompt?.trim()) {
+        pendingPrompts.current.set(id, prompt.trim());
+      }
       try {
         const started = (await start(id)) as
           | { vendorId?: string; vendorMode?: VendorRouteMode }
@@ -270,6 +296,8 @@ export function useTerminals() {
           );
         }
       } catch (error) {
+        // 启动失败就别再把提示词留在队里：这路终端不会有输出了。
+        pendingPrompts.current.delete(id);
         setTerminals((current) =>
           current.map((item) => (item.id === id ? { ...item, running: false } : item))
         );
@@ -299,11 +327,12 @@ export function useTerminals() {
   }, []);
 
   const openTerminal = useCallback(
-    (target: AiTarget | null, cwd?: string, cliArgs?: string): Promise<string> =>
+    (target: AiTarget | null, cwd?: string, cliArgs?: string, prompt?: string): Promise<string> =>
       open({
         title: target ? `终端 · ${target.label}` : "终端",
         kind: "codex",
         providerId: target?.provider ?? "codex",
+        prompt,
         start: (terminalId) =>
           api.startTerminal({
             terminalId,

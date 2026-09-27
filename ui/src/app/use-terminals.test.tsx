@@ -406,4 +406,74 @@ describe("useTerminals 的事件装配", () => {
     const payload = (start!.args as { args?: Record<string, string> }).args ?? {};
     expect(payload.cliArgs).toBeUndefined();
   });
+
+  it("启动提示词要等**第一段输出**之后才发，不能早发", async () => {
+    // ConPTY 必须等 CLI 回完 DSR（`\x1b[6n` → `\x1b[1;1R`）会话才开始推进。
+    // 在 `terminal:start` 刚返回时就写，会赶在 CLI 准备好读输入之前——
+    // 轻则提示词被吞，重则糊在 shell 提示符上。
+    const view = await render(() => useTerminals());
+
+    await act(async () => {
+      await view.result.current.openTerminal(null, undefined, undefined, "帮我看看这个 bug");
+    });
+    const id = view.result.current.terminals.at(-1)!.id;
+
+    const writesBefore = runtime
+      .invocations()
+      .filter((item) => (item.args as { command?: string } | undefined)?.command === "terminal:write");
+    expect(writesBefore, "还没输出就不该写").toHaveLength(0);
+
+    await act(async () => {
+      runtime.emit("terminal:data", { terminalId: id, data: Array.from(new TextEncoder().encode("ready\r\n")) });
+    });
+
+    const writes = runtime
+      .invocations()
+      .filter((item) => (item.args as { command?: string } | undefined)?.command === "terminal:write");
+    expect(writes).toHaveLength(1);
+    const payload = (writes[0]!.args as { args?: { terminalId?: string; data?: string } }).args;
+    expect(payload?.terminalId).toBe(id);
+    // 结尾必须有回车：没有它那句话只是躺在输入框里，用户得自己再敲一下。
+    expect(payload?.data).toBe("帮我看看这个 bug\r");
+  });
+
+  it("启动提示词只发一次，后续输出不再重复发", async () => {
+    const view = await render(() => useTerminals());
+    await act(async () => {
+      await view.result.current.openTerminal(null, undefined, undefined, "只发一次");
+    });
+    const id = view.result.current.terminals.at(-1)!.id;
+
+    for (const chunk of ["a", "b", "c"]) {
+      await act(async () => {
+        runtime.emit("terminal:data", {
+          terminalId: id,
+          data: Array.from(new TextEncoder().encode(chunk))
+        });
+      });
+    }
+
+    const writes = runtime
+      .invocations()
+      .filter((item) => (item.args as { command?: string } | undefined)?.command === "terminal:write");
+    expect(writes).toHaveLength(1);
+  });
+
+  it("没填提示词就不写任何东西", async () => {
+    // 「空的提示词」不能变成一次空写入——那会往 CLI 里塞一个多余的回车。
+    const view = await render(() => useTerminals());
+    await act(async () => {
+      await view.result.current.openTerminal(null, undefined, undefined, "   ");
+    });
+    const id = view.result.current.terminals.at(-1)!.id;
+
+    await act(async () => {
+      runtime.emit("terminal:data", { terminalId: id, data: [104, 105] });
+    });
+
+    const writes = runtime
+      .invocations()
+      .filter((item) => (item.args as { command?: string } | undefined)?.command === "terminal:write");
+    expect(writes).toHaveLength(0);
+  });
 });

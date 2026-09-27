@@ -126,12 +126,13 @@ export function App() {
    * 不传时沿用「当前选中会话的目录」，也就是旧行为。
    */
   const openTerminal = useCallback(
-    async (options?: { cwd?: string; cliArgs?: string }) => {
+    async (options?: { cwd?: string; cliArgs?: string; prompt?: string }) => {
       try {
         const id = await terminals.openTerminal(
           selectedTarget,
           options?.cwd ?? console.selectedSession?.cwd,
-          options?.cliArgs
+          options?.cliArgs,
+          options?.prompt
         );
         setTabs((current) => [
           ...current,
@@ -398,7 +399,11 @@ export function App() {
           onConfirm={() => {
             const draft = newSession;
             setNewSession(null);
-            void openTerminal({ cwd: draft.cwd || undefined, cliArgs: draft.cliArgs });
+            void openTerminal({
+              cwd: draft.cwd || undefined,
+              cliArgs: draft.cliArgs,
+              prompt: draft.prompt
+            });
           }}
         />
       )}

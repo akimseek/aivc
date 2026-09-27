@@ -1,0 +1,33 @@
+[package]
+name = "aivc-ipc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Tauri command 层：DTO、参数校验、错误映射、specta TS 绑定导出"
+
+[dependencies]
+aivc-core = { workspace = true }
+aivc-infra = { workspace = true }
+aivc-provider = { workspace = true }
+aivc-gateway = { workspace = true }
+aivc-terminal = { workspace = true }
+aivc-tooling = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

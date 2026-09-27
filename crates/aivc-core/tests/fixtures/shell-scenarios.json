@@ -1,0 +1,231 @@
+{
+    "_comment":  "shell 参数处理与目标编号解析的对拍输入。Node 侧生成脚本与 Rust 侧差分测试读同一文件。",
+    "quoteValues":  [
+                        "simple",
+                        "with space",
+                        "two  spaces",
+                        " lead",
+                        "trail ",
+                        "both ",
+                        "",
+                        "-leading-dash",
+                        "--flag",
+                        "--flag=value",
+                        "a\u0027b",
+                        "\"double\"",
+                        "back`tick",
+                        "$dollar",
+                        "${brace}",
+                        "semi;colon",
+                        "pipe|char",
+                        "amp\u0026ersand",
+                        "star*",
+                        "question?",
+                        "paren(x)",
+                        "bracket[x]",
+                        "brace{x}",
+                        "new\nline",
+                        "tab\tchar",
+                        "carr\rreturn",
+                        "unicode 中文",
+                        "emoji 🚀",
+                        "path/like/this",
+                        "C:\\Windows\\style",
+                        "C:\\Program Files\\app",
+                        "\\backslash",
+                        "~tilde",
+                        "!bang",
+                        "#hash",
+                        "%percent%",
+                        "at@sign",
+                        "eq=sign",
+                        "colon:sign",
+                        "comma,comma",
+                        "single\u0027and\"double",
+                        "混合 mixed 内容"
+                    ],
+    "commandCases":  [
+                         {
+                             "command":  "codex",
+                             "args":  [
+
+                                      ]
+                         },
+                         {
+                             "command":  "codex",
+                             "args":  [
+                                          "--version"
+                                      ]
+                         },
+                         {
+                             "command":  "codex",
+                             "args":  [
+                                          "resume",
+                                          "--all",
+                                          "11111111-2222-3333-4444-555555555555"
+                                      ]
+                         },
+                         {
+                             "command":  "codex",
+                             "args":  [
+                                          "-c",
+                                          "model_provider=\"akim_gateway\""
+                                      ]
+                         },
+                         {
+                             "command":  "gemini",
+                             "args":  [
+                                          "--resume",
+                                          "abc",
+                                          "--model",
+                                          "gpt 5"
+                                      ]
+                         },
+                         {
+                             "command":  "claude",
+                             "args":  [
+                                          "--dir",
+                                          "/my work"
+                                      ]
+                         },
+                         {
+                             "command":  "qodercn",
+                             "args":  [
+                                          "--cwd",
+                                          "C:\\Program Files\\x"
+                                      ]
+                         },
+                         {
+                             "command":  "codex",
+                             "args":  [
+                                          "it\u0027s",
+                                          "\"quoted\"",
+                                          "semi;colon"
+                                      ]
+                         },
+                         {
+                             "command":  "codex",
+                             "args":  [
+                                          ""
+                                      ]
+                         },
+                         {
+                             "command":  "codex",
+                             "args":  [
+                                          "a",
+                                          "",
+                                          "b"
+                                      ]
+                         }
+                     ],
+    "parseInputs":  [
+                        "",
+                        "   ",
+                        "--model gpt-5",
+                        "--model gpt-5 --verbose",
+                        "--dir \"/my work\"",
+                        "--dir \u0027/my work\u0027",
+                        "--dir /my\\ work",
+                        "--a=b --c=d",
+                        "a  b   c",
+                        "\ttabbed\targs\t",
+                        "line\nbreak",
+                        "--flag",
+                        "-x",
+                        "--empty \"\"",
+                        "--empty \u0027\u0027",
+                        "unclosed \"quote",
+                        "unclosed \u0027quote",
+                        "trailing\\",
+                        "C:\\Program Files\\app",
+                        "\"C:\\Program Files\\app\"",
+                        "\u0027single quoted\u0027",
+                        "mix\u0027ed \"quo\"tes\u0027",
+                        "--model=  spaced",
+                        "-abc",
+                        "--",
+                        "---",
+                        "中文 参数",
+                        "emoji 🚀 flag"
+                    ],
+    "targetIds":  [
+                      "codex:local",
+                      "claude:local",
+                      "gemini:local",
+                      "qoder:local",
+                      "codex:wsl:Ubuntu",
+                      "claude:wsl:Ubuntu-22.04",
+                      "gemini:wsl:Debian",
+                      "qoder:wsl:Ubuntu",
+                      "codex:wsl:Ubuntu:extra",
+                      "wsl:Ubuntu",
+                      "unknown:local",
+                      "",
+                      "codex",
+                      "codex:",
+                      "codex:wsl:",
+                      "CODEX:local",
+                      "codex:wsl:distro with space",
+                      "codex:wsl:中文发行版"
+                  ],
+    "distroNames":  [
+                        "Ubuntu",
+                        "Ubuntu-22.04",
+                        "Debian",
+                        "kali-linux",
+                        "openSUSE-Leap-15.5",
+                        "with space",
+                        "with\u0027quote",
+                        "with\"double",
+                        "with;semi",
+                        "with$dollar",
+                        "with`tick",
+                        "中文发行版",
+                        ""
+                    ],
+    "fenceDirs":  [
+                      "/home/u/.codex/sessions",
+                      "/home/u/.codex/sessions/",
+                      "/home/u/.codex/sessions//",
+                      "/",
+                      "",
+                      "/home/u/.codex",
+                      "/home/u/.codex/sessions/2026/09",
+                      "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+                      "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+                      "/mnt/c/Users/akim"
+                  ],
+    "fenceFiles":  [
+                       "/home/u/.codex/sessions/a.jsonl",
+                       "/home/u/.codex/sessions/sub/b.jsonl",
+                       "/home/u/.codex/sessions",
+                       "/home/u/.codex/sessions/../sessions/c.jsonl",
+                       "/home/u/.codex/sessions/../../etc/passwd",
+                       "/home/u/.codex/other/d.jsonl",
+                       "/home/u/.codex/sessions-evil/e.jsonl",
+                       "/home/u/.codex/sessionsX/f.jsonl",
+                       "/etc/passwd",
+                       "",
+                       "/home/u/.codex/sessions/./g.jsonl",
+                       "/home/u/.codex/sessions/a/../b.jsonl",
+                       "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+                       "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+                       "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+                       "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+                       "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+                       "/mnt/c/Users/akim/.codex/sessions/a.jsonl"
+                   ],
+    "mountPaths":  [
+                       "/mnt/c/Users/akim/x.jsonl",
+                       "/mnt/C/Users/akim/x.jsonl",
+                       "/mnt/d/x",
+                       "/mnt/c",
+                       "/mnt/c/",
+                       "/mnt/",
+                       "/mnt",
+                       "/home/u/x",
+                       "",
+                       "/mnt/1/x",
+                       "/mnt/c/a/b/c/d.jsonl"
+                   ]
+}

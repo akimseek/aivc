@@ -1,0 +1,377 @@
+{
+  "_comment": "由 generate-status-golden.mjs 用现网 TypeScript 实现生成。不要手工编辑——改场景后重新生成。",
+  "generatedBy": "src/electron/terminal/terminal-status-detector.ts",
+  "scenarios": [
+    {
+      "name": "空输入不开始轮次",
+      "providerId": "codex",
+      "events": []
+    },
+    {
+      "name": "控制序列不算用户输入",
+      "providerId": "codex",
+      "events": []
+    },
+    {
+      "name": "首次输入开始轮次",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "同轮内的重复输入不重置",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "无轮次时输出被忽略",
+      "providerId": "codex",
+      "events": []
+    },
+    {
+      "name": "启动提示符不算完成",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "提示符消失又回来才算完成",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "completed",
+          "attention": {
+            "kind": "completed",
+            "title": "本轮已完成",
+            "detail": null
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "提示符被切成两批仍可识别",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "completed",
+          "attention": {
+            "kind": "completed",
+            "title": "本轮已完成",
+            "detail": null
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "带 ANSI 颜色的一行",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "completed",
+          "attention": {
+            "kind": "completed",
+            "title": "本轮已完成",
+            "detail": null
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "OSC 序列被剥离",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "completed",
+          "attention": {
+            "kind": "completed",
+            "title": "本轮已完成",
+            "detail": null
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "流中断报错",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "error",
+          "attention": {
+            "kind": "error",
+            "title": "会话出现异常",
+            "detail": "stream disconnected before completion: broken pipe"
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "传输错误报错",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "error",
+          "attention": {
+            "kind": "error",
+            "title": "会话出现异常",
+            "detail": "Transport error: connection reset"
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "等待确认优先于完成",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "awaiting-confirmation",
+          "attention": {
+            "kind": "awaiting-confirmation",
+            "title": "等待确认",
+            "detail": "终端正在等待你的确认或授权。"
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "确认后再次输入进入下一阶段",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "awaiting-confirmation",
+          "attention": {
+            "kind": "awaiting-confirmation",
+            "title": "等待确认",
+            "detail": "终端正在等待你的确认或授权。"
+          },
+          "turnId": 1
+        },
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "Codex 授权块",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "awaiting-confirmation",
+          "attention": {
+            "kind": "awaiting-confirmation",
+            "title": "等待确认",
+            "detail": "终端正在等待你的确认或授权。"
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "非零退出且提交过输入",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "error",
+          "attention": {
+            "kind": "error",
+            "title": "会话异常停止",
+            "detail": "进程退出码 3"
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "非零退出但从未输入",
+      "providerId": "codex",
+      "events": []
+    },
+    {
+      "name": "零退出保持沉默",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "Gemini 用各自的提示符",
+      "providerId": "gemini",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "completed",
+          "attention": {
+            "kind": "completed",
+            "title": "本轮已完成",
+            "detail": null
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "Claude 提示符不会被 Codex 规则匹配",
+      "providerId": "claude",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "Qoder 的纯尖括号提示符",
+      "providerId": "qoder",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "completed",
+          "attention": {
+            "kind": "completed",
+            "title": "本轮已完成",
+            "detail": null
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "重复状态被去重",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "completed",
+          "attention": {
+            "kind": "completed",
+            "title": "本轮已完成",
+            "detail": null
+          },
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "中文确认提示",
+      "providerId": "claude",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        }
+      ]
+    },
+    {
+      "name": "CRLF 换行下的完成判定",
+      "providerId": "codex",
+      "events": [
+        {
+          "status": "running",
+          "attention": null,
+          "turnId": 1
+        },
+        {
+          "status": "completed",
+          "attention": {
+            "kind": "completed",
+            "title": "本轮已完成",
+            "detail": null
+          },
+          "turnId": 1
+        }
+      ]
+    }
+  ]
+}

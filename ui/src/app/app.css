@@ -1,0 +1,1046 @@
+/*
+ * 应用外壳与功能区的样式。
+ *
+ * 这里**只放布局与功能区**：设计令牌在 `styles/tokens.css`，按钮/下拉/搜索框/标签/
+ * 空状态/告警条在 `components/components.css`。同一件事不在两处定义。
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 980px;
+  min-height: 640px;
+  background: var(--ui-bg);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+/* ── 外壳 ────────────────────────────────────────────── */
+
+/*
+ * 滚动条。
+ *
+ * 不设的话是**系统默认**：深色、粗、带箭头，在浅灰界面上像一块补丁——看图时它是整屏
+ * 最抢眼的东西。改成细、半透明、悬停才显形：滚动条应当在你找它的时候出现。
+ *
+ * 只对 WebView2/Chromium 生效（`::-webkit-scrollbar`），而这正是本应用的运行环境。
+ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: var(--ui-border-strong);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ui-faint);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
+ * 焦点环。
+ *
+ * 键盘导航必须有可见焦点（可访问性要求，不是可选项）。用 `:focus-visible` 而不是
+ * `:focus`——鼠标点击不该留下一圈环，那会让界面显得脏。
+ */
+:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.menubar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  padding: 0 var(--ui-space-3);
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  user-select: none;
+}
+
+.menubar .brand {
+  margin-right: var(--ui-space-3);
+  font-size: var(--ui-text-md);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ui-accent-strong);
+}
+
+.menubar button {
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  padding: var(--ui-space-1) 9px;
+  color: var(--ui-muted);
+  cursor: pointer;
+}
+
+.menubar button:hover {
+  background: var(--ui-surface-subtle);
+  color: var(--ui-text);
+}
+
+.menubar .hint {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-sm);
+}
+
+.main {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── 侧栏 ────────────────────────────────────────────── */
+
+/*
+ * # 侧栏为什么比工作区**浅一层**
+ *
+ * 两者此前都是 `--ui-surface`（纯白），于是整屏是一张纸，分区只能靠一条细线——
+ * 这是界面「像没做完」最主要的原因。
+ *
+ * 让**侧栏后退一层**（`--ui-surface-subtle`）、内容留在纯白上，是桌面应用的通行做法：
+ * 用户的眼睛应当落在内容上，导航是「背景」。基底差比任何边框都更能表达分区。
+ */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--ui-border);
+  background: var(--ui-surface-subtle);
+  overflow: hidden;
+}
+
+.sidebar-head {
+  padding: var(--ui-space-4) var(--ui-space-4) var(--ui-space-3);
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.sidebar-head .title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-head h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ui-accent);
+}
+
+.status-dot.off {
+  background: var(--ui-faint);
+}
+
+/* 平台/目标选择区 */
+/*
+ * 平台 / 目标选择器。
+ *
+ * 它们此前是**上下堆叠**的（`.field` 是 `display: grid; gap: 5px`，标签一行、下拉一行），
+ * 两个选择器吃掉侧栏上半屏——而这两项**很少改**，却占了最贵的位置，把会话列表挤到
+ * 下面去。这是看图时侧栏最大的浪费。
+ *
+ * 在侧栏里改成两列：标签贴文字宽度、下拉吃掉剩余空间。垂直占用减半。
+ *
+ * **只覆盖 `.pickers` 以内的 `.field`**：配置面板里的表单仍然上下堆叠——那里的标签
+ * 更长、控件也更复杂，横排反而会挤。
+ */
+.pickers {
+  padding: var(--ui-space-3) var(--ui-space-4) var(--ui-space-2);
+  display: grid;
+  gap: var(--ui-space-2);
+}
+
+.pickers .field {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+
+.pickers .field-label {
+  /* 「平台」「目标」都是两个字，给一个下限让两个下拉的**左边缘对齐**——
+     对不齐的控件列是「没调过」最明显的信号。 */
+  min-width: 2.5em;
+  font-size: var(--ui-text-sm);
+}
+
+/* 目标状态说明：把「为什么不可用」放在选择器正下方，而不是藏在别处。 */
+.target-detail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.target-detail span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-detail.bad {
+  color: var(--ui-warn);
+}
+
+.sidebar-notice {
+  padding: 0 18px;
+  margin-bottom: 10px;
+}
+
+.list-head {
+  padding: 0 18px 10px;
+  display: grid;
+  gap: 9px;
+}
+
+.batchbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--ui-divider);
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rows {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 12px 14px;
+}
+
+/* ── 侧栏两级导航 ─────────────────────────────────────── */
+
+/*
+ * 两级此前用的是同一个 `ChipGroup`，**看上去一模一样**——用户分不出「换一处地方」
+ * 和「换一个筛选」。
+ *
+ * 用**形态**表达层级，不用颜色深浅：
+ *
+ * - 一级 = **分段控件**：有底、有边、等宽、选中项整块高亮。它的意思是「切换目的地」。
+ * - 二级 = **文字标签**：无底无边，选中项只加一条下划线。它的意思是「筛同一批内容」。
+ *
+ * 只覆盖侧栏内的这两个容器——配置面板里的 `ChipGroup` 不受影响。
+ */
+.pane-nav {
+  min-width: 0;
+}
+
+.pane-nav .chip-group {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+}
+
+.pane-nav .chip {
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  padding: 5px 10px;
+  color: var(--ui-muted);
+  cursor: pointer;
+  font-weight: 500;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.pane-nav .chip:hover {
+  background: var(--ui-surface-subtle);
+  color: var(--ui-text);
+}
+
+.pane-nav .chip.on {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+  font-weight: 600;
+}
+
+.view-nav .chip-group {
+  display: flex;
+  gap: var(--ui-space-4);
+}
+
+.view-nav .chip {
+  border: 0;
+  /* 下划线占位：未选中时也留着边框位，选中时不会把相邻项挤动。 */
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 3px 0;
+  color: var(--ui-faint);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.view-nav .chip:hover {
+  color: var(--ui-text-soft);
+}
+
+.view-nav .chip.on {
+  border-bottom-color: var(--ui-accent);
+  color: var(--ui-accent-strong);
+  font-weight: 600;
+}
+
+/* ── 会话行 ──────────────────────────────────────────── */
+
+.row {
+  display: grid;
+  /* 三段之间的间距**分开给**：标题与预览紧、预览与日期松。
+     三段等距会让它们读成一块，看不出哪一行是标题——这正是列表显得吵的原因。 */
+  gap: 3px;
+  padding: var(--ui-space-2) 11px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-md);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+/* 侧栏是浅灰底，悬停变白 = 浮起来。比「再深一点」更符合直觉。 */
+.row:hover {
+  background: var(--ui-surface);
+}
+
+/*
+ * 选中行用**强调色底**。
+ *
+ * 这与本工程的约定一致：强调色只用于「当前选中 / 主操作 / 焦点环」。
+ * 侧栏是浅灰、内容是纯白，绿底在这一层里是最清楚的「你在这里」。
+ */
+.row.on {
+  border-color: var(--ui-accent-soft);
+  background: var(--ui-accent-soft);
+}
+
+.row-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.row-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 620;
+  font-size: var(--ui-text-md);
+  /* 显式给最深的正文色：标题要**先被看到**，不能靠继承去碰运气。 */
+  color: var(--ui-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row.on .row-title {
+  color: var(--ui-accent-strong);
+}
+
+.row-line input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--ui-accent);
+}
+
+.star {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  color: var(--ui-faint);
+  cursor: pointer;
+  font-size: var(--ui-text-md);
+  line-height: 1;
+}
+
+/*
+ * 收藏星是**刻意保留的第二个色相**：金色在极小面积上就能表达「已收藏」，
+ * 换成强调色的青绿反而会被当成「已选中」。只此一处例外。
+ */
+.star:hover,
+.star.on {
+  color: #d9a11a;
+}
+
+/*
+ * 预览压暗**一档**（`--ui-muted` → `--ui-faint`）。
+ *
+ * 预览是会话的真实首条消息，**不能改内容**——但它此前与标题同深，于是每一行看起来
+ * 都是两行正文，列表整体很吵。退一档之后标题先跳出来，预览仍然读得到。
+ */
+.row-preview {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-meta {
+  margin-top: 1px;
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+  /* 日期成列出现，比例数字会让它们左右参差。 */
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  gap: var(--ui-space-2);
+}
+
+/* ── 分组（快捷访问的「收藏 / 最近打开」）───────────────── */
+
+/*
+ * 每组**各自封顶、独立滚动**（L3）。
+ *
+ * 用 `max-height` 而**不是** `flex-basis` 百分比：百分比要基于父容器高度算，而父容器
+ * 的高度本身就取决于内容与窗口——两边互相依赖，窗口一变就抖。
+ *
+ * 封顶之后，翻收藏时最近区不会跟着跑；这是「一组一组看」和「一根长列表」的区别。
+ */
+.quick-group {
+  max-height: 34vh;
+  overflow: auto;
+  /* 组与组之间留出间隔，否则两组的边界只有一行标题，容易看成一整列。 */
+  margin-bottom: var(--ui-space-3);
+}
+
+.group-title {
+  margin: 12px 8px 5px;
+  color: var(--ui-faint);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.group-empty {
+  padding: 4px 11px 8px;
+  color: var(--ui-faint);
+  font-size: 12px;
+}
+
+/* ── 工作区 ──────────────────────────────────────────── */
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+
+.workspace-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 关注中心条：贴在内容顶部，不占满整屏——它是提醒，不是主体。 */
+.attention-bar {
+  padding: 10px 22px 0;
+}
+
+.thread {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px 26px 40px;
+}
+
+.load-earlier {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+/* ── 会话级操作条 ────────────────────────────────────── */
+
+.session-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.session-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 680;
+  max-width: 42ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-head .meta {
+  color: var(--ui-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.rename-input {
+  height: 28px;
+  min-width: 20ch;
+  max-width: 42ch;
+  padding: 0 8px;
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+.export-hint {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 22px;
+  border-bottom: 1px solid var(--ui-divider);
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+  font-size: 12px;
+}
+
+.export-hint code {
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 分支动作：默认不显眼，悬停到消息上才出现——
+   它是低频动作，常驻会干扰阅读。 */
+.branch-action {
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  color: var(--ui-faint);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.message:hover .branch-action {
+  opacity: 1;
+}
+
+.branch-action:hover {
+  color: var(--ui-accent);
+}
+
+/* ── 工作台要点（上下文 / token / 模型）────────────────── */
+
+.workbench {
+  display: flex;
+  gap: 12px;
+  color: var(--ui-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.workbench b {
+  color: var(--ui-text-soft);
+  font-weight: 650;
+}
+
+/* ── 会话右键菜单 ────────────────────────────────────── */
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+
+.context-menu {
+  position: fixed;
+  display: grid;
+  min-width: 148px;
+  padding: 5px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow);
+}
+
+.context-menu button {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 7px 10px;
+  text-align: left;
+  color: var(--ui-text);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.context-menu button:hover {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+}
+
+/* 危险动作在菜单里也要能认出来。 */
+.context-menu button.danger:hover {
+  background: var(--ui-danger-soft);
+  color: var(--ui-danger);
+}
+
+/* ── WSL 目录手动指定 ────────────────────────────────── */
+
+.wsl-home {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+}
+
+.wsl-home-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── 配置覆盖层 ──────────────────────────────────────── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(18, 24, 33, 0.34);
+}
+
+.overlay-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: min(920px, calc(100vw - 64px));
+  height: min(660px, calc(100vh - 64px));
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow);
+  overflow: hidden;
+}
+
+/*
+ * 确认框变体：内容少，不该占满配置面板那块 920×660 的地方。
+ * 行数也少一行（没有标签栏、多一个页脚），所以这里显式重排。
+ */
+.overlay-panel-confirm {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(440px, calc(100vw - 64px));
+  height: auto;
+}
+
+.overlay-copy {
+  margin: 0;
+  color: var(--ui-muted);
+  line-height: 1.7;
+}
+
+.overlay-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--ui-divider);
+}
+
+.overlay-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.overlay-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.overlay-tabs {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.overlay-body {
+  overflow: auto;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+/* ── 数据表与行 ──────────────────────────────────────── */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ui-divider);
+  vertical-align: top;
+}
+
+.data-table th {
+  color: var(--ui-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.data-table .mono {
+  font-family: var(--ui-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.list-row-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.list-row-title {
+  font-weight: 620;
+  font-size: 13px;
+}
+
+.list-row-sub {
+  color: var(--ui-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.field-grid .value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.tag.ok {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+}
+
+.tag.off {
+  background: var(--ui-surface-subtle);
+  color: var(--ui-muted);
+}
+
+.message-list {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.section-title {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ui-faint);
+}
+
+/* 编辑区：与只读表格区分开——它可写，因此给一层浅底与边框。 */
+.editor {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius);
+  background: var(--ui-surface-subtle);
+}
+
+.editor code {
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+}
+
+/*
+ * 消息：**用户与助手用形态区分，不是用深浅**。
+ *
+ * 此前两者都是「浅色底 + 边框」的方块——助手 `--ui-surface-subtle`（#f8fafb）、
+ * 用户 `--ui-surface`（纯白）。在纯白的工作区上这两个几乎一样，整段对话读起来是
+ * 一堆同样的方块，看不出哪句是谁说的。
+ *
+ * 现在：**助手是正文**（无框，直接落在工作区上），**用户是引述**（强调色底 + 左侧竖线）。
+ * 一屏之内一眼就能看出「哪些是我说的」——这正是区分角色的全部意义。
+ */
+.message {
+  max-width: 78ch;
+  margin-bottom: var(--ui-space-5);
+}
+
+.message .who {
+  margin-bottom: var(--ui-space-1);
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.message .text {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text);
+  line-height: var(--ui-leading);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message.user .who {
+  color: var(--ui-accent-strong);
+}
+
+.message.user .text {
+  padding: var(--ui-space-3) var(--ui-space-4);
+  /* 左侧竖线而不是整圈边框：它是「引述」，不是「一块卡片」。 */
+  border-left: 3px solid var(--ui-accent);
+  border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
+  background: var(--ui-accent-soft);
+  /* 引述块里的正文用稍软的色，避免强调色底上出现纯黑文字。 */
+  color: var(--ui-text-soft);
+}
+
+/* ── 终端 ────────────────────────────────────────────── */
+
+/* 所有终端**同时挂载**、叠在同一个位置上，非前台的只隐藏不卸载——
+   卸载会让 PTY 的输出无人接收而丢失（见 `terminal-pane.tsx` 的注释）。
+   用 `visibility` 而不是 `display:none`：后者会让容器尺寸归零，xterm 无法测量，
+   切回来时排版是错的。 */
+.terminal-stack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--term-bg);
+}
+
+.terminal-stack.hidden {
+  display: none;
+}
+
+.terminal-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: #8b949e;
+  font-size: 12.5px;
+}
+
+.terminal-slot {
+  position: absolute;
+  inset: 0;
+}
+
+.terminal-slot.inactive {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.terminal-host {
+  height: 100%;
+  padding: 8px 10px 10px;
+  background: var(--term-bg);
+  overflow: hidden;
+}
+
+/* ── 状态栏 ──────────────────────────────────────────── */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-4);
+  min-height: 28px;
+  padding: 0 var(--ui-space-3);
+  border-top: 1px solid var(--ui-divider);
+  background: var(--ui-surface);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  /* 状态栏是**单行**：允许换行会让窗口变窄时它长成两行，把工作区挤短。 */
+  white-space: nowrap;
+}
+
+/* 目录可能很长。不设上限时它会把右边的网关信息整个挤出屏幕。 */
+.status-cwd {
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * 窄窗口降级（L7）：状态栏的信息**有优先级**。
+ *
+ * 变窄时先丢「计数」——那些数字在别处也看得到；**保住「我在哪个会话、哪个目录」**，
+ * 那才是状态栏存在的理由。最小窗口是 980×640，所以 980 这一档必须已经丢掉了
+ * 低优先级项。
+ */
+@media (max-width: 1180px) {
+  .status-terminals {
+    display: none;
+  }
+}
+
+@media (max-width: 1040px) {
+  .status-target {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .status-updated {
+    display: none;
+  }
+}
+
+.statusbar b {
+  color: var(--ui-text-soft);
+  font-weight: 600;
+}
+
+/* ── 状态栏里的供应商 ────────────────────────────────── */
+
+/*
+ * 「我现在花的是谁的钱」。
+ *
+ * 这一项**不参与窄窗口降级**：会话编号、目录在标签上也能看到，供应商却只有这里显示。
+ * 走网关之后它可能被自动换掉——用户什么都没做，界面却换了内容；不显示就只能在账单上发现。
+ */
+.status-vendor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  /* 自动切换的提示可能很长，但状态栏是单行——长了要省略而不是换行。 */
+  min-width: 0;
+}
+
+.vendor-pick {
+  /* 供应商名通常很短；给个上限是为了防止用户起了一个超长名字把网关信息挤出去。 */
+  max-width: 18ch;
+  padding: 0 var(--ui-space-1);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface);
+  color: var(--ui-text-soft);
+  font: inherit;
+}
+
+.vendor-pick:disabled {
+  opacity: 0.6;
+}
+
+/* 路由模式是个开关而不是按钮：它显示的是**当前状态**，点击切换。 */
+.vendor-mode {
+  padding: 0 var(--ui-space-1);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: var(--ui-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.vendor-mode:hover {
+  color: var(--ui-text-soft);
+  border-color: var(--ui-accent);
+}
+
+/* 自动切换必须**显眼**：用户没有做任何操作，界面却换了一家供应商。 */
+.vendor-auto {
+  color: var(--ui-warn);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statusbar .err {
+  color: var(--ui-danger);
+  font-weight: 600;
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

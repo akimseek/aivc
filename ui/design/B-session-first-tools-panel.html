@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>B · 会话优先 + 右侧工具面板</title>
+<style>
+  :root{
+    --bg:#f7f8fb;--surface:#fff;--surface-2:#f6f8fb;--surface-3:#eceff5;--border:#e5e9f1;
+    --text:#191f28;--dim:#5e6877;--faint:#96a1b0;
+    --accent:#3b5bdb;--accent-soft:#e9edfd;
+    --ok:#157f3d;--ok-soft:#e8f6ed;--warn:#8f5f0c;--warn-soft:#fdf4e4;--danger:#ae2f2f;--danger-soft:#fdecec;
+    --r:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font:14px/1.7 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;color:var(--text);
+    background:var(--bg);display:grid;grid-template-rows:32px 58px 1fr 32px;height:100vh;overflow:hidden}
+
+  .menubar{background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:3px;padding:0 14px;font-size:12.5px;color:var(--dim)}
+  .menubar .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#3b5bdb,#7b5bf0);color:#fff;display:grid;place-items:center;font-size:10px;font-weight:700;margin-right:8px}
+  .menubar span{padding:4px 9px;border-radius:6px;cursor:pointer}
+  .menubar span:hover{background:var(--surface-2);color:var(--text)}
+  .menubar .grow{flex:1}
+  .menubar .k{color:var(--faint);font-size:11.5px}
+
+  /* 上下文条：一条横向的「我在看哪儿」 */
+  .ctxbar{background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0;padding:0 14px}
+  .seg{padding:6px 15px 6px 0;display:flex;flex-direction:column;justify-content:center;cursor:pointer;position:relative;padding-right:30px}
+  .seg+.seg{padding-left:18px}
+  .seg+.seg::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:1px;background:var(--border)}
+  .seg:hover .v{color:var(--accent)}
+  .seg .k{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);line-height:1.2}
+  .seg .v{font-size:13.5px;font-weight:640;display:flex;align-items:center;gap:6px;line-height:1.3}
+  .seg .caret{color:var(--faint);font-size:9px}
+  .ctxbar .grow{flex:1}
+  .pill{font-size:11.5px;font-weight:650;border-radius:20px;padding:3px 11px}
+  .pill.ok{background:var(--ok-soft);color:var(--ok)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+  .btn{height:32px;padding:0 13px;border:1px solid var(--border);background:#fff;border-radius:var(--r);
+    font-size:12.5px;color:var(--dim);cursor:pointer;font-weight:560;margin-left:8px}
+  .btn:hover{background:var(--surface-2);color:var(--text)}
+
+  /* 三列：会话 | 工作区 | 工具面板 */
+  .body{display:grid;grid-template-columns:300px 1fr 348px;min-height:0;gap:1px;background:var(--border)}
+  .col{background:var(--surface);min-height:0;display:grid;grid-template-rows:auto 1fr}
+
+  /* 会话列 */
+  .shead{padding:13px 15px 10px;border-bottom:1px solid var(--border);display:grid;gap:10px}
+  .search{height:34px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface-2);
+    display:flex;align-items:center;gap:8px;padding:0 11px;color:var(--faint);font-size:12.5px}
+  .views{display:flex;gap:4px}
+  .views span{padding:4px 11px;border-radius:20px;font-size:12px;color:var(--dim);cursor:pointer}
+  .views span.on{background:var(--accent-soft);color:var(--accent);font-weight:650}
+  .srows{overflow:auto;min-height:0;padding:6px 9px 14px}
+  .row{padding:11px 11px;border-radius:var(--r);cursor:pointer;display:grid;gap:3px;border:1px solid transparent}
+  .row:hover{background:var(--surface-2)}
+  .row.on{background:var(--accent-soft);border-color:#d8e0fb}
+  .row .t{font-weight:630;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row.on .t{color:var(--accent)}
+  .row .m{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .meta{font-size:11.5px;color:var(--faint);display:flex;gap:9px}
+  .row .meta .fav{color:#d99a1a}
+
+  /* 工作区 */
+  .tabs{display:flex;align-items:center;gap:3px;padding:9px 14px 0;border-bottom:1px solid var(--border)}
+  .tab{padding:8px 14px;border-radius:9px 9px 0 0;font-size:12.5px;color:var(--dim);cursor:pointer;display:flex;gap:7px;align-items:center;white-space:nowrap}
+  .tab:hover{background:var(--surface-2)}
+  .tab.on{background:var(--surface);border:1px solid var(--border);border-bottom-color:#fff;margin-bottom:-1px;color:var(--text);font-weight:640}
+  .tab .x{color:var(--faint);font-size:11px}
+  .pane{overflow:auto;min-height:0;padding:26px 38px 40px}
+  .doc{max-width:74ch}
+  .doc h3{margin:0 0 5px;font-size:17px;font-weight:690;letter-spacing:-.012em}
+  .eyebrow{font-size:12px;color:var(--faint);display:flex;gap:10px;margin-bottom:24px}
+  .msg{margin-bottom:24px}
+  .who{font-size:11.5px;font-weight:700;color:var(--faint);margin-bottom:6px;display:flex;align-items:center;gap:7px}
+  .who .av{width:18px;height:18px;border-radius:6px;background:var(--surface-3);display:grid;place-items:center;font-size:9px;color:var(--dim)}
+  .msg.u .who{color:var(--accent)} .msg.u .who .av{background:var(--accent-soft);color:var(--accent)}
+  .body-t{white-space:pre-wrap;padding-left:25px}
+  code{font:12.5px/1.5 Consolas,monospace;background:var(--surface-3);border-radius:4px;padding:1px 5px}
+  .cue{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #f0d9ac;background:#fffcf5;
+    color:var(--warn);border-radius:var(--r);padding:12px 14px;font-size:12.5px;margin-bottom:24px}
+  .cue button{height:28px;padding:0 12px;border:1px solid #e8d3a8;background:#fff;color:var(--warn);border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600}
+  .term{background:#0d1117;color:#c9d1d9;border-radius:var(--r);padding:15px 17px;font:12.5px/1.75 Consolas,monospace;white-space:pre-wrap}
+  .term .p{color:#7ee787}.term .c{color:#79c0ff}.term .e{color:#ffa657}.term .d{color:#8b949e}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px}
+  .kpi div{border:1px solid var(--border);border-radius:var(--r);padding:11px 13px;background:var(--surface-2)}
+  .kpi b{display:block;font-size:18px;font-weight:700}.kpi span{font-size:11.5px;color:var(--faint)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border)}
+  th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  .tag{font-size:11px;border-radius:20px;padding:1px 8px;font-weight:640}
+  .tag.ok{background:var(--ok-soft);color:var(--ok)}.tag.no{background:var(--danger-soft);color:var(--danger)}
+  .tag.w{background:var(--warn-soft);color:var(--warn)}
+  .field{display:grid;gap:5px;margin-bottom:15px}
+  .field label{font-size:12px;color:var(--dim);font-weight:600}
+  .field .in{height:34px;border:1px solid var(--border);border-radius:var(--r);display:flex;align-items:center;padding:0 11px;font-size:13px;background:#fff}
+  .field .in.mono{font-family:Consolas,monospace;font-size:12.5px}
+  .field .hint{font-size:11.5px;color:var(--faint)}
+
+  /* 右侧工具面板 */
+  .tools{background:var(--surface-2);display:grid;grid-template-rows:auto 1fr;min-height:0}
+  .ttabs{display:flex;flex-wrap:wrap;gap:4px;padding:10px 12px;border-bottom:1px solid var(--border)}
+  .ttabs button{border:1px solid transparent;background:transparent;border-radius:8px;padding:5px 10px;
+    font:inherit;font-size:12px;color:var(--dim);cursor:pointer}
+  .ttabs button:hover{background:var(--surface-3)}
+  .ttabs button.on{background:#fff;border-color:var(--border);color:var(--text);font-weight:650}
+  .tbody{overflow:auto;min-height:0;padding:16px 16px 26px}
+  .tbody h4{margin:0 0 3px;font-size:13.5px;font-weight:680}
+  .tbody .sub{font-size:11.5px;color:var(--faint);margin-bottom:14px}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:8px 12px;font-size:12.5px;padding:9px 0;border-bottom:1px solid var(--border)}
+  .kv span:first-child{color:var(--dim)}
+  .tick{font-weight:700}.tick.ok{color:var(--ok)}.tick.no{color:var(--danger)}
+  .note{margin-top:14px;border:1px solid #f0d9ac;background:#fffcf5;color:var(--warn);border-radius:var(--r);
+    padding:10px 12px;font-size:11.5px;line-height:1.6}
+
+  .status{background:#fff;border-top:1px solid var(--border);color:var(--dim);display:flex;align-items:center;gap:16px;padding:0 16px;font-size:11.5px}
+  .status b{color:var(--text);font-weight:600}
+  .status .grow{flex:1}
+  .status .dot{width:6px;height:6px;border-radius:50%;background:#16a34a;display:inline-block;margin-right:5px}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+  <div class="menubar">
+    <span class="logo">AI</span><span>文件</span><span>编辑</span><span>视图</span><span>帮助</span>
+    <span class="grow"></span><span class="k">⌘K 命令面板</span>
+  </div>
+
+  <div class="ctxbar">
+    <div class="seg"><span class="k">平台</span><span class="v">Codex <span class="caret">▾</span></span></div>
+    <div class="seg"><span class="k">目标</span><span class="v">WSL · Ubuntu-24.04 <span class="caret">▾</span></span></div>
+    <div class="seg"><span class="k">状态</span><span class="v"><span class="pill ok">找到 Codex 会话</span></span></div>
+    <span class="grow"></span>
+    <button class="btn">重新探测</button>
+  </div>
+
+  <div class="body">
+    <section class="col">
+      <div class="shead">
+        <div class="search">🔍 搜索会话…</div>
+        <div class="views"><span class="on">活跃 6</span><span>回收站</span><span>★ 收藏</span></div>
+      </div>
+      <div class="srows" id="srows"></div>
+    </section>
+
+    <section class="col">
+      <div class="tabs" id="tabs"></div>
+      <div class="pane" id="pane"></div>
+    </section>
+
+    <aside class="tools">
+      <div class="ttabs" id="ttabs"></div>
+      <div class="tbody" id="tbody"></div>
+    </aside>
+  </div>
+
+  <div class="status">
+    <span><span class="dot"></span>已连接</span><span>cwd <b>/home/akim/code/ai</b></span>
+    <span>供应商 <b>官方 · gpt-5-codex</b></span><span class="grow"></span>
+    <span>网关 <b>127.0.0.1:51059</b></span><span>终端 <b>3</b></span>
+  </div>
+
+<script>
+const sessions=[["重构会话列表的读取路径","14:32 · 42 条",1],["排查 WSL 冷启动","11:08 · 18 条"],
+  ["目标探测的四态文案","昨天 · 7 条"],["常驻 worker 的 stdin 契约","昨天 · 31 条"],
+  ["启动预热收窄","2 天前 · 12 条"],["运行期布局与旧工程切割","2 天前 · 9 条"]];
+document.getElementById('srows').innerHTML=sessions.map(s=>
+  `<div class="row${s[2]?' on':''}"><div class="t">${s[0]}</div><div class="m">${s[1]}</div></div>`).join('');
+
+const T={
+  work:{label:"工作台",html:`<h4>当前会话</h4><div class="sub">重构会话列表的读取路径</div>
+    <div class="kpi"><div><b>38%</b><span>上下文占用</span></div><div><b>12.4k</b><span>本轮 token</span></div><div><b>gpt-5</b><span>模型</span></div></div>
+    <div class="kv"><span>供应商路由</span><b>官方 v2 · 直连</b></div>
+    <div class="kv"><span>失败转移</span><b>3 条规则 · 0 触发</b></div>
+    <div class="kv"><span>输入模式</span><b>codex</b></div>`},
+  diag:{label:"诊断",html:`<h4>目标诊断</h4><div class="sub">Codex · WSL · Ubuntu-24.04</div>
+    <div class="kv"><span>Codex 目录</span><b class="tick ok">✓ /home/akim/.codex</b></div>
+    <div class="kv"><span>会话目录</span><b class="tick ok">✓ 14 个文件</b></div>
+    <div class="kv"><span>常驻 worker</span><b class="tick ok">✓ 已连接</b></div>
+    <div class="kv"><span>首次探测</span><b>2.89 s</b></div>
+    <div class="kv"><span>批量读 14 文件</span><b>165 ms</b></div>
+    <div class="note">另一台发行版 <b>Ubuntu-22.04</b> 无法进入：MountDisk/HCS/E_ACCESSDENIED</div>`},
+  vendors:{label:"供应商",html:`<h4>官方 v2</h4><div class="sub">codex · 已启用 · 3 个模型</div>
+    <div class="field"><label>API Base URL</label><div class="in mono">https://api.example.com/v1</div></div>
+    <div class="field"><label>API Key</label><div class="in mono">sk-••••••••••3f7a</div></div>
+    <div class="kv"><span>写入前备份</span><b>data/vendor-backups/</b></div>`},
+  gateway:{label:"网关",html:`<h4>本地网关</h4><div class="sub">运行中 · 127.0.0.1:51059</div>
+    <div class="kpi"><div><b>8/8</b><span>成功</span></div><div><b>412ms</b><span>p95</span></div><div><b>0</b><span>熔断</span></div></div>
+    <table><tr><th>时间</th><th>状态</th></tr>
+      <tr><td>14:32:08</td><td><span class="tag ok">200</span></td></tr>
+      <tr><td>14:31:55</td><td><span class="tag w">超时→转移</span></td></tr></table>`},
+  skills:{label:"技能",html:`<h4>技能</h4><div class="sub">7 个 · 3 个启用</div>
+    <table><tr><th>技能</th><th>状态</th></tr>
+      <tr><td>code-review</td><td><span class="tag ok">启用</span></td></tr>
+      <tr><td>git-commit</td><td><span class="tag ok">启用</span></td></tr>
+      <tr><td>api-design</td><td><span class="tag no">禁用</span></td></tr></table>`},
+  settings:{label:"设置",html:`<h4>设置</h4><div class="sub">运行根 D:\\code\\ai\\aivc-rs</div>
+    <div class="field"><label>WSL Codex 目录</label><div class="in mono">/home/akim/.codex</div>
+      <div class="hint">发行版进不去时用它手动接入</div></div>
+    <div class="field"><label>CLI 环境</label><div class="in">Node 24.9.0 · codex 已装</div></div>`}
+};
+
+const tabs=["重构会话列表的读取路径","排查 WSL 冷启动","终端 · codex"];
+document.getElementById('tabs').innerHTML=tabs.map((t,i)=>
+  `<div class="tab${i===0?' on':''}">${t}<span class="x">✕</span></div>`).join('');
+
+const paneSession=`<div class="doc"><h3>重构会话列表的读取路径</h3>
+  <div class="eyebrow"><span>codex</span><span>·</span><span>2026-09-26 14:32</span><span>·</span><span>42 条</span></div>
+  <div class="cue"><span>发行版 <b>Ubuntu-22.04</b> 无法进入：MountDisk/HCS/E_ACCESSDENIED</span>
+    <span><button>手动指定目录</button> <button>重新探测</button></span></div>
+  <div class="msg u"><div class="who"><span class="av">你</span>你</div><div class="body-t">列出 WSL 里的会话要 30 秒，查一下根因。</div></div>
+  <div class="msg"><div class="who"><span class="av">C</span>Codex</div><div class="body-t">根因在 WSL 冷启动：Stopped 时首次 <code>5.27 s</code>，紧接着 <code>0.09 s</code>，空闲 20 秒后 <code>6.90 s</code>。</div></div>
+  <div class="msg u"><div class="who"><span class="av">你</span>你</div><div class="body-t">改成一次批量读。</div></div>
+  <div class="msg"><div class="who"><span class="av">C</span>Codex</div><div class="body-t">30.5 s → 337 ms → 165 ms。</div></div></div>`;
+const paneTerm=`<div class="term"><span class="d"># 内嵌终端 · codex TUI · 12 分钟</span>
+<span class="p">akim@ubuntu</span>:<span class="c">~/code/ai</span>$ codex
+<span class="e">⏺</span> 上下文 38% · gpt-5-codex
+> 把批量读取也改成走 worker
+<span class="e">⏺</span> 已新增 WorkerOp::ReadHeads…
+<span class="p">akim@ubuntu</span>:<span class="c">~/code/ai</span>$ <span class="d">▌</span></div>`;
+document.getElementById('pane').innerHTML=paneSession;
+
+const order=["work","diag","vendors","gateway","skills","settings"];
+document.getElementById('ttabs').innerHTML=order.map((k,i)=>
+  `<button class="${i===0?'on':''}" data-k="${k}">${T[k].label}</button>`).join('');
+document.getElementById('tbody').innerHTML=T.work.html;
+document.querySelectorAll('.ttabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.ttabs button').forEach(x=>x.classList.toggle('on',x===b));
+  document.getElementById('tbody').innerHTML=T[b.dataset.k].html;
+});
+</script>
+</body>
+</html>

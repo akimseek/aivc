@@ -1,0 +1,52 @@
+# cargo-deny 配置：许可证白名单 + 依赖图约束 + 漏洞与重复版本检查。
+# 用法：cargo deny check
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = []
+
+[licenses]
+version = 2
+# 允许的许可证：宽松开源许可 + Unicode 例外（ICU 等依赖常见）
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "0BSD",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "CC0-1.0",
+  "MPL-2.0",
+  "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+# 明确禁止的依赖（避免意外引入）
+[[bans.deny]]
+name = "openssl-sys"
+reason = "统一使用 rustls，避免跨平台 OpenSSL 分发问题"
+
+[[bans.deny]]
+name = "openssl"
+reason = "统一使用 rustls，避免跨平台 OpenSSL 分发问题"
+
+# 分层架构约束由 `cargo xtask check-layers` 基于 cargo metadata 强制校验，
+# 因为 cargo-deny 无法表达「aivc-core 不得被依赖」这类反向约束。
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

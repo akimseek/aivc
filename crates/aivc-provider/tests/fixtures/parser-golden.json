@@ -1,0 +1,605 @@
+{
+  "_comment": "由 generate-parser-golden.mjs 用现网 TypeScript 实现生成。不要手工编辑——改场景后重新生成。",
+  "generatedBy": "src/shared/session-parser.ts",
+  "cases": [
+    {
+      "name": "标准会话：meta + 两条消息",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "第一个问题",
+        "cwd": "/work",
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": "0.30.0",
+        "messageCount": 2,
+        "previewCount": 2,
+        "preview": [
+          {
+            "role": "user",
+            "text": "第一个问题"
+          },
+          {
+            "role": "assistant",
+            "text": "第一个回答"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "第一个问题",
+        "cwd": "/work",
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:02.000Z",
+        "model": null,
+        "cliVersion": "0.30.0",
+        "messageCount": 2,
+        "previewCount": 2,
+        "preview": [
+          {
+            "role": "user",
+            "text": "第一个问题"
+          },
+          {
+            "role": "assistant",
+            "text": "第一个回答"
+          }
+        ],
+        "usage": null
+      }
+    },
+    {
+      "name": "空内容",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": null,
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": null,
+        "updatedAt": null,
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": null
+      }
+    },
+    {
+      "name": "只有空白行",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": null,
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": null,
+        "updatedAt": null,
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": null
+      }
+    },
+    {
+      "name": "非法 JSON 行被跳过",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "唯一消息",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:01.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "唯一消息"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "唯一消息",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:01.000Z",
+        "updatedAt": "2026-09-25T10:00:01.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "唯一消息"
+          }
+        ],
+        "usage": null
+      }
+    },
+    {
+      "name": "合成块（environment_context）被过滤",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "真实问题",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "真实问题"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "真实问题",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:01.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "真实问题"
+          }
+        ],
+        "usage": null
+      }
+    },
+    {
+      "name": "CRLF 换行",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "CRLF 消息",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "CRLF 消息"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "CRLF 消息",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:01.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "CRLF 消息"
+          }
+        ],
+        "usage": null
+      }
+    },
+    {
+      "name": "未知类型与未知载荷被忽略",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:01.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": null
+      }
+    },
+    {
+      "name": "token_count 用量被提取",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": {
+          "total": {
+            "inputTokens": 120,
+            "cachedInputTokens": 10,
+            "outputTokens": 80,
+            "totalTokens": 200
+          },
+          "updatedAt": "2026-09-25T10:00:00.000Z",
+          "source": "codex-token-count"
+        }
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": {
+          "total": {
+            "inputTokens": 120,
+            "cachedInputTokens": 10,
+            "outputTokens": 80,
+            "totalTokens": 200
+          },
+          "updatedAt": "2026-09-25T10:00:00.000Z",
+          "source": "codex-token-count"
+        }
+      }
+    },
+    {
+      "name": "多行文本内容用换行拼接",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "assistant",
+            "text": "第一段\n第二段"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "assistant",
+            "text": "第一段\n第二段"
+          }
+        ],
+        "usage": null
+      }
+    },
+    {
+      "name": "空文本块被跳过",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "assistant",
+            "text": "有内容"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "11111111-2222-3333-4444-555555555555",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "assistant",
+            "text": "有内容"
+          }
+        ],
+        "usage": null
+      }
+    },
+    {
+      "name": "长标题被截断",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "这是一个非常长的标题xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "这是一个非常长的标题xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx结束"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "这是一个非常长的标题xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "这是一个非常长的标题xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx结束"
+          }
+        ],
+        "usage": null
+      }
+    },
+    {
+      "name": "缺少时间戳",
+      "session": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "无时间戳",
+        "cwd": null,
+        "createdAt": null,
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "无时间戳"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "title": "无时间戳",
+        "cwd": null,
+        "createdAt": null,
+        "updatedAt": null,
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 1,
+        "previewCount": 1,
+        "preview": [
+          {
+            "role": "user",
+            "text": "无时间戳"
+          }
+        ],
+        "usage": null
+      }
+    },
+    {
+      "name": "文件名不匹配 rollout 模式",
+      "session": null,
+      "fullSession": null
+    },
+    {
+      "name": "文件里有非 ASCII 路径（Windows 风格）",
+      "session": {
+        "id": "99999999-8888-7777-6666-555555555555",
+        "title": "99999999-8888-7777-6666-555555555555",
+        "cwd": "C:\\work",
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "99999999-8888-7777-6666-555555555555",
+        "title": "99999999-8888-7777-6666-555555555555",
+        "cwd": "C:\\work",
+        "createdAt": "2026-09-25T10:00:00.000Z",
+        "updatedAt": "2026-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 0,
+        "previewCount": 0,
+        "preview": [],
+        "usage": null
+      }
+    },
+    {
+      "name": "十二条消息：预览被截断到 8 条",
+      "session": {
+        "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "title": "第 1 条",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:01.000Z",
+        "updatedAt": "2025-09-25T10:00:00.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 12,
+        "previewCount": 8,
+        "preview": [
+          {
+            "role": "user",
+            "text": "第 1 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 2 条"
+          },
+          {
+            "role": "user",
+            "text": "第 3 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 4 条"
+          },
+          {
+            "role": "user",
+            "text": "第 5 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 6 条"
+          },
+          {
+            "role": "user",
+            "text": "第 7 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 8 条"
+          }
+        ],
+        "usage": null
+      },
+      "fullSession": {
+        "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "title": "第 1 条",
+        "cwd": null,
+        "createdAt": "2026-09-25T10:00:01.000Z",
+        "updatedAt": "2026-09-25T10:00:12.000Z",
+        "model": null,
+        "cliVersion": null,
+        "messageCount": 12,
+        "previewCount": 12,
+        "preview": [
+          {
+            "role": "user",
+            "text": "第 1 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 2 条"
+          },
+          {
+            "role": "user",
+            "text": "第 3 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 4 条"
+          },
+          {
+            "role": "user",
+            "text": "第 5 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 6 条"
+          },
+          {
+            "role": "user",
+            "text": "第 7 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 8 条"
+          },
+          {
+            "role": "user",
+            "text": "第 9 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 10 条"
+          },
+          {
+            "role": "user",
+            "text": "第 11 条"
+          },
+          {
+            "role": "assistant",
+            "text": "第 12 条"
+          }
+        ],
+        "usage": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,203 @@
+{
+  "_comment": "终端状态检测器的对拍场景。Node 侧的生成脚本与 Rust 侧的差分测试都读这个文件，因此两边不可能漂移。steps 里每一步是 {input}（用户输入）、{output}（PTY 输出）或 {exit}（进程退出码）。",
+  "scenarios": [
+    {
+      "name": "空输入不开始轮次",
+      "providerId": "codex",
+      "steps": [
+        { "input": "" },
+        { "input": "   " },
+        { "input": "\r\n" }
+      ]
+    },
+    {
+      "name": "控制序列不算用户输入",
+      "providerId": "codex",
+      "steps": [
+        { "input": "\u001b[A" },
+        { "input": "\u001b[31m" }
+      ]
+    },
+    {
+      "name": "首次输入开始轮次",
+      "providerId": "codex",
+      "steps": [{ "input": "hello" }]
+    },
+    {
+      "name": "同轮内的重复输入不重置",
+      "providerId": "codex",
+      "steps": [
+        { "input": "first" },
+        { "input": "second" },
+        { "input": "third" }
+      ]
+    },
+    {
+      "name": "无轮次时输出被忽略",
+      "providerId": "codex",
+      "steps": [{ "output": "\n› Ask Codex to do anything\n" }]
+    },
+    {
+      "name": "启动提示符不算完成",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "\n› Ask Codex to do anything\n" }
+      ]
+    },
+    {
+      "name": "提示符消失又回来才算完成",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "thinking...\n" },
+        { "output": "\n› Ask Codex to do anything\n" }
+      ]
+    },
+    {
+      "name": "提示符被切成两批仍可识别",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "output\n" },
+        { "output": "\n› Ask Codex to do " },
+        { "output": "anything\n" }
+      ]
+    },
+    {
+      "name": "带 ANSI 颜色的一行",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "\u001b[31mthinking\u001b[0m\n" },
+        { "output": "\u001b[1;32m› Ask Codex to do anything\u001b[m\n" }
+      ]
+    },
+    {
+      "name": "OSC 序列被剥离",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "\u001b]0;title\u0007noise\n" },
+        { "output": "\n› Ask Codex to do anything\n" }
+      ]
+    },
+    {
+      "name": "流中断报错",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "stream disconnected before completion: broken pipe\n" }
+      ]
+    },
+    {
+      "name": "传输错误报错",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "Transport error: connection reset\n" }
+      ]
+    },
+    {
+      "name": "等待确认优先于完成",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "Do you want to proceed? (y/n)" }
+      ]
+    },
+    {
+      "name": "确认后再次输入进入下一阶段",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "Do you want to proceed? (y/n)" },
+        { "input": "y" }
+      ]
+    },
+    {
+      "name": "Codex 授权块",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "Allow [npm test]\n" }
+      ]
+    },
+    {
+      "name": "非零退出且提交过输入",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "exit": 3 }
+      ]
+    },
+    {
+      "name": "非零退出但从未输入",
+      "providerId": "codex",
+      "steps": [{ "exit": 3 }]
+    },
+    {
+      "name": "零退出保持沉默",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "done\n" },
+        { "exit": 0 }
+      ]
+    },
+    {
+      "name": "Gemini 用各自的提示符",
+      "providerId": "gemini",
+      "steps": [
+        { "input": "hello" },
+        { "output": "working\n" },
+        { "output": "\n› Ask Gemini to do anything\n" }
+      ]
+    },
+    {
+      "name": "Claude 提示符不会被 Codex 规则匹配",
+      "providerId": "claude",
+      "steps": [
+        { "input": "hello" },
+        { "output": "working\n" },
+        { "output": "\n› Ask Codex to do anything\n" }
+      ]
+    },
+    {
+      "name": "Qoder 的纯尖括号提示符",
+      "providerId": "qoder",
+      "steps": [
+        { "input": "hello" },
+        { "output": "working\n" },
+        { "output": "\n> Ask Qoder to do anything\n" }
+      ]
+    },
+    {
+      "name": "重复状态被去重",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "out\n" },
+        { "output": "\n› Ask Codex to do anything\n" },
+        { "output": "\n› Ask Codex to do anything\n" }
+      ]
+    },
+    {
+      "name": "中文确认提示",
+      "providerId": "claude",
+      "steps": [
+        { "input": "hello" },
+        { "output": "是否允许执行该命令" }
+      ]
+    },
+    {
+      "name": "CRLF 换行下的完成判定",
+      "providerId": "codex",
+      "steps": [
+        { "input": "hello" },
+        { "output": "out\r\n" },
+        { "output": "\r\n› Ask Codex to do anything\r\n" }
+      ]
+    }
+  ]
+}

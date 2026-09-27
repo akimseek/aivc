@@ -1,0 +1,155 @@
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes
+} from "react";
+
+/**
+ * 基础控件。
+ *
+ * # 为什么集中在这里
+ *
+ * 这一层解决的是**风格一致性**：按钮、下拉、搜索框的边框、圆角、字号、悬停与聚焦态
+ * 只在一个地方定义。散落在各页面里写的化，第一个页面和第五个页面一定会长得不一样。
+ *
+ * 样式在 `components.css` 的「基础控件」段；这里只负责结构，不写内联样式。
+ */
+
+/* ── 按钮 ────────────────────────────────────────────── */
+
+export type ButtonVariant = "default" | "primary" | "danger";
+
+export function Button({
+  variant = "default",
+  small = false,
+  className,
+  children,
+  ...rest
+}: {
+  variant?: ButtonVariant;
+  /** 小号：用于工具栏、行内操作。 */
+  small?: boolean;
+  children: ReactNode;
+} & ButtonHTMLAttributes<HTMLButtonElement>) {
+  const classes = ["btn", `btn-${variant}`, small ? "btn-sm" : "", className ?? ""]
+    .filter(Boolean)
+    .join(" ");
+  // `type` 默认 button：忘了写会让按钮在表单里意外提交。
+  return (
+    <button type="button" className={classes} {...rest}>
+      {children}
+    </button>
+  );
+}
+
+/* ── 分段切换（活跃/回收站、视图切换…）─────────────────── */
+
+export function ChipGroup({
+  value,
+  options,
+  onChange
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="chip-group" role="group">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={`chip${option.value === value ? " on" : ""}`}
+          aria-pressed={option.value === value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── 表单字段 ────────────────────────────────────────── */
+
+/**
+ * 字段外壳：标签在上、控件在下、提示在最后。
+ *
+ * 用 `<label>` 包住控件，点标签即可聚焦——手写时很容易漏掉。
+ */
+export function Field({
+  label,
+  hint,
+  children
+}: {
+  label: string;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      {children}
+      {hint !== undefined && <span className="field-hint">{hint}</span>}
+    </label>
+  );
+}
+
+export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select className={["control", "control-select", className ?? ""].filter(Boolean).join(" ")} {...rest}>
+      {children}
+    </select>
+  );
+}
+
+export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={["control", className ?? ""].filter(Boolean).join(" ")} {...rest} />;
+}
+
+/**
+ * 搜索框。
+ *
+ * `busy` 不是装饰：后端的搜索**第二段会扫全文**，慢到需要让用户知道「它在找」，
+ * 否则界面看起来像卡住了。
+ */
+export function SearchInput({
+  value,
+  onChange,
+  placeholder,
+  busy = false
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  busy?: boolean;
+}) {
+  return (
+    <div className="search-input">
+      <input
+        type="search"
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {busy && <span className="search-busy">搜索中…</span>}
+    </div>
+  );
+}
+
+/* ── 工具栏与状态 ────────────────────────────────────── */
+
+export function Toolbar({ children }: { children: ReactNode }) {
+  return <div className="toolbar">{children}</div>;
+}
+
+/** 撑开剩余空间的占位；用它比到处写 `<span className="spacer" />` 更不容易漏。 */
+export function ToolbarSpacer() {
+  return <span className="spacer" />;
+}
+
+/** 状态胶囊：可用 / 警告。整套界面只有这两种语义色。 */
+export function StatusPill({ tone, children }: { tone: "ok" | "warn"; children: ReactNode }) {
+  return <span className={`pill pill-${tone}`}>{children}</span>;
+}

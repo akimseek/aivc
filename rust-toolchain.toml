@@ -1,0 +1,6 @@
+[toolchain]
+# 本地开发用 stable；CI 会固定到具体版本以保证可复现构建。
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = []
+profile = "default"

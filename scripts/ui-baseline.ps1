@@ -1,0 +1,117 @@
+﻿# 界面基线集：每个视图各截一张，落在 `shots/baseline/`。
+#
+# # 为什么需要它
+#
+# `shots/` 里那些是**过程图**——每一次修 bug 留下的证据，编号到 29。它们能回答
+# 「当时为什么这么改」，但回答不了「这次改动有没有把界面弄坏」。
+#
+# 基线集相反：**每个视图固定一张**，同一组步骤、同一个初始状态。改动之后重跑一遍，
+# 逐张 diff 就能看出界面回归——包括那些门禁和单元测试都看不见的（排版错位、元素被挡、
+# 文案换了位置）。
+#
+# # 与 `ui-check.ps1` 的关系
+#
+# 那个脚本负责「启动一次、拍一张」，每次都从干净状态重来。这里复用它的启动方式，
+# 但**只启动一次**，然后多次附着同一个调试端口——每一步都是一次新的 `cdp-shot`，
+# 状态在步骤之间累积，这正是「浏览一遍各个视图」需要的行为。
+#
+# # 只差一步的检查不可省
+#
+# `cdp-shot.cjs` 在 CDP 连接断开时**会静默退出 0**（Node 事件循环空了就退出，
+# `main()` 的 promise 永远不会 settle）。所以这里**必须检查 PNG 真的生成了**，
+# 而不是看退出码——这个坑踩过一次，代价是以为截到了、其实什么都没有。
+
+[CmdletBinding()]
+param(
+    # 基线目录名，落在 `shots/<Name>/` 下。
+    [string] $Name = "baseline",
+    # 应用启动后等待的秒数。太短会拍到空白。
+    [int] $Wait = 12,
+    # 每一步之后等待的毫秒数（给界面时间完成跳转）。
+    [int] $StepWait = 2500
+)
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+$exe = Join-Path $root "target\debug\aivc-app.exe"
+$dist = Join-Path $root "ui\dist\index.html"
+
+if (-not (Test-Path $exe)) {
+    throw "找不到 $exe；先跑一次 cargo build -p aivc-app。"
+}
+# Tauri 在**编译时**把前端嵌进二进制。只跑 vite build 会拍到旧界面。
+if ((Test-Path $dist) -and ((Get-Item $dist).LastWriteTimeUtc -gt (Get-Item $exe).LastWriteTimeUtc)) {
+    throw "ui/dist 比 aivc-app.exe 新，二进制里嵌的还是旧界面。先跑 cargo build -p aivc-app。"
+}
+
+$shots = Join-Path $root "shots\$Name"
+New-Item -ItemType Directory -Path $shots -Force | Out-Null
+
+# 每一步：名字 + 到那一步为止要执行的 JS。probe 的返回值会打印出来，方便核对
+# 「页面当时到底处于什么状态」——只看图有时分不清「没这个元素」和「图拍早了」。
+$steps = @(
+    @{
+        # **不叫「会话列表」**：应用会记住上次选中的会话，启动时详情已经打开了，
+        # 所以这一张拍到的其实是「默认启动状态」而不是一张纯列表。
+        # 名字要如实反映拍到了什么——叫错了会让后来看基线的人对着图找不存在的差异。
+        # （第一次跑时它叫「会话列表」，实测与「02-会话详情」**逐字节相同**。）
+        Name  = "01-启动默认"
+        Probe = 'JSON.stringify({rows:document.querySelectorAll(".rows .row").length,detailOpen:!!document.querySelector(".session-head")})'
+    },
+    @{
+        Name  = "02-会话详情"
+        Probe = '(async()=>{const r=document.querySelector(".rows .row");if(!r)return "NO-ROW";r.click();await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({head:document.querySelector(".session-head .meta")?.textContent?.trim()??null,messages:document.querySelectorAll(".message").length});})()'
+    },
+    @{
+        Name  = "03-终端"
+        Probe = '(async()=>{const b=[...document.querySelectorAll("button")].find(x=>/Shell/.test(x.textContent));if(!b)return "NO-BUTTON";b.click();for(let i=0;i<40;i++){await new Promise(t=>setTimeout(t,250));if(document.querySelector(".xterm-helper-textarea"))break;}return JSON.stringify({term:!!document.querySelector(".xterm")});})()'
+    },
+    @{
+        Name  = "04-配置"
+        Probe = '(async()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="配置");if(!b)return "NO-BUTTON";b.click();await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({overlay:!!document.querySelector(".overlay-panel"),tabs:[...document.querySelectorAll(".overlay-tabs button")].map(x=>x.textContent.trim())});})()'
+    },
+    @{
+        Name  = "05-退出确认"
+        Probe = '(async()=>{const inv=(c,a)=>window.__TAURI__.core.invoke("aivc_invoke",{command:c,args:a??null});await inv("app:command",{command:"quit"});await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({dialog:!!document.querySelector(".overlay-panel-confirm"),buttons:[...document.querySelectorAll(".overlay-foot button")].map(x=>x.textContent.trim())});})()'
+    }
+)
+
+foreach ($dir in @("logs", "data")) {
+    Remove-Item (Join-Path $root $dir) -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+$process = Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
+$failed = @()
+try {
+    Start-Sleep -Seconds $Wait
+    foreach ($step in $steps) {
+        $env:CDP_PROBE = $step.Probe
+        $env:CDP_PROBE_WAIT = "1500"
+        $out = Join-Path $shots "$($step.Name).png"
+        Remove-Item $out -Force -ErrorAction SilentlyContinue
+
+        & node (Join-Path $PSScriptRoot "cdp-shot.cjs") $out
+
+        # **看文件，不看退出码**：见文件头的说明。
+        if (-not (Test-Path $out)) {
+            $failed += $step.Name
+            Write-Host "[失败] $($step.Name)：没有生成 PNG"
+        } else {
+            Write-Host "[完成] $($step.Name)"
+        }
+        Start-Sleep -Milliseconds $StepWait
+    }
+}
+finally {
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+    foreach ($dir in @("logs", "data")) {
+        Remove-Item (Join-Path $root $dir) -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+if ($failed.Count -gt 0) {
+    throw "这些视图没有截到：$($failed -join '、')"
+}
+Write-Host "基线集：$shots（$($steps.Count) 张）"

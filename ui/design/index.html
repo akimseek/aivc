@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>界面布局方案 · 三选一（完整功能）</title>
+<style>
+  :root{--border:#e5e9f0;--text:#151a22;--dim:#5f6875;--faint:#98a1ae;--accent:#2563d9;--bg:#f5f7fa;--surface:#fff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.65 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:1220px;margin:0 auto;padding:46px 32px 76px}
+  h1{margin:0 0 8px;font-size:27px;font-weight:700;letter-spacing:-.022em}
+  .lede{margin:0 0 14px;color:var(--dim);max-width:80ch}
+  .lede b{color:var(--text)}
+  .fix{background:#fffaf0;border:1px solid #f0d9ac;color:#7a5a1f;border-radius:10px;
+    padding:12px 15px;font-size:13px;margin:20px 0 34px;max-width:92ch}
+  .fix b{color:#5f4410}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;
+    display:grid;grid-template-rows:auto 1fr auto;text-decoration:none;color:inherit;transition:box-shadow .15s,transform .15s}
+  .card:hover{box-shadow:0 10px 28px rgba(20,25,35,.10);transform:translateY(-2px)}
+  .card .num{padding:16px 20px 0;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--faint)}
+  .card h2{margin:4px 20px 6px;font-size:17px;font-weight:690;letter-spacing:-.012em}
+  .card .desc{margin:0 20px 14px;color:var(--dim);font-size:13px}
+  .card ul{margin:0 20px 18px;padding:0;list-style:none;display:grid;gap:5px}
+  .card li{font-size:12.5px;color:var(--dim);display:flex;gap:7px;align-items:flex-start}
+  .card li b{color:var(--text);font-weight:640}
+  .card li::before{content:"·";color:var(--faint);font-weight:700}
+  .card .open{padding:12px 20px;border-top:1px solid var(--border);background:#fbfcfd;font-size:12.5px;font-weight:650;color:var(--accent)}
+
+  h3{margin:44px 0 6px;font-size:16px;font-weight:690}
+  .hint{color:var(--dim);font-size:13px;margin:0 0 16px}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;font-size:12.5px}
+  th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{background:#fafbfd;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  tr:last-child td{border-bottom:0}
+  td:first-child{font-weight:600}
+  .y{color:#15803d;font-weight:700}
+  .foot{margin-top:38px;padding-top:22px;border-top:1px solid var(--border);color:var(--dim);font-size:13px}
+  .foot b{color:var(--text)}
+  code{background:#eef1f6;border-radius:4px;padding:1px 5px;font:12.5px/1.5 Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>界面布局方案 · 三选一</h1>
+  <p class="lede">
+    三套都是<b>完整应用壳</b>（菜单栏 + 上下文 + 主导航 + 工作区 + 状态栏），
+    而且<b>可以点</b>——请逐个切换功能区，确认全部功能都被安置了。
+  </p>
+
+  <div class="fix">
+    <b>上一轮为什么被否：</b>那四套只画了「会话浏览器」，
+    而真实应用有 <b>7 个功能模块</b>（会话 / 终端 / 供应商 / 网关 / 技能 / 设置 / 工作台），
+    再加上命令面板、终端关注中心、批量操作、跨平台搜索。
+    这一轮每套都按<b>完整功能清单</b>重做，并附下方对照表供核对。
+  </div>
+
+  <div class="grid">
+    <a class="card" href="A-console-three-column.html">
+      <div class="num">方案 A</div>
+      <h2>控制台三列</h2>
+      <p class="desc">主导航 → 区域列表 → 区域详情。七个区域共用同一套「列表 + 详情」模式。</p>
+      <ul>
+        <li><b>全部功能都有固定位置</b>，越加越不乱</li>
+        <li><b>模式一致</b>：学会一个区域就会全部</li>
+        <li><b>代价</b>：常驻三列，最密的一套</li>
+      </ul>
+      <div class="open">打开方案 A →（可点主导航 7 个区域）</div>
+    </a>
+
+    <a class="card" href="B-session-first-tools-panel.html">
+      <div class="num">方案 B</div>
+      <h2>会话优先 + 工具面板</h2>
+      <p class="desc">左列永远是会话，配置类功能收进右侧面板，主区是会话/终端标签。</p>
+      <ul>
+        <li><b>主流程最顺</b>：会话列表永不被切走</li>
+        <li><b>工具就近</b>：右侧面板切换，不遮挡会话</li>
+        <li><b>代价</b>：右侧常驻，中等密度</li>
+      </ul>
+      <div class="open">打开方案 B →（可点右侧 6 个工具区）</div>
+    </a>
+
+    <a class="card" href="C-dual-mode-drawer.html">
+      <div class="num">方案 C</div>
+      <h2>双模 + 抽屉</h2>
+      <p class="desc">「浏览」读会话（宽阅读列）／「工作」干活（终端全宽）。工具面板默认收起。</p>
+      <ul>
+        <li><b>默认只给主流程</b>，最不拥挤</li>
+        <li><b>两种真实场景</b>各有最合适的布局</li>
+        <li><b>代价</b>：多了模式概念，工具要手动拉出</li>
+      </ul>
+      <div class="open">打开方案 C →（可切模式、拉工具面板）</div>
+    </a>
+  </div>
+
+  <h3>功能覆盖对照</h3>
+  <p class="hint">这一栏用来核对：每一行的功能在三套方案里分别落在哪里，<span class="y">✓</span> 表示有固定位置。</p>
+  <table>
+    <tr><th>功能</th><th>A 控制台三列</th><th>B 会话优先</th><th>C 双模 + 抽屉</th></tr>
+    <tr><td>平台 / 目标 · 四态状态</td><td class="y">✓ 顶部上下文条</td><td class="y">✓ 顶部上下文条</td><td class="y">✓ 头部一句话 + 状态胶囊</td></tr>
+    <tr><td>会话列表（活跃/回收站/收藏）</td><td class="y">✓ 中间列</td><td class="y">✓ 左列（常驻）</td><td class="y">✓ 左列</td></tr>
+    <tr><td>会话消息 · 分支 · 复制/导出</td><td class="y">✓ 右侧详情</td><td class="y">✓ 主区标签</td><td class="y">✓ 浏览模式主区</td></tr>
+    <tr><td>内嵌终端 · 系统终端 · 多标签</td><td class="y">✓ 终端区域</td><td class="y">✓ 主区标签</td><td class="y">✓ 工作模式全宽</td></tr>
+    <tr><td>终端关注中心（等待确认）</td><td class="y">✓ 终端区内提示</td><td class="y">✓ 主区提示</td><td class="y">✓ 工作模式提示条</td></tr>
+    <tr><td>工作台（token/上下文/模型/路由）</td><td class="y">✓ 导航区域</td><td class="y">✓ 右侧面板</td><td class="y">✓ 抽屉</td></tr>
+    <tr><td>全局搜索（跨平台跨目标）</td><td class="y">✓ 导航区域</td><td class="y">✓ 左列视图</td><td class="y">✓ 命令栏 <code>⌘K</code></td></tr>
+    <tr><td>快捷访问（收藏 / 最近）</td><td class="y">✓ 导航区域</td><td class="y">✓ 左列视图</td><td class="y">✓ 命令栏 <code>⌘K</code></td></tr>
+    <tr><td>供应商管理（配置/密钥/路由）</td><td class="y">✓ 导航区域</td><td class="y">✓ 右侧面板</td><td class="y">✓ 抽屉</td></tr>
+    <tr><td>网关（端口/健康/日志/失败转移）</td><td class="y">✓ 导航区域</td><td class="y">✓ 右侧面板</td><td class="y">✓ 抽屉</td></tr>
+    <tr><td>技能管理</td><td class="y">✓ 导航区域</td><td class="y">✓ 右侧面板</td><td class="y">✓ 抽屉</td></tr>
+    <tr><td>设置（WSL 目录/预设/CLI 环境）</td><td class="y">✓ 导航区域</td><td class="y">✓ 右侧面板</td><td class="y">✓ 抽屉</td></tr>
+    <tr><td>诊断（四态 / worker / 耗时）</td><td class="y">✓ 区域 + 顶部入口</td><td class="y">✓ 右侧面板</td><td class="y">✓ 抽屉</td></tr>
+    <tr><td>状态栏（cwd/供应商/网关/批量）</td><td class="y">✓ 底部常驻</td><td class="y">✓ 底部常驻</td><td class="y">✓ 底部常驻</td></tr>
+    <tr><td>菜单栏</td><td class="y">✓ 深色菜单栏</td><td class="y">✓ 浅色菜单栏</td><td class="y">✓ 极简菜单栏</td></tr>
+    <tr><td>命令面板 <code>⌘K</code></td><td class="y">✓ 提示在菜单栏</td><td class="y">✓ 提示在菜单栏</td><td class="y">✓ 命令栏常驻</td></tr>
+    <tr><td>批量操作（全选/恢复/清除/删除）</td><td class="y">✓ 会话列表工具条</td><td class="y">✓ 会话列表工具条</td><td class="y">✓ 会话列表工具条</td></tr>
+  </table>
+
+  <p class="foot">
+    <b>可以组合。</b>比如「C 的双模 + B 的常驻右侧面板」，或「A 的区域化 + C 的宽阅读列」。
+    告诉我倾向或要调整的点，我按结论细化，不再来回试。
+  </p>
+</div>
+</body>
+</html>

@@ -1,0 +1,32 @@
+# 工作区内隔离的 Rust 工具链（CARGO_HOME / RUSTUP_HOME 重定向到此），
+# 不进入版本控制；删除该目录即可完全回退。
+.toolchain/
+
+# 构建产物
+/target/
+**/target/
+*.pdb
+
+# Tauri / 前端
+node_modules/
+dist/
+ui/dist/
+crates/aivc-app/gen/
+
+# 运行期数据（由应用自身在运行根下派生，见 aivc-config）
+/data/
+/logs/
+*.db
+*.db-wal
+*.db-shm
+
+# 编辑器与系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+.npm-cache/
+
+# 界面验证截图（由 scripts/ui-check.ps1 生成，见 docs/rust-rewrite/19）
+/shots/

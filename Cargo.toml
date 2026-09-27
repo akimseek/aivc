@@ -1,0 +1,156 @@
+# AI Visual Console — Rust 重构工程
+# 目标：功能一致（行为契约级 1:1）、高性能、可持续扩展、企业级工程标准。
+# 架构详见 docs/rust-rewrite/02-rust-architecture.md
+
+[workspace]
+resolver = "3"
+members = [
+  "crates/aivc-core",
+  "crates/aivc-infra",
+  "crates/aivc-provider",
+  "crates/aivc-gateway",
+  "crates/aivc-terminal",
+  "crates/aivc-tooling",
+  "crates/aivc-ipc",
+  "crates/aivc-app",
+  "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+authors = ["akim <akim@akimsoft.local>"]
+repository = "https://akimsoft.local/ai-visual-console"
+description = "AI CLI 工作台：会话资产、本地 Gateway、终端运行时与平台集成"
+
+# ---------------------------------------------------------------------------
+# 依赖版本集中管理。crate 内一律写 `{ workspace = true }`，避免版本漂移。
+# 版本由 `cargo add` 从 crates.io 索引解析写入，不手工猜测。
+# ---------------------------------------------------------------------------
+[workspace.dependencies]
+# 内部 crate（依赖方向由 `cargo xtask check-layers` 强制）
+aivc-core = { path = "crates/aivc-core" }
+aivc-infra = { path = "crates/aivc-infra" }
+aivc-provider = { path = "crates/aivc-provider" }
+aivc-gateway = { path = "crates/aivc-gateway" }
+aivc-terminal = { path = "crates/aivc-terminal" }
+aivc-tooling = { path = "crates/aivc-tooling" }
+aivc-ipc = { path = "crates/aivc-ipc" }
+
+# --- 序列化 ---------------------------------------------------------------
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+# --- 错误处理 -------------------------------------------------------------
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+
+# --- 异步运行时 -----------------------------------------------------------
+tokio = { version = "1.53.1", features = [
+  "rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "process", "net", "signal",
+] }
+tokio-util = { version = "0.7.19", features = ["rt"] }
+futures = "0.3.34"
+
+# --- 标识 -----------------------------------------------------------------
+uuid = { version = "1.26.1", features = ["v4", "serde"] }
+
+# --- HTTP 服务端 / 客户端 -------------------------------------------------
+axum = { version = "0.8.9", features = ["http1", "tokio"] }
+hyper = { version = "1.11.1", features = ["http1", "server", "client"] }
+http-body-util = "0.1.5"
+# 统一使用 rustls，避免跨平台 OpenSSL 分发问题（deny.toml 同时禁止 openssl-sys）。
+# --- Tauri ---------------------------------------------------------------
+# 只用于命令面的 IPC 胶水。窗口与打包留到后续。
+tauri-build = { version = "2", default-features = false }
+tauri = { version = "2.11.6", default-features = false, features = ["wry", "common-controls-v6", "tray-icon"] }
+
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+bytes = "1.12.1"
+
+# --- 数据库 ---------------------------------------------------------------
+# 刻意不引入 refinery：其 rusqlite 版本耦合会引入第二个 rusqlite 副本并造成类型不兼容。
+# 全新库只有 V1 迁移，自建版本化迁移执行器（约 60 行）风险更低、完全可控。
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+
+# --- 终端 -----------------------------------------------------------------
+portable-pty = "0.9.0"
+
+# --- 并发原语与快照 -------------------------------------------------------
+arc-swap = "1.9.2"
+dashmap = "6"
+
+# --- 文本与匹配 -----------------------------------------------------------
+regex = "1.13.1"
+
+# --- 秘密与常量时间比较 ---------------------------------------------------
+secrecy = "0.10.3"
+subtle = "2.6.1"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4.3"
+
+# --- 平台 -----------------------------------------------------------------
+which = "8.0.6"
+
+# --- 可观测性 -------------------------------------------------------------
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json", "fmt"] }
+tracing-appender = "0.2.5"
+
+# --- 测试 -----------------------------------------------------------------
+tempfile = "3.27.0"
+insta = { version = "1.48.0", features = ["json"] }
+proptest = "1.11.0"
+wiremock = "0.6.5"
+
+# 注：Tauri 2 / specta / tauri-specta 在 P7（IPC 层）落地时再引入。
+# 当前 crates.io 上 `tauri` 的 latest 是 3.0.0-alpha，必须显式约束到 2.x 稳定线。
+
+# ---------------------------------------------------------------------------
+# 统一 lint 策略。各 crate 用 `[lints] workspace = true` 继承。
+# 测试中的 unwrap/expect 由 clippy.toml 的 allow-*-in-tests 放行。
+# ---------------------------------------------------------------------------
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+# 所有 lint **组**统一使用 priority = -1，单条 lint 使用默认 priority 0。
+# 若组与单条 lint 同优先级，Cargo 会报 "lint group has the same priority as a lint"。
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "warn"
+dbg_macro = "deny"
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+
+# ---------------------------------------------------------------------------
+# 发布/性能档位：release 开启 LTO，安装包体积与启动速度优先。
+# 刻意不使用 panic = "abort"：部分依赖依赖 unwind 语义，收益不抵风险。
+# ---------------------------------------------------------------------------
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.bench]
+inherits = "release"
+lto = "thin"
+
+# 依赖用较低优化，加快构建
+[profile.dev.package."*"]
+opt-level = 2

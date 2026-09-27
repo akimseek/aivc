@@ -1,0 +1,3764 @@
+{
+  "_comment": "由 generate-shell-golden.mjs 用现网 TypeScript 实现生成。不要手工编辑。",
+  "generatedBy": [
+    "src/shared/shell-args.ts",
+    "src/shared/target-ids.ts",
+    "src/shared/wsl-paths.ts"
+  ],
+  "quoteValues": [
+    {
+      "value": "simple",
+      "posix": {
+        "ok": true,
+        "value": "'simple'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"simple\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'simple'"
+      }
+    },
+    {
+      "value": "with space",
+      "posix": {
+        "ok": true,
+        "value": "'with space'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"with space\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'with space'"
+      }
+    },
+    {
+      "value": "two  spaces",
+      "posix": {
+        "ok": true,
+        "value": "'two  spaces'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"two  spaces\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'two  spaces'"
+      }
+    },
+    {
+      "value": " lead",
+      "posix": {
+        "ok": true,
+        "value": "' lead'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\" lead\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "' lead'"
+      }
+    },
+    {
+      "value": "trail ",
+      "posix": {
+        "ok": true,
+        "value": "'trail '"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"trail \""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'trail '"
+      }
+    },
+    {
+      "value": "both ",
+      "posix": {
+        "ok": true,
+        "value": "'both '"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"both \""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'both '"
+      }
+    },
+    {
+      "value": "",
+      "posix": {
+        "ok": true,
+        "value": "''"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "''"
+      }
+    },
+    {
+      "value": "-leading-dash",
+      "posix": {
+        "ok": true,
+        "value": "'-leading-dash'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"-leading-dash\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'-leading-dash'"
+      }
+    },
+    {
+      "value": "--flag",
+      "posix": {
+        "ok": true,
+        "value": "'--flag'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"--flag\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'--flag'"
+      }
+    },
+    {
+      "value": "--flag=value",
+      "posix": {
+        "ok": true,
+        "value": "'--flag=value'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"--flag=value\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'--flag=value'"
+      }
+    },
+    {
+      "value": "a'b",
+      "posix": {
+        "ok": true,
+        "value": "'a'\\''b'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"a'b\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'a'\\''b'"
+      }
+    },
+    {
+      "value": "\"double\"",
+      "posix": {
+        "ok": true,
+        "value": "'\"double\"'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"^\"double^\"\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'\"double\"'"
+      }
+    },
+    {
+      "value": "back`tick",
+      "posix": {
+        "ok": true,
+        "value": "'back`tick'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"back`tick\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'back`tick'"
+      }
+    },
+    {
+      "value": "$dollar",
+      "posix": {
+        "ok": true,
+        "value": "'$dollar'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"$dollar\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'$dollar'"
+      }
+    },
+    {
+      "value": "${brace}",
+      "posix": {
+        "ok": true,
+        "value": "'${brace}'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"${brace}\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'${brace}'"
+      }
+    },
+    {
+      "value": "semi;colon",
+      "posix": {
+        "ok": true,
+        "value": "'semi;colon'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"semi;colon\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'semi;colon'"
+      }
+    },
+    {
+      "value": "pipe|char",
+      "posix": {
+        "ok": true,
+        "value": "'pipe|char'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"pipe^|char\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'pipe|char'"
+      }
+    },
+    {
+      "value": "amp&ersand",
+      "posix": {
+        "ok": true,
+        "value": "'amp&ersand'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"amp^&ersand\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'amp&ersand'"
+      }
+    },
+    {
+      "value": "star*",
+      "posix": {
+        "ok": true,
+        "value": "'star*'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"star*\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'star*'"
+      }
+    },
+    {
+      "value": "question?",
+      "posix": {
+        "ok": true,
+        "value": "'question?'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"question?\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'question?'"
+      }
+    },
+    {
+      "value": "paren(x)",
+      "posix": {
+        "ok": true,
+        "value": "'paren(x)'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"paren(x)\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'paren(x)'"
+      }
+    },
+    {
+      "value": "bracket[x]",
+      "posix": {
+        "ok": true,
+        "value": "'bracket[x]'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"bracket[x]\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'bracket[x]'"
+      }
+    },
+    {
+      "value": "brace{x}",
+      "posix": {
+        "ok": true,
+        "value": "'brace{x}'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"brace{x}\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'brace{x}'"
+      }
+    },
+    {
+      "value": "new\nline",
+      "posix": {
+        "ok": true,
+        "value": "'new\nline'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"new\nline\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'new\nline'"
+      }
+    },
+    {
+      "value": "tab\tchar",
+      "posix": {
+        "ok": true,
+        "value": "'tab\tchar'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"tab\tchar\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'tab\tchar'"
+      }
+    },
+    {
+      "value": "carr\rreturn",
+      "posix": {
+        "ok": true,
+        "value": "'carr\rreturn'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"carr\rreturn\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'carr\rreturn'"
+      }
+    },
+    {
+      "value": "unicode 中文",
+      "posix": {
+        "ok": true,
+        "value": "'unicode 中文'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"unicode 中文\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'unicode 中文'"
+      }
+    },
+    {
+      "value": "emoji 🚀",
+      "posix": {
+        "ok": true,
+        "value": "'emoji 🚀'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"emoji 🚀\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'emoji 🚀'"
+      }
+    },
+    {
+      "value": "path/like/this",
+      "posix": {
+        "ok": true,
+        "value": "'path/like/this'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"path/like/this\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'path/like/this'"
+      }
+    },
+    {
+      "value": "C:\\Windows\\style",
+      "posix": {
+        "ok": true,
+        "value": "'C:\\Windows\\style'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"C:\\Windows\\style\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'C:\\Windows\\style'"
+      }
+    },
+    {
+      "value": "C:\\Program Files\\app",
+      "posix": {
+        "ok": true,
+        "value": "'C:\\Program Files\\app'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"C:\\Program Files\\app\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'C:\\Program Files\\app'"
+      }
+    },
+    {
+      "value": "\\backslash",
+      "posix": {
+        "ok": true,
+        "value": "'\\backslash'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"\\backslash\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'\\backslash'"
+      }
+    },
+    {
+      "value": "~tilde",
+      "posix": {
+        "ok": true,
+        "value": "'~tilde'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"~tilde\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'~tilde'"
+      }
+    },
+    {
+      "value": "!bang",
+      "posix": {
+        "ok": true,
+        "value": "'!bang'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"!bang\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'!bang'"
+      }
+    },
+    {
+      "value": "#hash",
+      "posix": {
+        "ok": true,
+        "value": "'#hash'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"#hash\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'#hash'"
+      }
+    },
+    {
+      "value": "%percent%",
+      "posix": {
+        "ok": true,
+        "value": "'%percent%'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"^%percent^%\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'%percent%'"
+      }
+    },
+    {
+      "value": "at@sign",
+      "posix": {
+        "ok": true,
+        "value": "'at@sign'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"at@sign\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'at@sign'"
+      }
+    },
+    {
+      "value": "eq=sign",
+      "posix": {
+        "ok": true,
+        "value": "'eq=sign'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"eq=sign\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'eq=sign'"
+      }
+    },
+    {
+      "value": "colon:sign",
+      "posix": {
+        "ok": true,
+        "value": "'colon:sign'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"colon:sign\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'colon:sign'"
+      }
+    },
+    {
+      "value": "comma,comma",
+      "posix": {
+        "ok": true,
+        "value": "'comma,comma'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"comma,comma\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'comma,comma'"
+      }
+    },
+    {
+      "value": "single'and\"double",
+      "posix": {
+        "ok": true,
+        "value": "'single'\\''and\"double'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"single'and^\"double\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'single'\\''and\"double'"
+      }
+    },
+    {
+      "value": "混合 mixed 内容",
+      "posix": {
+        "ok": true,
+        "value": "'混合 mixed 内容'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "\"混合 mixed 内容\""
+      },
+      "wslShell": {
+        "ok": true,
+        "value": "'混合 mixed 内容'"
+      }
+    }
+  ],
+  "commandCases": [
+    {
+      "command": "codex",
+      "args": [],
+      "posix": {
+        "ok": true,
+        "value": "codex"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "codex"
+      }
+    },
+    {
+      "command": "codex",
+      "args": [
+        "--version"
+      ],
+      "posix": {
+        "ok": true,
+        "value": "codex '--version'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "codex \"--version\""
+      }
+    },
+    {
+      "command": "codex",
+      "args": [
+        "resume",
+        "--all",
+        "11111111-2222-3333-4444-555555555555"
+      ],
+      "posix": {
+        "ok": true,
+        "value": "codex 'resume' '--all' '11111111-2222-3333-4444-555555555555'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "codex \"resume\" \"--all\" \"11111111-2222-3333-4444-555555555555\""
+      }
+    },
+    {
+      "command": "codex",
+      "args": [
+        "-c",
+        "model_provider=\"akim_gateway\""
+      ],
+      "posix": {
+        "ok": true,
+        "value": "codex '-c' 'model_provider=\"akim_gateway\"'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "codex \"-c\" \"model_provider=^\"akim_gateway^\"\""
+      }
+    },
+    {
+      "command": "gemini",
+      "args": [
+        "--resume",
+        "abc",
+        "--model",
+        "gpt 5"
+      ],
+      "posix": {
+        "ok": true,
+        "value": "gemini '--resume' 'abc' '--model' 'gpt 5'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "gemini \"--resume\" \"abc\" \"--model\" \"gpt 5\""
+      }
+    },
+    {
+      "command": "claude",
+      "args": [
+        "--dir",
+        "/my work"
+      ],
+      "posix": {
+        "ok": true,
+        "value": "claude '--dir' '/my work'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "claude \"--dir\" \"/my work\""
+      }
+    },
+    {
+      "command": "qodercn",
+      "args": [
+        "--cwd",
+        "C:\\Program Files\\x"
+      ],
+      "posix": {
+        "ok": true,
+        "value": "qodercn '--cwd' 'C:\\Program Files\\x'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "qodercn \"--cwd\" \"C:\\Program Files\\x\""
+      }
+    },
+    {
+      "command": "codex",
+      "args": [
+        "it's",
+        "\"quoted\"",
+        "semi;colon"
+      ],
+      "posix": {
+        "ok": true,
+        "value": "codex 'it'\\''s' '\"quoted\"' 'semi;colon'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "codex \"it's\" \"^\"quoted^\"\" \"semi;colon\""
+      }
+    },
+    {
+      "command": "codex",
+      "args": [
+        ""
+      ],
+      "posix": {
+        "ok": true,
+        "value": "codex ''"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "codex \"\""
+      }
+    },
+    {
+      "command": "codex",
+      "args": [
+        "a",
+        "",
+        "b"
+      ],
+      "posix": {
+        "ok": true,
+        "value": "codex 'a' '' 'b'"
+      },
+      "cmd": {
+        "ok": true,
+        "value": "codex \"a\" \"\" \"b\""
+      }
+    }
+  ],
+  "parseInputs": [
+    {
+      "value": "",
+      "args": {
+        "ok": true,
+        "value": []
+      }
+    },
+    {
+      "value": "   ",
+      "args": {
+        "ok": true,
+        "value": []
+      }
+    },
+    {
+      "value": "--model gpt-5",
+      "args": {
+        "ok": true,
+        "value": [
+          "--model",
+          "gpt-5"
+        ]
+      }
+    },
+    {
+      "value": "--model gpt-5 --verbose",
+      "args": {
+        "ok": true,
+        "value": [
+          "--model",
+          "gpt-5",
+          "--verbose"
+        ]
+      }
+    },
+    {
+      "value": "--dir \"/my work\"",
+      "args": {
+        "ok": true,
+        "value": [
+          "--dir",
+          "/my work"
+        ]
+      }
+    },
+    {
+      "value": "--dir '/my work'",
+      "args": {
+        "ok": true,
+        "value": [
+          "--dir",
+          "/my work"
+        ]
+      }
+    },
+    {
+      "value": "--dir /my\\ work",
+      "args": {
+        "ok": true,
+        "value": [
+          "--dir",
+          "/my work"
+        ]
+      }
+    },
+    {
+      "value": "--a=b --c=d",
+      "args": {
+        "ok": true,
+        "value": [
+          "--a=b",
+          "--c=d"
+        ]
+      }
+    },
+    {
+      "value": "a  b   c",
+      "args": {
+        "ok": true,
+        "value": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "value": "\ttabbed\targs\t",
+      "args": {
+        "ok": true,
+        "value": [
+          "tabbed",
+          "args"
+        ]
+      }
+    },
+    {
+      "value": "line\nbreak",
+      "args": {
+        "ok": true,
+        "value": [
+          "line",
+          "break"
+        ]
+      }
+    },
+    {
+      "value": "--flag",
+      "args": {
+        "ok": true,
+        "value": [
+          "--flag"
+        ]
+      }
+    },
+    {
+      "value": "-x",
+      "args": {
+        "ok": true,
+        "value": [
+          "-x"
+        ]
+      }
+    },
+    {
+      "value": "--empty \"\"",
+      "args": {
+        "ok": true,
+        "value": [
+          "--empty"
+        ]
+      }
+    },
+    {
+      "value": "--empty ''",
+      "args": {
+        "ok": true,
+        "value": [
+          "--empty"
+        ]
+      }
+    },
+    {
+      "value": "unclosed \"quote",
+      "args": {
+        "ok": false,
+        "error": "CLI 参数模板存在未闭合引号。"
+      }
+    },
+    {
+      "value": "unclosed 'quote",
+      "args": {
+        "ok": false,
+        "error": "CLI 参数模板存在未闭合引号。"
+      }
+    },
+    {
+      "value": "trailing\\",
+      "args": {
+        "ok": true,
+        "value": [
+          "trailing\\"
+        ]
+      }
+    },
+    {
+      "value": "C:\\Program Files\\app",
+      "args": {
+        "ok": true,
+        "value": [
+          "C:Program",
+          "Filesapp"
+        ]
+      }
+    },
+    {
+      "value": "\"C:\\Program Files\\app\"",
+      "args": {
+        "ok": true,
+        "value": [
+          "C:Program Filesapp"
+        ]
+      }
+    },
+    {
+      "value": "'single quoted'",
+      "args": {
+        "ok": true,
+        "value": [
+          "single quoted"
+        ]
+      }
+    },
+    {
+      "value": "mix'ed \"quo\"tes'",
+      "args": {
+        "ok": true,
+        "value": [
+          "mixed \"quo\"tes"
+        ]
+      }
+    },
+    {
+      "value": "--model=  spaced",
+      "args": {
+        "ok": true,
+        "value": [
+          "--model=",
+          "spaced"
+        ]
+      }
+    },
+    {
+      "value": "-abc",
+      "args": {
+        "ok": true,
+        "value": [
+          "-abc"
+        ]
+      }
+    },
+    {
+      "value": "--",
+      "args": {
+        "ok": true,
+        "value": [
+          "--"
+        ]
+      }
+    },
+    {
+      "value": "---",
+      "args": {
+        "ok": true,
+        "value": [
+          "---"
+        ]
+      }
+    },
+    {
+      "value": "中文 参数",
+      "args": {
+        "ok": true,
+        "value": [
+          "中文",
+          "参数"
+        ]
+      }
+    },
+    {
+      "value": "emoji 🚀 flag",
+      "args": {
+        "ok": true,
+        "value": [
+          "emoji",
+          "🚀",
+          "flag"
+        ]
+      }
+    }
+  ],
+  "targetIds": [
+    {
+      "targetId": "codex:local",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "claude:local",
+      "provider": {
+        "ok": true,
+        "value": "claude"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "gemini:local",
+      "provider": {
+        "ok": true,
+        "value": "gemini"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "qoder:local",
+      "provider": {
+        "ok": true,
+        "value": "qoder"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "codex:wsl:Ubuntu",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "claude:wsl:Ubuntu-22.04",
+      "provider": {
+        "ok": true,
+        "value": "claude"
+      },
+      "distro": {
+        "ok": true,
+        "value": "Ubuntu-22.04"
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "gemini:wsl:Debian",
+      "provider": {
+        "ok": true,
+        "value": "gemini"
+      },
+      "distro": {
+        "ok": true,
+        "value": "Debian"
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "qoder:wsl:Ubuntu",
+      "provider": {
+        "ok": true,
+        "value": "qoder"
+      },
+      "distro": {
+        "ok": true,
+        "value": "Ubuntu"
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "codex:wsl:Ubuntu:extra",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "wsl:Ubuntu",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": "Ubuntu"
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": "Ubuntu"
+      }
+    },
+    {
+      "targetId": "unknown:local",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "codex",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "codex:",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "codex:wsl:",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "CODEX:local",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "codex:wsl:distro with space",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "targetId": "codex:wsl:中文发行版",
+      "provider": {
+        "ok": true,
+        "value": "codex"
+      },
+      "distro": {
+        "ok": true,
+        "value": ""
+      },
+      "codexDistro": {
+        "ok": true,
+        "value": ""
+      }
+    }
+  ],
+  "fences": [
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/sub/b.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../sessions/c.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/../../etc/passwd",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/other/d.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions-evil/e.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessionsX/f.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/etc/passwd",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/./g.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/home/u/.codex/sessions/a/../b.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\a.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\..\\\\other\\\\b.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions-evil\\\\c.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\sub\\\\d.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "C:\\\\Users\\\\akim\\\\.codex\\\\other\\\\e.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex/sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex/sessions/",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex/sessions//",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "/",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "/home/u/.codex/sessions/2026/09",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\",
+      "posix": {
+        "ok": true,
+        "value": false
+      },
+      "local": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "filePath": "/mnt/c/Users/akim/.codex/sessions/a.jsonl",
+      "dirPath": "/mnt/c/Users/akim",
+      "posix": {
+        "ok": true,
+        "value": true
+      },
+      "local": {
+        "ok": true,
+        "value": true
+      }
+    }
+  ],
+  "mountPaths": [
+    {
+      "filePath": "/mnt/c/Users/akim/x.jsonl",
+      "converted": {
+        "ok": true,
+        "value": "C:\\Users\\akim\\x.jsonl"
+      }
+    },
+    {
+      "filePath": "/mnt/C/Users/akim/x.jsonl",
+      "converted": {
+        "ok": true,
+        "value": "C:\\Users\\akim\\x.jsonl"
+      }
+    },
+    {
+      "filePath": "/mnt/d/x",
+      "converted": {
+        "ok": true,
+        "value": "D:\\x"
+      }
+    },
+    {
+      "filePath": "/mnt/c",
+      "converted": {
+        "ok": true,
+        "value": "C:\\"
+      }
+    },
+    {
+      "filePath": "/mnt/c/",
+      "converted": {
+        "ok": true,
+        "value": "C:\\"
+      }
+    },
+    {
+      "filePath": "/mnt/",
+      "converted": {
+        "ok": true,
+        "value": "/mnt/"
+      }
+    },
+    {
+      "filePath": "/mnt",
+      "converted": {
+        "ok": true,
+        "value": "/mnt"
+      }
+    },
+    {
+      "filePath": "/home/u/x",
+      "converted": {
+        "ok": true,
+        "value": "/home/u/x"
+      }
+    },
+    {
+      "filePath": "",
+      "converted": {
+        "ok": true,
+        "value": ""
+      }
+    },
+    {
+      "filePath": "/mnt/1/x",
+      "converted": {
+        "ok": true,
+        "value": "/mnt/1/x"
+      }
+    },
+    {
+      "filePath": "/mnt/c/a/b/c/d.jsonl",
+      "converted": {
+        "ok": true,
+        "value": "C:\\a\\b\\c\\d.jsonl"
+      }
+    }
+  ],
+  "distroNames": [
+    {
+      "distro": "Ubuntu",
+      "sanitized": {
+        "ok": true,
+        "value": "Ubuntu"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:Ubuntu"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:Ubuntu"
+      }
+    },
+    {
+      "distro": "Ubuntu-22.04",
+      "sanitized": {
+        "ok": true,
+        "value": "Ubuntu-22.04"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:Ubuntu-22.04"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:Ubuntu-22.04"
+      }
+    },
+    {
+      "distro": "Debian",
+      "sanitized": {
+        "ok": true,
+        "value": "Debian"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:Debian"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:Debian"
+      }
+    },
+    {
+      "distro": "kali-linux",
+      "sanitized": {
+        "ok": true,
+        "value": "kali-linux"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:kali-linux"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:kali-linux"
+      }
+    },
+    {
+      "distro": "openSUSE-Leap-15.5",
+      "sanitized": {
+        "ok": true,
+        "value": "openSUSE-Leap-15.5"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:openSUSE-Leap-15.5"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:openSUSE-Leap-15.5"
+      }
+    },
+    {
+      "distro": "with space",
+      "sanitized": {
+        "ok": true,
+        "value": "with_space"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:with space"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:with space"
+      }
+    },
+    {
+      "distro": "with'quote",
+      "sanitized": {
+        "ok": true,
+        "value": "with_quote"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:with'quote"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:with'quote"
+      }
+    },
+    {
+      "distro": "with\"double",
+      "sanitized": {
+        "ok": true,
+        "value": "with_double"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:with\"double"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:with\"double"
+      }
+    },
+    {
+      "distro": "with;semi",
+      "sanitized": {
+        "ok": true,
+        "value": "with_semi"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:with;semi"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:with;semi"
+      }
+    },
+    {
+      "distro": "with$dollar",
+      "sanitized": {
+        "ok": true,
+        "value": "with_dollar"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:with$dollar"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:with$dollar"
+      }
+    },
+    {
+      "distro": "with`tick",
+      "sanitized": {
+        "ok": true,
+        "value": "with_tick"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:with`tick"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:with`tick"
+      }
+    },
+    {
+      "distro": "中文发行版",
+      "sanitized": {
+        "ok": true,
+        "value": "_____"
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:中文发行版"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:中文发行版"
+      }
+    },
+    {
+      "distro": "",
+      "sanitized": {
+        "ok": true,
+        "value": ""
+      },
+      "builtCodex": {
+        "ok": true,
+        "value": "wsl:"
+      },
+      "builtClaude": {
+        "ok": true,
+        "value": "claude:wsl:"
+      }
+    }
+  ]
+}

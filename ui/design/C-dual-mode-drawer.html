@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>C · 双模（浏览 / 工作）+ 抽屉</title>
+<style>
+  :root{
+    --bg:#fafbfc;--surface:#fff;--surface-2:#f5f7f9;--surface-3:#eceff3;--border:#e6e9ee;
+    --text:#15191f;--dim:#5c6472;--faint:#959daa;
+    --accent:#111827;--accent-2:#2563eb;--accent-soft:#eef2f7;
+    --ok:#157f3d;--ok-soft:#e8f6ed;--warn:#8f5f0c;--warn-soft:#fdf4e4;--danger:#ae2f2f;--danger-soft:#fdecec;
+    --r:11px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font:14px/1.75 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;color:var(--text);
+    background:var(--bg);display:grid;grid-template-rows:34px 60px 1fr 32px;height:100vh;overflow:hidden}
+
+  .menubar{background:transparent;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:3px;padding:0 16px;font-size:12.5px;color:var(--dim)}
+  .menubar .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:10px;font-weight:700;margin-right:9px}
+  .menubar span{padding:4px 9px;border-radius:6px;cursor:pointer}
+  .menubar span:hover{background:var(--surface-3);color:var(--text)}
+  .menubar .grow{flex:1}
+  .menubar .k{color:var(--faint);font-size:11.5px}
+
+  /* 上下文条 + 模式开关 */
+  .ctxbar{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 18px}
+  .where{display:flex;align-items:baseline;gap:10px;min-width:0}
+  .where b{font-size:14.5px;font-weight:690;letter-spacing:-.01em;white-space:nowrap}
+  .where .sub{font-size:12.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pill{font-size:11.5px;font-weight:650;border-radius:20px;padding:3px 11px;white-space:nowrap}
+  .pill.ok{background:var(--ok-soft);color:var(--ok)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+
+  .ctxbar .grow{flex:1}
+  .mode{display:flex;background:var(--surface-3);border-radius:9px;padding:3px;gap:2px}
+  .mode button{border:0;background:transparent;border-radius:7px;padding:5px 15px;font:inherit;font-size:12.5px;
+    color:var(--dim);cursor:pointer;font-weight:600}
+  .mode button.on{background:#fff;color:var(--text);box-shadow:0 1px 2px rgba(20,25,35,.08)}
+  .btn{height:32px;padding:0 13px;border:1px solid var(--border);background:var(--surface);border-radius:9px;
+    font-size:12.5px;color:var(--dim);cursor:pointer;font-weight:560}
+  .btn:hover{background:var(--surface-2);color:var(--text)}
+  .btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  /* 主体：左列表 + 右工作区 +（可选）右抽屉 */
+  .body{display:grid;grid-template-columns:296px 1fr;min-height:0;gap:1px;background:var(--border);position:relative;transition:grid-template-columns .16s}
+  .body.work{grid-template-columns:220px 1fr}
+  .body.drawer{grid-template-columns:296px 1fr 348px}
+  .body.work.drawer{grid-template-columns:220px 1fr 348px}
+  .col{background:var(--surface);min-height:0;display:grid;grid-template-rows:auto 1fr}
+
+  .shead{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:grid;gap:9px}
+  .search{height:34px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface-2);
+    display:flex;align-items:center;gap:8px;padding:0 11px;color:var(--faint);font-size:12.5px}
+  .views{display:flex;gap:4px;font-size:12px}
+  .views span{padding:3px 10px;border-radius:20px;color:var(--dim);cursor:pointer}
+  .views span.on{background:var(--accent-soft);color:var(--text);font-weight:650}
+  .srows{overflow:auto;min-height:0;padding:8px 10px 16px}
+  .row{padding:10px 11px;border-radius:var(--r);cursor:pointer;display:grid;gap:2px;border:1px solid transparent}
+  .row:hover{background:var(--surface-2)}
+  .row.on{background:var(--surface-3);border-color:#dfe4ea}
+  .row .t{font-weight:620;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .m{font-size:11.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .body.work .row .m{display:none}
+
+  /* 工作区 */
+  .work{background:var(--surface);display:grid;grid-template-rows:auto 1fr;min-height:0}
+  .tabs{display:flex;align-items:center;gap:3px;padding:9px 16px 0;border-bottom:1px solid var(--border)}
+  .tab{padding:8px 14px;border-radius:9px 9px 0 0;font-size:12.5px;color:var(--dim);cursor:pointer;
+    display:flex;gap:7px;align-items:center;white-space:nowrap}
+  .tab:hover{background:var(--surface-2)}
+  .tab.on{background:var(--surface);border:1px solid var(--border);border-bottom-color:#fff;margin-bottom:-1px;color:var(--text);font-weight:640}
+  .tab .x{color:var(--faint);font-size:11px}
+  .pane{overflow:auto;min-height:0}
+  .pane.read{padding:40px 0 60px}
+  .doc{max-width:72ch;margin:0 auto;padding:0 30px}
+  .doc h3{margin:0 0 6px;font-size:24px;font-weight:700;letter-spacing:-.022em;line-height:1.3}
+  .eyebrow{font-size:12.5px;color:var(--faint);display:flex;gap:11px;margin-bottom:32px}
+  .msg{margin-bottom:30px}
+  .who{font-size:12px;font-weight:700;color:var(--faint);margin-bottom:7px;display:flex;align-items:center;gap:8px}
+  .who .av{width:18px;height:18px;border-radius:6px;background:var(--surface-3);display:grid;place-items:center;font-size:9px;color:var(--dim)}
+  .body-t{white-space:pre-wrap;font-size:14.5px;color:#232931}
+  code{font:12.5px/1.5 Consolas,monospace;background:var(--surface-3);border-radius:5px;padding:1px 5px}
+  .rule{height:1px;background:var(--border);margin:30px 0}
+  .cue{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid #f0d9ac;background:#fffcf5;
+    color:var(--warn);border-radius:var(--r);padding:13px 15px;font-size:12.5px;margin-bottom:28px}
+  .cue button{height:29px;padding:0 12px;border:1px solid #e8d3a8;background:#fff;color:var(--warn);border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600}
+  .termwrap{padding:0;height:100%;display:grid;grid-template-rows:1fr;background:#0d1117}
+  .term{background:#0d1117;color:#c9d1d9;padding:20px 24px;font:13px/1.8 Consolas,monospace;white-space:pre-wrap;overflow:auto}
+  .term .p{color:#7ee787}.term .c{color:#79c0ff}.term .e{color:#ffa657}.term .d{color:#8b949e}
+
+  /* 抽屉 */
+  .drawer{background:var(--surface-2);display:grid;grid-template-rows:auto 1fr;min-height:0;border-left:1px solid var(--border)}
+  .dhead{padding:13px 16px 11px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
+  .dhead h4{margin:0;font-size:13.5px;font-weight:680;flex:1}
+  .dhead button{border:0;background:transparent;color:var(--faint);cursor:pointer;font-size:14px}
+  .dnav{display:flex;flex-wrap:wrap;gap:4px;padding:10px 14px;border-bottom:1px solid var(--border)}
+  .dnav button{border:1px solid transparent;background:transparent;border-radius:8px;padding:4px 10px;
+    font:inherit;font-size:12px;color:var(--dim);cursor:pointer}
+  .dnav button:hover{background:var(--surface-3)}
+  .dnav button.on{background:#fff;border-color:var(--border);color:var(--text);font-weight:650}
+  .dbody{overflow:auto;min-height:0;padding:16px}
+  .dbody h4{margin:0 0 3px;font-size:13.5px;font-weight:680}
+  .dbody .sub{font-size:11.5px;color:var(--faint);margin-bottom:14px}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:8px 12px;font-size:12.5px;padding:9px 0;border-bottom:1px solid var(--border)}
+  .kv span:first-child{color:var(--dim)}
+  .tick{font-weight:700}.tick.ok{color:var(--ok)}.tick.no{color:var(--danger)}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:16px}
+  .kpi div{border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;background:#fff}
+  .kpi b{display:block;font-size:17px;font-weight:700}.kpi span{font-size:11px;color:var(--faint)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--border)}
+  th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  .tag{font-size:11px;border-radius:20px;padding:1px 8px;font-weight:640}
+  .tag.ok{background:var(--ok-soft);color:var(--ok)}.tag.no{background:var(--danger-soft);color:var(--danger)}
+  .tag.w{background:var(--warn-soft);color:var(--warn)}
+  .field{display:grid;gap:5px;margin-bottom:14px}
+  .field label{font-size:12px;color:var(--dim);font-weight:600}
+  .field .in{height:33px;border:1px solid var(--border);border-radius:9px;display:flex;align-items:center;padding:0 11px;font-size:12.5px;background:#fff}
+  .field .in.mono{font-family:Consolas,monospace}
+  .note{margin-top:14px;border:1px solid #f0d9ac;background:#fffcf5;color:var(--warn);border-radius:var(--r);padding:10px 12px;font-size:11.5px;line-height:1.6}
+
+  .status{background:var(--surface);border-top:1px solid var(--border);color:var(--faint);display:flex;align-items:center;gap:16px;padding:0 16px;font-size:11.5px}
+  .status b{color:var(--dim);font-weight:600}
+  .status .grow{flex:1}
+  .status .dot{width:6px;height:6px;border-radius:50%;background:#16a34a;display:inline-block;margin-right:5px}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+  <div class="menubar">
+    <span class="logo">AI</span><span>文件</span><span>编辑</span><span>视图</span><span>帮助</span>
+    <span class="grow"></span><span class="k">⌘K 命令面板</span>
+  </div>
+
+  <div class="ctxbar">
+    <div class="where">
+      <b>Codex · WSL · Ubuntu-24.04</b>
+      <span class="sub">最近：重构会话列表的读取路径</span>
+      <span class="pill ok">找到 Codex 会话</span>
+      <span class="pill warn">Ubuntu-22.04 无法进入</span>
+    </div>
+    <span class="grow"></span>
+    <div class="mode">
+      <button class="on" data-m="read">浏览</button>
+      <button data-m="work">工作</button>
+    </div>
+    <button class="btn" id="drawerBtn">工具面板</button>
+  </div>
+
+  <div class="body" id="body">
+    <section class="col">
+      <div class="shead">
+        <div class="search">🔍 搜索会话…</div>
+        <div class="views"><span class="on">活跃 6</span><span>回收站</span><span>★</span></div>
+      </div>
+      <div class="srows" id="srows"></div>
+    </section>
+
+    <section class="work">
+      <div class="tabs" id="tabs"></div>
+      <div class="pane read" id="pane"></div>
+    </section>
+
+    <aside class="drawer" id="drawer" hidden>
+      <div class="dhead"><h4>工具面板</h4><button id="drawerClose">✕</button></div>
+      <div class="dnav" id="dnav"></div>
+      <div class="dbody" id="dbody"></div>
+    </aside>
+  </div>
+
+  <div class="status">
+    <span><span class="dot"></span>已连接</span><span>cwd <b>/home/akim/code/ai</b></span>
+    <span>供应商 <b>官方 · gpt-5-codex</b></span><span class="grow"></span>
+    <span>网关 <b>:51059</b></span><span>终端 <b>3</b></span><span>模式 <b id="modeLabel">浏览</b></span>
+  </div>
+
+<script>
+const sessions=[["重构会话列表的读取路径","14:32 · 42 条",1],["排查 WSL 冷启动","11:08 · 18 条"],
+  ["目标探测的四态文案","昨天 · 7 条"],["常驻 worker 的 stdin 契约","昨天 · 31 条"],
+  ["启动预热收窄","2 天前 · 12 条"],["运行期布局与旧工程切割","2 天前 · 9 条"]];
+document.getElementById('srows').innerHTML=sessions.map(s=>
+  `<div class="row${s[2]?' on':''}"><div class="t">${s[0]}</div><div class="m">${s[1]}</div></div>`).join('');
+
+const read=`<div class="doc"><h3>重构会话列表的读取路径</h3>
+  <div class="eyebrow"><span>codex</span><span>·</span><span>2026-09-26 14:32</span><span>·</span><span>42 条</span></div>
+  <div class="cue"><span>发行版 <b>Ubuntu-22.04</b> 无法进入：MountDisk/HCS/E_ACCESSDENIED</span>
+    <span><button>手动指定目录</button> <button>重新探测</button></span></div>
+  <div class="msg"><div class="who"><span class="av">你</span>你</div><div class="body-t">列出 WSL 里的会话要 30 秒，查一下根因。</div></div>
+  <div class="msg"><div class="who"><span class="av">C</span>Codex</div><div class="body-t">根因在 WSL 冷启动：Stopped 时首次 <code>5.27 s</code>，紧接着 <code>0.09 s</code>，空闲 20 秒后 <code>6.90 s</code>。旧实现每文件一次 head、6 路并发，6 个 wsl.exe 抢同一次冷启动。</div></div>
+  <div class="rule"></div>
+  <div class="msg"><div class="who"><span class="av">你</span>你</div><div class="body-t">改成一次批量读。</div></div>
+  <div class="msg"><div class="who"><span class="av">C</span>Codex</div><div class="body-t">30.5 s → 337 ms → 165 ms。</div></div></div>`;
+const work=`<div class="termwrap"><div class="term"><span class="d"># 内嵌终端 · 已接管 codex TUI · 12 分钟</span>
+<span class="p">akim@ubuntu</span>:<span class="c">~/code/ai</span>$ codex
+<span class="d">╭─ Codex ─────────────────────────────────╮</span>
+<span class="d">│</span> gpt-5-codex   ·   上下文 38%             <span class="d">│</span>
+<span class="d">╰─────────────────────────────────────────╯</span>
+> 把批量读取的脚本也改成走 worker
+<span class="e">⏺</span> 已新增 WorkerOp::ReadHeads，走管道往返…
+<span class="p">akim@ubuntu</span>:<span class="c">~/code/ai</span>$ <span class="d">▌</span>
+
+<span class="d">──────────────── 关注中心 ────────────────</span>
+<span class="e">⚠</span> 另有 1 个终端正在等待确认（切回该标签可继续）</div></div>`;
+
+const tabs={read:["重构会话列表的读取路径","排查 WSL 冷启动"],work:["终端 · codex","终端 · shell","重构会话列表的读取路径"]};
+function render(m){
+  document.getElementById('tabs').innerHTML=tabs[m].map((t,i)=>
+    `<div class="tab${i===0?' on':''}">${t}<span class="x">✕</span></div>`).join('');
+  const p=document.getElementById('pane');
+  p.innerHTML= m==='read'?read:work;
+  p.className='pane'+(m==='read'?' read':'');
+}
+render('read');
+
+document.querySelectorAll('.mode button').forEach(b=>b.onclick=()=>{
+  const m=b.dataset.m;
+  document.querySelectorAll('.mode button').forEach(x=>x.classList.toggle('on',x===b));
+  document.getElementById('body').classList.toggle('work',m==='work');
+  document.getElementById('modeLabel').textContent=m==='read'?'浏览':'工作';
+  render(m);
+});
+
+const D={
+  work:{l:"工作台",h:`<h4>当前会话</h4><div class="sub">重构会话列表的读取路径</div>
+    <div class="kpi"><div><b>38%</b><span>上下文</span></div><div><b>12.4k</b><span>token</span></div><div><b>5</b><span>模型</span></div></div>
+    <div class="kv"><span>供应商路由</span><b>官方 v2</b></div><div class="kv"><span>失败转移</span><b>3 条 · 0 触发</b></div>`},
+  diag:{l:"诊断",h:`<h4>目标诊断</h4><div class="sub">Codex · WSL · Ubuntu-24.04</div>
+    <div class="kv"><span>Codex 目录</span><b class="tick ok">✓ .codex</b></div>
+    <div class="kv"><span>会话目录</span><b class="tick ok">✓ 14 文件</b></div>
+    <div class="kv"><span>常驻 worker</span><b class="tick ok">✓ 已连接</b></div>
+    <div class="kv"><span>首次探测</span><b>2.89 s</b></div>
+    <div class="kv"><span>批量读 14 文件</span><b>165 ms</b></div>
+    <div class="note">Ubuntu-22.04 无法进入：MountDisk/HCS/E_ACCESSDENIED</div>`},
+  vendors:{l:"供应商",h:`<h4>官方 v2</h4><div class="sub">codex · 已启用</div>
+    <div class="field"><label>Base URL</label><div class="in mono">https://api.example.com/v1</div></div>
+    <div class="field"><label>API Key</label><div class="in mono">sk-••••3f7a</div></div>
+    <div class="kv"><span>写入前备份</span><b>vendor-backups/</b></div>`},
+  gateway:{l:"网关",h:`<h4>本地网关</h4><div class="sub">运行中 · :51059</div>
+    <div class="kpi"><div><b>8/8</b><span>成功</span></div><div><b>412ms</b><span>p95</span></div><div><b>0</b><span>熔断</span></div></div>
+    <table><tr><th>时间</th><th>状态</th></tr><tr><td>14:32:08</td><td><span class="tag ok">200</span></td></tr>
+    <tr><td>14:31:55</td><td><span class="tag w">超时→转移</span></td></tr></table>`},
+  skills:{l:"技能",h:`<h4>技能</h4><div class="sub">7 个 · 3 启用</div>
+    <table><tr><th>技能</th><th>状态</th></tr><tr><td>code-review</td><td><span class="tag ok">启用</span></td></tr>
+    <tr><td>api-design</td><td><span class="tag no">禁用</span></td></tr></table>`},
+  settings:{l:"设置",h:`<h4>设置</h4><div class="sub">运行根 D:\\code\\ai\\aivc-rs</div>
+    <div class="field"><label>WSL Codex 目录</label><div class="in mono">/home/akim/.codex</div></div>
+    <div class="field"><label>CLI 环境</label><div class="in">Node 24.9.0 · codex 已装</div></div>`}
+};
+const order=["work","diag","vendors","gateway","skills","settings"];
+document.getElementById('dnav').innerHTML=order.map((k,i)=>`<button class="${i===0?'on':''}" data-k="${k}">${D[k].l}</button>`).join('');
+document.getElementById('dbody').innerHTML=D.work.h;
+document.querySelectorAll('.dnav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.dnav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.getElementById('dbody').innerHTML=D[b.dataset.k].h;
+});
+document.getElementById('drawerBtn').onclick=()=>{
+  const d=document.getElementById('drawer'); d.hidden=!d.hidden;
+  document.getElementById('body').classList.toggle('drawer',!d.hidden);
+  document.getElementById('drawerBtn').classList.toggle('on',!d.hidden);
+};
+document.getElementById('drawerClose').onclick=()=>document.getElementById('drawerBtn').click();
+</script>
+</body>
+</html>

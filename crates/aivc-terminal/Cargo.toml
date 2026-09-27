@@ -1,0 +1,43 @@
+[package]
+name = "aivc-terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "终端运行时：portable-pty 会话、命令构造、状态检测器、供应商路由绑定"
+
+[features]
+# **默认开启 PTY 会话**。
+#
+# 曾经默认关闭，因为 PTY 测试会泄漏控制台宿主进程（每轮 20 个 conhost +
+# 3 个 OpenConsole）并把父作业对象卡死。泄漏已修复，见 `session.rs` 的
+# `Drop`/`kill`：`kill()` 之后必须 `wait()` 回收子进程。
+#
+# 现在默认开启，因此这 63 项测试进入常规门禁——它们验证的是「终端真的能跑」，
+# 而这恰恰是最需要持续验证的一件事。
+default = ["pty"]
+# PTY 会话（`session` 模块）。
+pty = ["dep:portable-pty"]
+
+[dependencies]
+aivc-core = { workspace = true }
+aivc-gateway = { workspace = true }
+aivc-infra = { workspace = true }
+tokio = { workspace = true }
+portable-pty = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+regex = { workspace = true }
+uuid = { workspace = true }
+which = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+proptest = { workspace = true }
+
+[lints]
+workspace = true

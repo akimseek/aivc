@@ -1,0 +1,80 @@
+{
+    "_comment":  "Codex 会话解析的对拍场景。Node 侧生成脚本与 Rust 侧差分测试读同一文件。content 是 rollout-*.jsonl 的内容，filePath 用于推导会话编号。只放列表模式（parseSessionListContent）能覆盖到的输入。",
+    "cases":  [
+                  {
+                      "name":  "标准会话：meta + 两条消息",
+                      "filePath":  "/home/u/.codex/sessions/2026/09/25/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"11111111-2222-3333-4444-555555555555\",\"cwd\":\"/work\",\"cli_version\":\"0.30.0\"}}\n{\"timestamp\":\"2026-09-25T10:00:01.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"第一个问题\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:02.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"第一个回答\"}]}}\n"
+                  },
+                  {
+                      "name":  "空内容",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  ""
+                  },
+                  {
+                      "name":  "只有空白行",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "\n\n   \n\t\n"
+                  },
+                  {
+                      "name":  "非法 JSON 行被跳过",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "not json at all\n{\"timestamp\":\"2026-09-25T10:00:01.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"唯一消息\"}]}}\n"
+                  },
+                  {
+                      "name":  "合成块（environment_context）被过滤",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"\u003cenvironment_context\u003e\\n  \u003ccwd\u003e/work\u003c/cwd\u003e\\n\u003c/environment_context\u003e\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:01.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"真实问题\"}]}}\n"
+                  },
+                  {
+                      "name":  "CRLF 换行",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"abc\"}}\r\n{\"timestamp\":\"2026-09-25T10:00:01.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"CRLF 消息\"}]}}\r\n"
+                  },
+                  {
+                      "name":  "未知类型与未知载荷被忽略",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"totally_unknown\",\"payload\":{\"x\":1}}\n{\"timestamp\":\"2026-09-25T10:00:01.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"reasoning\",\"text\":\"思考中\"}}\n"
+                  },
+                  {
+                      "name":  "token_count 用量被提取",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":120,\"output_tokens\":80,\"cached_input_tokens\":10,\"total_tokens\":200}}}}\n"
+                  },
+                  {
+                      "name":  "多行文本内容用换行拼接",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"第一段\"},{\"type\":\"output_text\",\"text\":\"第二段\"}]}}\n"
+                  },
+                  {
+                      "name":  "空文本块被跳过",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"   \"},{\"type\":\"output_text\",\"text\":\"有内容\"}]}}\n"
+                  },
+                  {
+                      "name":  "长标题被截断",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"这是一个非常长的标题xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx结束\"}]}}\n"
+                  },
+                  {
+                      "name":  "缺少时间戳",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                      "content":  "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"无时间戳\"}]}}\n"
+                  },
+                  {
+                      "name":  "文件名不匹配 rollout 模式",
+                      "filePath":  "/x/not-a-rollout.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"消息\"}]}}\n"
+                  },
+                  {
+                      "name":  "文件里有非 ASCII 路径（Windows 风格）",
+                      "filePath":  "C:\\\\Users\\\\akim\\\\.codex\\\\sessions\\\\rollout-2026-09-25T10-00-00-99999999-8888-7777-6666-555555555555.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"99999999-8888-7777-6666-555555555555\",\"cwd\":\"C:\\\\work\"}}\n"
+                  },
+                  {
+                      "name":  "十二条消息：预览被截断到 8 条",
+                      "filePath":  "/x/rollout-2026-09-25T10-00-00-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
+                      "content":  "{\"timestamp\":\"2026-09-25T10:00:01.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"第 1 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:02.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"第 2 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:03.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"第 3 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:04.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"第 4 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:05.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"第 5 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:06.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"第 6 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:07.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"第 7 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:08.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"第 8 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:09.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"第 9 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:10.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"第 10 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:11.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"第 11 条\"}]}}\n{\"timestamp\":\"2026-09-25T10:00:12.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"第 12 条\"}]}}\n"
+                  }
+              ]
+}

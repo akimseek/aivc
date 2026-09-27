@@ -1,0 +1,21 @@
+# 换行与文本判定。
+#
+# 不设这个文件时，Windows 上每次 `git add` 都会警告「LF will be replaced by CRLF」，
+# 而 CI 在 Windows 与 Linux 上都会跑 `cargo fmt --check` / `npx tsc`——
+# 两边换行不一致会制造无意义的差异。
+#
+# `text=auto` 让 Git 自己判断哪些是文本：入库统一成 LF，**检出时不动工作区**，
+# 因此不会让一堆文件突然显示为已修改。
+* text=auto
+
+# 二进制资源不要当文本处理（否则会被换行归一化毁掉）。
+*.png binary
+*.ico binary
+*.woff2 binary
+
+# **PowerShell 脚本不参与归一化。**
+#
+# 这几个脚本靠 UTF-8 BOM 让 PowerShell 正确按 UTF-8 读（没有 BOM 时它会按 ANSI 读，
+# 中文变乱码并报出与真实原因无关的解析错误——这个坑踩过两次）。
+# 它们应当保持逐字节原样，别让换行或编码被 Git 改。
+*.ps1 -text

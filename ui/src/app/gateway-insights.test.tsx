@@ -170,4 +170,18 @@ describe("GatewayInsights", () => {
     const usageCalls = runtime.calls.filter((name) => name === "gateway:get-usage-summary").length;
     expect(usageCalls).toBeGreaterThan(1);
   });
+
+  it("卸载之后解绑，不再订阅后端事件", async () => {
+    // 不解绑的话，组件没了还在往它上面写状态——而且每卸载重开一次就多一个订阅，
+    // 那些「幽灵订阅」会各自触发一次取数。
+    const runtime = fakeRuntime();
+    const { view } = await renderInsights(runtime);
+    expect(runtime.channels()).toContain("gateway:request-recorded");
+
+    view.unmount();
+
+    await waitFor(() => {
+      expect(runtime.channels()).not.toContain("gateway:request-recorded");
+    });
+  });
 });

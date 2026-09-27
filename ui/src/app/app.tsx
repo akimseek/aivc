@@ -85,6 +85,13 @@ export function App() {
   /** 「关于」是否打开，以及取回来的版本号（还没取到就是空串）。 */
   const [aboutOpen, setAboutOpen] = useState(false);
   const [appVersion, setAppVersion] = useState("");
+  /**
+   * 一句话的操作结果提示。
+   *
+   * 菜单里的动作（清理日志）没有自己的界面，做完必须说一声——**静默完成与没执行
+   * 在用户看来是一样的**。
+   */
+  const [notice, setNotice] = useState("");
   const [configTab, setConfigTab] = useState<"vendors" | "skills" | "gateway" | "environment" | "diagnostics">("vendors");
   const [paletteOpen, setPaletteOpen] = useState(false);
   /**
@@ -421,6 +428,18 @@ export function App() {
                   .then(setAppVersion)
                   .catch(() => setAppVersion("无法读取"));
               },
+              // 打开日志目录：后端按运行根算出 `log_dir()` 并在文件管理器里打开它
+              // （`app:command` 的 `openLogDir`，见 `tauri_app.rs`）。界面不需要知道路径。
+              openLogDirectory: () => void api.appCommand("openLogDir"),
+              // 清理 Gateway 日志：做完要说一声，否则「静默完成」与「没执行」看起来一样。
+              clearGatewayLogs: () => {
+                void api
+                  .clearGatewayLogs()
+                  .then((removed) => setNotice(`已清理 ${removed} 条 Gateway 日志。`))
+                  .catch((error: unknown) =>
+                    console.setError(error instanceof Error ? error.message : String(error))
+                  );
+              },
               // 退出走浏览器窗口关闭，与标题栏的关闭同一条路，避免两套退出语义。
               quit: () => window.close()
               // 暂不接的：`openSessionSettings`（M5 未实现）、`showAbout`（M6 未实现）、
@@ -465,6 +484,16 @@ export function App() {
       )}
 
       {aboutOpen && <AboutDialog version={appVersion} onClose={() => setAboutOpen(false)} />}
+
+      {/* 菜单动作的一句话结果。与「已导出到…」同一形状：都要能被看见、也都能收掉。 */}
+      {notice && (
+        <div className="export-hint" role="status">
+          {notice}
+          <Button small onClick={() => setNotice("")}>
+            知道了
+          </Button>
+        </div>
+      )}
 
       {/*
         「设置会话」：手动指定 WSL 里的 Codex 会话目录。自动探测受发行版、用户、

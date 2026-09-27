@@ -327,7 +327,13 @@ export function useTerminals() {
   }, []);
 
   const openTerminal = useCallback(
-    (target: AiTarget | null, cwd?: string, cliArgs?: string, prompt?: string): Promise<string> =>
+    (
+      target: AiTarget | null,
+      cwd?: string,
+      cliArgs?: string,
+      prompt?: string,
+      sessionId?: string
+    ): Promise<string> =>
       open({
         title: target ? `终端 · ${target.label}` : "终端",
         kind: "codex",
@@ -341,6 +347,12 @@ export function useTerminals() {
             // 网关上游地址。此前不传，WSL 目标会被静默当成本机目标。
             ...(target?.id ? { targetId: target.id } : {}),
             ...(cwd ? { cwd } : {}),
+            // **恢复一次历史会话。** 后端把它变成 `--resume <id>`
+            // （`aivc-terminal/src/command.rs` 的 `resume_args`）。
+            //
+            // 旧平台有一句要紧的注释：「Qoder 按项目目录定位 `--resume` 的历史文件，
+            // **恢复时必须保留原始工作目录**」——所以恢复时 `cwd` 不能省。
+            ...(sessionId ? { sessionId } : {}),
             // 额外的 CLI 参数。旧平台由 `parseCliArgs(params.cliArgs)` 追加到命令行上，
             // 后端这边 (`aivc-ipc/src/terminal.rs`) 已经收 `cliArgs`，这里只是把它递下去。
             ...(cliArgs?.trim() ? { cliArgs: cliArgs.trim() } : {}),

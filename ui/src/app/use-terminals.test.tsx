@@ -407,6 +407,48 @@ describe("useTerminals 的事件装配", () => {
     expect(payload.cliArgs).toBeUndefined();
   });
 
+  it("恢复历史会话时把 sessionId 递给 terminal:start", async () => {
+    // 后端把它变成 `--resume <id>`（`command.rs` 的 `resume_args`）。
+    // 旧平台有一句要紧的注释：Qoder 按**项目目录**定位 `--resume` 的历史文件，
+    // 所以恢复时 cwd 也必须在——这里一并断言。
+    const view = await render(() => useTerminals());
+
+    await act(async () => {
+      await view.result.current.openTerminal(
+        null,
+        "D:\\work",
+        undefined,
+        undefined,
+        "sess-123"
+      );
+    });
+
+    const start = runtime
+      .invocations()
+      .find(
+        (item) => (item.args as { command?: string } | undefined)?.command === "terminal:start"
+      );
+    const payload = (start!.args as { args?: Record<string, string> }).args ?? {};
+    expect(payload.sessionId).toBe("sess-123");
+    expect(payload.cwd).toBe("D:\\work");
+  });
+
+  it("不恢复时不传 sessionId", async () => {
+    // 传了会让 CLI 去找一个不存在的会话——那是新建会话时的灾难。
+    const view = await render(() => useTerminals());
+    await act(async () => {
+      await view.result.current.openTerminal(null, "D:\\work");
+    });
+
+    const start = runtime
+      .invocations()
+      .find(
+        (item) => (item.args as { command?: string } | undefined)?.command === "terminal:start"
+      );
+    const payload = (start!.args as { args?: Record<string, string> }).args ?? {};
+    expect(payload.sessionId).toBeUndefined();
+  });
+
   it("启动提示词要等**第一段输出**之后才发，不能早发", async () => {
     // ConPTY 必须等 CLI 回完 DSR（`\x1b[6n` → `\x1b[1;1R`）会话才开始推进。
     // 在 `terminal:start` 刚返回时就写，会赶在 CLI 准备好读输入之前——

@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 import { AppMenuBar } from "./app-menu-bar";
 import { createAppMenus } from "./app-menus";
 import { NewSessionDialog } from "./new-session-dialog";
+import { planResume } from "./resume-session";
 
 import {
   Button,
@@ -82,6 +83,14 @@ export function App() {
     title: string;
     prompt: string;
     cliArgs: string;
+    /**
+     * 非空表示这是**恢复**历史会话（`sessionId` 会被变成 `--resume <id>`）。
+     *
+     * `missingCwd` 只在**确认**原工作目录已不在时才有值——那时对话框切成
+     * `设置工作目录` / `继续打开` 形态。判断不出来（例如 WSL 目标上那条检查没接线）
+     * 就保持 `undefined`：**不知道不等于丢了**。
+     */
+    resume?: { sessionId: string; missingCwd?: string };
   } | null>(null);
   /** 右键菜单的位置与目标会话。`null` 表示没打开。 */
   const [menu, setMenu] = useState<{ x: number; y: number; session: AiSession } | null>(null);
@@ -126,13 +135,14 @@ export function App() {
    * 不传时沿用「当前选中会话的目录」，也就是旧行为。
    */
   const openTerminal = useCallback(
-    async (options?: { cwd?: string; cliArgs?: string; prompt?: string }) => {
+    async (options?: { cwd?: string; cliArgs?: string; prompt?: string; sessionId?: string }) => {
       try {
         const id = await terminals.openTerminal(
           selectedTarget,
           options?.cwd ?? console.selectedSession?.cwd,
           options?.cliArgs,
-          options?.prompt
+          options?.prompt,
+          options?.sessionId
         );
         setTabs((current) => [
           ...current,
@@ -161,6 +171,42 @@ export function App() {
       cliArgs: ""
     });
   }, [console.selectedSession?.cwd]);
+
+  /**
+   * 点历史会话：**恢复那次会话并进入终端**（旧平台 `openResumeWithDirectory`）。
+   *
+   * 三条分支，与旧平台一致：
+   *
+   * | 情况 | 行为 |
+   * | --- | --- |
+   * | 原工作目录还在 | **直接进终端**（带 `--resume`），不弹对话框 |
+   * | 原目录已不在 | 弹 `设置工作目录` 形态，按钮是 `继续打开` |
+   * | 判断不出来（如 WSL 上那条检查未接线） | 按「还在」处理——**不知道不等于丢了** |
+   *
+   * 为什么恢复必须带 `cwd`：旧平台有一句要紧的注释——「Qoder 按**项目目录**定位
+   * `--resume` 的历史文件，恢复时必须保留原始工作目录」。
+   */
+  const beginResumeSession = useCallback(
+    async (target: AiTarget, session: AiSession) => {
+      // 先把选中态切过去（列表高亮、标签），与从前一致。
+      console.openAt(target, session);
+      const cwd = session.cwd ?? "";
+      // 决策本身在 `resume-session.ts` 里，**有四条分支**且逐条有测试。
+      const plan = await planResume(cwd || undefined, (path) => api.pathExists(path));
+      if (plan.kind === "dialog") {
+        setNewSession({
+          cwd: plan.cwd,
+          title: session.title ?? "",
+          prompt: "",
+          cliArgs: "",
+          resume: { sessionId: session.id, missingCwd: plan.missingCwd }
+        });
+        return;
+      }
+      void openTerminal({ cwd: plan.cwd, sessionId: session.id });
+    },
+    [console, openTerminal]
+  );
 
   const openSystemTerminal = useCallback(async () => {
     try {
@@ -373,7 +419,9 @@ export function App() {
       */}
       {newSession && (
         <NewSessionDialog
-          pendingResume={null}
+          pendingResume={
+            newSession.resume?.missingCwd ? { missingCwd: newSession.resume.missingCwd } : null
+          }
           supportsCustomCwd
           cwd={newSession.cwd}
           title={newSession.title}
@@ -402,7 +450,9 @@ export function App() {
             void openTerminal({
               cwd: draft.cwd || undefined,
               cliArgs: draft.cliArgs,
-              prompt: draft.prompt
+              prompt: draft.prompt,
+              // 恢复形态：把会话编号递下去，后端会变成 `--resume <id>`。
+              sessionId: draft.resume?.sessionId
             });
           }}
         />
@@ -681,13 +731,13 @@ export function App() {
                   title="收藏"
                   items={console.quickAccess.favorites}
                   empty="还没有收藏。在会话行上点 ☆ 收藏它。"
-                  onOpen={console.openAt}
+                  onOpen={beginResumeSession}
                 />
                 <QuickGroup
                   title="最近打开"
                   items={console.quickAccess.recent}
                   empty="还没有打开过会话。"
-                  onOpen={console.openAt}
+                  onOpen={beginResumeSession}
                 />
               </>
             )}
@@ -697,7 +747,7 @@ export function App() {
                 <div
                   key={`${result.target.id}:${result.session.id}`}
                   className="row"
-                  onClick={() => console.openAt(result.target, result.session)}
+                  onClick={() => void beginResumeSession(result.target, result.session)}
                   title={displayTitle(result.session)}
                 >
                   <div className="row-line">

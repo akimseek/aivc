@@ -498,6 +498,18 @@ export const CHANNEL_GATEWAY_REQUEST_RECORDED = "gateway:request-recorded";
 export const resetVendorHealth = (vendorId?: string) =>
   invoke<number>("gateway:reset-vendor-health", vendorId ? { vendorId } : {});
 
+/**
+ * 路径是否存在。
+ *
+ * 用途：恢复历史会话前确认**原工作目录还在不在** —— 不在时要先让用户重设目录
+ * （旧平台的 `设置工作目录` / `继续打开` 形态）。
+ *
+ * **WSL 目标上这个检查尚未接线**：后端会显式报错而不是悄悄按本机路径判断
+ * （见 `crates/aivc-ipc/src/shell.rs` 的模块注释）。因此调用方**必须**把报错
+ * 当成「不知道」，而不是「不存在」——否则会把 WSL 里好好的目录判成丢了。
+ */
+export const pathExists = (path: string) => invoke<boolean>("shell:path-exists", { path });
+
 
 /**
  * 启动一路终端。

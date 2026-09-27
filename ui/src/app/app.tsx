@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
+import { AboutDialog } from "./about-dialog";
 import { AppMenuBar } from "./app-menu-bar";
 import { AttentionCenter } from "./attention-center";
 import { BranchPanel } from "./branch-panel";
@@ -81,6 +82,9 @@ export function App() {
   const [sessionSettings, setSessionSettings] = useState<{ distro: string; path: string } | null>(
     null
   );
+  /** 「关于」是否打开，以及取回来的版本号（还没取到就是空串）。 */
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
   const [configTab, setConfigTab] = useState<"vendors" | "skills" | "gateway" | "environment" | "diagnostics">("vendors");
   const [paletteOpen, setPaletteOpen] = useState(false);
   /**
@@ -409,6 +413,14 @@ export function App() {
               },
               exportSession: (format) => runExport(format),
               openSystemTerminal: () => void openSystemTerminal(),
+              // M6「关于」：先把版本取回来再打开（或读取失败时显示「无法读取」）。
+              showAbout: () => {
+                setAboutOpen(true);
+                void api
+                  .getAppVersion()
+                  .then(setAppVersion)
+                  .catch(() => setAppVersion("无法读取"));
+              },
               // 退出走浏览器窗口关闭，与标题栏的关闭同一条路，避免两套退出语义。
               quit: () => window.close()
               // 暂不接的：`openSessionSettings`（M5 未实现）、`showAbout`（M6 未实现）、
@@ -451,6 +463,8 @@ export function App() {
       {paletteOpen && (
         <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />
       )}
+
+      {aboutOpen && <AboutDialog version={appVersion} onClose={() => setAboutOpen(false)} />}
 
       {/*
         「设置会话」：手动指定 WSL 里的 Codex 会话目录。自动探测受发行版、用户、

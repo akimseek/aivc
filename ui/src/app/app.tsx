@@ -1,5 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
+import { AppMenuBar } from "./app-menu-bar";
+import { createAppMenus } from "./app-menus";
+
 import {
   Button,
   ChipGroup,
@@ -257,6 +260,53 @@ export function App() {
       */}
       <div className="menubar">
         <span className="brand">AI 控制台</span>
+        {/*
+          分组菜单。此前这里只有「配置」与命令面板两个按钮——上面那段注释说明了
+          「文件 / 帮助」曾经是**没有 onClick 的死按钮**，因此被移除；那个判断是对的。
+
+          现在补上真正的分组菜单（结构在 `app-menus.ts`，数据与渲染分开、可单测）。
+          **动作缺失的项一律显示为禁用**（见 `disabledWhenMissing`）：
+          面还没实现的会显示成「这里有个东西、现在还不能用」，而不是点了没反应的死按钮。
+        */}
+        <AppMenuBar
+          menus={createAppMenus(
+            {
+              supportsSkills: Boolean(selectedTarget),
+              // 「设置会话」只对 WSL 目标可用。当前一律按「不是 WSL」处理：
+              // 那个面（M5）还没实现，且 `openSessionSettings` 也没接，
+              // 这一项无论如何都是禁用的。**不猜 `AiTarget` 上的字段名** ——
+              // 等做 M5 时再按真实字段判定。
+              isWslTarget: false,
+              hasActiveSession: tabs.some((tab) => tab.kind === "session")
+            },
+            {
+              openCommandPalette: () => setPaletteOpen(true),
+              manageSkills: () => {
+                setConfigTab("skills");
+                setConfigOpen(true);
+              },
+              openGatewaySettings: () => {
+                setConfigTab("gateway");
+                setConfigOpen(true);
+              },
+              manageVendors: () => {
+                setConfigTab("vendors");
+                setConfigOpen(true);
+              },
+              installCli: () => {
+                setConfigTab("environment");
+                setConfigOpen(true);
+              },
+              exportSession: (format) => runExport(format),
+              openSystemTerminal: () => void openSystemTerminal(),
+              // 退出走浏览器窗口关闭，与标题栏的关闭同一条路，避免两套退出语义。
+              quit: () => window.close()
+              // 暂不接的：`openSessionSettings`（M5 未实现）、`showAbout`（M6 未实现）、
+              // `openLogDirectory`、`clearGatewayLogs`（需要先确认日志目录与清空动作的
+              // 现有入口在哪）。它们会以**禁用**呈现，而不是死按钮。
+            }
+          )}
+        />
         <button type="button" onClick={() => setConfigOpen(true)}>
           配置
         </button>

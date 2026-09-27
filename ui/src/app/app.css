@@ -112,6 +112,96 @@ select {
   font-size: var(--ui-text-sm);
 }
 
+/* ── 分组菜单（AppMenuBar） ──────────────────────────────
+   菜单栏本身的样式在上面（`.menubar`）。这里只是它的下拉部分。
+   下拉必须是**绝对定位**并盖在下面内容之上，否则展开时会把布局顶开。 */
+
+.app-menu-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.app-menu {
+  position: relative;
+}
+
+.app-menu-trigger.active {
+  background: var(--ui-surface-subtle);
+  color: var(--ui-text);
+}
+
+.menu-dropdown,
+.menu-submenu {
+  position: absolute;
+  z-index: 40;
+  min-width: 190px;
+  padding: var(--ui-space-1);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-md, 0 8px 24px rgb(0 0 0 / 28%));
+}
+
+.menu-dropdown {
+  top: calc(100% + 4px);
+  left: 0;
+}
+
+/* 子菜单开在父项右侧。 */
+.menu-submenu {
+  top: calc(-1 * var(--ui-space-1));
+  left: calc(100% - 2px);
+}
+
+.menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-4);
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  padding: 6px 10px;
+  color: var(--ui-text);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--ui-surface-subtle);
+}
+
+/* **禁用必须看得出来。**
+   这个应用里死按钮（点了没反应）是踩过的坑，因此面未实现的项一律走禁用态，
+   样式上要明确表达「现在不能用」，而不是让它看起来可点。 */
+.menu-item:disabled {
+  color: var(--ui-faint);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.menu-item.danger {
+  color: var(--ui-danger, #e5534b);
+}
+
+.menu-item-wrap {
+  position: relative;
+}
+
+.menu-shortcut {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-sm);
+}
+
+.menu-separator {
+  height: 1px;
+  margin: var(--ui-space-1) 6px;
+  background: var(--ui-border);
+}
+
 .main {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);

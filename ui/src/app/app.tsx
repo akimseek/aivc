@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 
 import { AppMenuBar } from "./app-menu-bar";
 import { createAppMenus } from "./app-menus";
+import { NewSessionDialog } from "./new-session-dialog";
 
 import {
   Button,
@@ -70,6 +71,18 @@ export function App() {
   const [configOpen, setConfigOpen] = useState(false);
   const [configTab, setConfigTab] = useState<"vendors" | "skills" | "gateway" | "environment" | "diagnostics">("vendors");
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /**
+   * 新会话对话框的内容；`null` 表示没打开。
+   *
+   * 四个字段都是**受控**的：对话框自己不保存，确认时才把工作目录与 CLI 参数
+   * 交给 `openTerminal`（旧平台也是这个形状）。
+   */
+  const [newSession, setNewSession] = useState<{
+    cwd: string;
+    title: string;
+    prompt: string;
+    cliArgs: string;
+  } | null>(null);
   /** 右键菜单的位置与目标会话。`null` 表示没打开。 */
   const [menu, setMenu] = useState<{ x: number; y: number; session: AiSession } | null>(null);
 
@@ -106,18 +119,47 @@ export function App() {
     setActiveKey(console.selectedSession.id);
   }, [console.selectedSession]);
 
-  const openTerminal = useCallback(async () => {
-    try {
-      const id = await terminals.openTerminal(selectedTarget, console.selectedSession?.cwd);
-      setTabs((current) => [
-        ...current,
-        { key: id, kind: "terminal", title: "终端", terminalId: id }
-      ]);
-      setActiveKey(id);
-    } catch (error) {
-      console.setError(error instanceof Error ? error.message : String(error));
-    }
-  }, [terminals, selectedTarget, console]);
+  /**
+   * 起一路 Codex 终端。
+   *
+   * `options` 是新会话对话框确认后传来的：**工作目录与 CLI 参数**。
+   * 不传时沿用「当前选中会话的目录」，也就是旧行为。
+   */
+  const openTerminal = useCallback(
+    async (options?: { cwd?: string; cliArgs?: string }) => {
+      try {
+        const id = await terminals.openTerminal(
+          selectedTarget,
+          options?.cwd ?? console.selectedSession?.cwd,
+          options?.cliArgs
+        );
+        setTabs((current) => [
+          ...current,
+          { key: id, kind: "terminal", title: "终端", terminalId: id }
+        ]);
+        setActiveKey(id);
+      } catch (error) {
+        console.setError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [terminals, selectedTarget, console]
+  );
+
+  /**
+   * 打开「新会话」对话框。
+   *
+   * 旧平台的流程是**先在这个对话框里定下工作目录、会话标题、启动提示词与 CLI 参数，
+   * 再打开**（`app.tsx:407` 的 `onCreate`）。此前这里是「点一下直接进终端」——
+   * 用户报的 H2 说的就是这件事：「**默认不选择平台、目标**，选中后直接进入终端会话」。
+   */
+  const beginNewSession = useCallback(() => {
+    setNewSession({
+      cwd: console.selectedSession?.cwd ?? "",
+      title: "",
+      prompt: "",
+      cliArgs: ""
+    });
+  }, [console.selectedSession?.cwd]);
 
   const openSystemTerminal = useCallback(async () => {
     try {
@@ -233,7 +275,7 @@ export function App() {
       { id: "pane.search", group: "视图", label: "显示全局搜索", run: () => console.setPane("search") },
       { id: "view.active", group: "视图", label: "切换到活跃会话", run: () => { console.setPane("sessions"); console.setView("active"); } },
       { id: "view.trash", group: "视图", label: "切换到回收站", run: () => { console.setPane("sessions"); console.setView("trash"); } },
-      { id: "term.codex", group: "终端", label: "新建 Codex 终端", run: () => void openTerminal() },
+      { id: "term.codex", group: "终端", label: "新建 Codex 终端", run: beginNewSession },
       { id: "term.shell", group: "终端", label: "新建系统终端", run: () => void openSystemTerminal() },
       { id: "targets.reload", group: "动作", label: "重新探测目标", run: () => void console.reloadTargets() },
       { id: "sessions.reload", group: "动作", label: "刷新会话列表", run: () => void console.reloadSessions() },
@@ -318,6 +360,47 @@ export function App() {
 
       {paletteOpen && (
         <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />
+      )}
+
+      {/*
+        新会话对话框。旧平台的流程是**先定工作目录 / 标题 / 启动提示词 / CLI 参数，再打开**
+        （`app.tsx:407` 的 `onCreate`）。此前这里是「点一下直接进终端」——
+        用户报的 H2 说的就是这件事。
+
+        `prompt`（启动提示词）暂时**不接**：它是渲染层的事，必须等会话可交互再写进 PTY，
+        否则 ConPTY 还没准备好读输入时会丢字。那是单独一件事，见 docs/rust-rewrite/33 §5.5.1。
+      */}
+      {newSession && (
+        <NewSessionDialog
+          pendingResume={null}
+          supportsCustomCwd
+          cwd={newSession.cwd}
+          title={newSession.title}
+          prompt={newSession.prompt}
+          cliArgs={newSession.cliArgs}
+          onChooseDirectory={() =>
+            void api.chooseDirectory().then((picked: string | null) => {
+              if (picked) {
+                setNewSession((current) => (current ? { ...current, cwd: picked } : current));
+              }
+            })
+          }
+          onTitleChange={(value) =>
+            setNewSession((current) => (current ? { ...current, title: value } : current))
+          }
+          onPromptChange={(value) =>
+            setNewSession((current) => (current ? { ...current, prompt: value } : current))
+          }
+          onCliArgsChange={(value) =>
+            setNewSession((current) => (current ? { ...current, cliArgs: value } : current))
+          }
+          onClose={() => setNewSession(null)}
+          onConfirm={() => {
+            const draft = newSession;
+            setNewSession(null);
+            void openTerminal({ cwd: draft.cwd || undefined, cliArgs: draft.cliArgs });
+          }}
+        />
       )}
 
       {/* 右键菜单：铺一层透明背景接管「点别处关闭」。
@@ -665,7 +748,7 @@ export function App() {
                 <Button
                   small
                   disabled={!selectedTarget}
-                  onClick={() => void openTerminal()}
+                  onClick={beginNewSession}
                   title="在目标里启动 Codex"
                 >
                   + Codex
@@ -735,7 +818,7 @@ export function App() {
                 message="没有打开的会话。"
                 hint="从左侧选择一个会话，或新建一个终端。"
                 action={
-                  <Button disabled={!selectedTarget} onClick={() => void openTerminal()}>
+                  <Button disabled={!selectedTarget} onClick={beginNewSession}>
                     新建终端
                   </Button>
                 }

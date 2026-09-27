@@ -1198,3 +1198,65 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.branch-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  margin-bottom: var(--ui-space-3);
+  padding: var(--ui-space-2) var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm, 6px);
+  background: var(--ui-surface-subtle);
+  font-size: var(--ui-text-sm);
+}
+
+.branch-panel header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-2);
+}
+
+.branch-panel header h3 {
+  margin: 0;
+  font-size: var(--ui-text-sm);
+  font-weight: 700;
+  color: var(--ui-muted);
+}
+
+.branch-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+}
+
+.branch-label {
+  color: var(--ui-faint);
+  min-width: 3.5em;
+}
+
+.branch-children div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  margin-top: var(--ui-space-1);
+}
+
+.branch-children button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  padding: 2px 6px;
+  color: var(--ui-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.branch-children button:hover {
+  background: var(--ui-surface);
+}

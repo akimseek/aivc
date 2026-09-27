@@ -510,6 +510,18 @@ export const resetVendorHealth = (vendorId?: string) =>
  */
 export const pathExists = (path: string) => invoke<boolean>("shell:path-exists", { path });
 
+/**
+ * 列出某个会话的**子分支**。
+ *
+ * 后端一直有这个命令（`codex:list-session-children`），只是界面此前没有入口——
+ * 「分支关系」面板要靠它。
+ */
+export const listSessionChildren = (parentSessionId: string, targetId?: string) =>
+  invoke<AiSession[]>("codex:list-session-children", {
+    parentSessionId,
+    ...(targetId ? { targetId } : {})
+  });
+
 
 /**
  * 启动一路终端。

@@ -83,12 +83,31 @@ export type SessionUsage = {
   source: string;
 };
 
+/**
+ * 分支来源。
+ *
+ * 与后端的 `aivc-core/src/session.rs` 的 `BranchMetadata` 一一对应。
+ * 「从此处分支」的锚点是**一条消息**：既记可见序号，也记**原始 JSONL 行号**——
+ * 后端要靠行号定位到原始记录，拿可见序号去截会截错位置。
+ */
+export type BranchMetadata = {
+  parentTargetId?: string;
+  parentSessionId?: string;
+  /** 父会话中选中的可见消息序号（历史字段，保留以兼容既有数据）。 */
+  parentMessageIndex?: number;
+  /** 父会话中选中的原始 JSONL 行号。 */
+  parentMessageLine?: number;
+};
+
 /** 用户级会话元数据。 */
-export type SessionMetadata = {  updatedAt?: string;
+export type SessionMetadata = {
+  updatedAt?: string;
   customTitle?: string;
   /** 是否收藏。 */
   favorite?: boolean;
   lastOpenedAt?: string;
+  /** 这个会话是「从某条消息分支出来」的时候才有。 */
+  branch?: BranchMetadata;
 };
 
 /** 会话摘要或详情（`codex:list-sessions` / `codex:get-session`）。 */

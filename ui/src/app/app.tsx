@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AppMenuBar } from "./app-menu-bar";
+import { BranchPanel } from "./branch-panel";
 import { createAppMenus } from "./app-menus";
 import { NewSessionDialog } from "./new-session-dialog";
 import { planResume } from "./resume-session";
@@ -961,6 +962,27 @@ export function App() {
                       打开
                     </Button>
                   </div>
+                )}
+
+                {/* 分支关系。放在正文**上方**、会话头下方：
+                    它讲的是「这条会话从哪来、分出去了哪些」，属于这条会话的元信息，
+                    而不是正文的一部分。没有分支时它自己整块不渲染。 */}
+                {console.selectedSession && (
+                  <BranchPanel
+                    session={console.selectedSession}
+                    resolveParent={(sessionId) =>
+                      console.sessions.find((item) => item.id === sessionId)
+                    }
+                    listChildren={(parentSessionId) =>
+                      api.listSessionChildren(parentSessionId, selectedTarget?.id)
+                    }
+                    onOpen={(session) => {
+                      const target =
+                        console.targets.find((item) => item.id === session.metadata?.branch?.parentTargetId) ??
+                        selectedTarget;
+                      if (target) void beginResumeSession(target, session);
+                    }}
+                  />
                 )}
 
                 <div className="thread">

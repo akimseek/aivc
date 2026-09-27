@@ -1,0 +1,118 @@
+name: CI
+
+# 这是**独立仓库**，仓库根就是 Rust 工程，因此不再有 `aivc-rs/` 前缀、
+# 也不需要 `working-directory`。
+#
+# 旧平台仓库里那份 `.github/workflows/aivc-rs-ci.yml` 是为「本工程是它的子目录」
+# 写的，本仓库独立之后那个假设不再成立——那份留在原处不动，但**它覆盖不到这里**。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # 三平台都跑：本工程的多数坑恰恰在**平台差异**上
+        # （本机 Windows 的 cmd 引号、WSL 的 cwd 转换、PATH 查找）。
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # rust-toolchain.toml 已声明组件，这里显式重复以便 CI 在缺少该文件时也能工作。
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # 注意：不要改成 `scripts/verify.ps1`。那个脚本把 CARGO_HOME / RUSTUP_HOME
+      # 重定向到工作区内隔离的工具链（`.toolchain/`），CI 里没有那个目录。
+      - name: 格式检查
+        run: cargo fmt --all --check
+
+      - name: 依赖分层校验
+        # 校验 crate 依赖方向与领域层依赖白名单；cargo-deny 无法表达这类反向约束。
+        run: cargo run --package xtask -- check-layers
+
+      - name: 编译检查
+        run: cargo check --workspace --all-targets
+
+      - name: Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: 测试
+        run: cargo test --workspace
+
+      - name: 工作区脚本的编码
+        # 这几个脚本里有中文，而 Windows 上的 PowerShell 在没有 BOM 时会按 ANSI 读，
+        # 于是中文变乱码、脚本报出与真实原因无关的解析错误。这条检查防止它被再次引入。
+        # 只在 Windows 上跑：BOM 是 PowerShell 的问题。
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bad = @()
+          Get-ChildItem scripts -Filter *.ps1 | ForEach-Object {
+            $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+              $bad += $_.Name
+            }
+          }
+          if ($bad.Count -gt 0) {
+            Write-Error "以下脚本缺少 UTF-8 BOM：$($bad -join ', ')"
+          }
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ui
+        run: npm ci
+
+      - name: 类型检查
+        working-directory: ui
+        run: npx tsc --noEmit
+
+      - name: 测试
+        working-directory: ui
+        run: npx vitest run
+
+      - name: 构建
+        working-directory: ui
+        run: npx vite build
+
+  deny:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: Cargo.toml
+          # 许可证白名单、禁止 openssl-sys、重复版本告警、未知源拦截。
+          arguments: --config deny.toml
+          command: check advisories bans licenses sources

@@ -7,6 +7,7 @@ import { BranchPanel } from "./branch-panel";
 import { createAppMenus } from "./app-menus";
 import { NewSessionDialog } from "./new-session-dialog";
 import { SessionSettingsDialog } from "./session-settings-dialog";
+import { activateSessionTab } from "./workspace-tabs";
 import { planResume } from "./resume-session";
 
 import {
@@ -132,22 +133,21 @@ export function App() {
   /* 选中的会话自动成为当前标签。
    *
    * 由 `selectedId` 驱动而不是在每个点击处手写一次：列表里点击、搜索后跳转、
-   * 批量操作后刷新——每条路径都会改 `selectedId`，只在一处响应才不会漏。 */
+   * 批量操作后刷新——每条路径都会改 `selectedId`，只在一处响应才不会漏。
+   *
+   * **规则本身在 `workspace-tabs.ts` 里**（可单测）：如果一个标签已经挂着这条会话
+   * ——**哪怕它是终端标签**——就切过去而不是再建一个。少了这条，点历史会话会同时
+   * 冒出一个会话标签和一个终端标签。 */
   useEffect(() => {
-    if (!console.selectedSession) return;
+    const session = console.selectedSession;
+    if (!session) return;
+    let activated = session.id;
     setTabs((current) => {
-      if (current.some((tab) => tab.key === console.selectedSession!.id)) return current;
-      return [
-        ...current,
-        {
-          key: console.selectedSession!.id,
-          kind: "session",
-          title: displayTitle(console.selectedSession!),
-          sessionId: console.selectedSession!.id
-        }
-      ];
+      const result = activateSessionTab(current, { id: session.id, title: displayTitle(session) });
+      activated = result.activeKey;
+      return result.tabs;
     });
-    setActiveKey(console.selectedSession.id);
+    setActiveKey(activated);
   }, [console.selectedSession]);
 
   /**
@@ -157,7 +157,7 @@ export function App() {
    * 不传时沿用「当前选中会话的目录」，也就是旧行为。
    */
   const openTerminal = useCallback(
-    async (options?: { cwd?: string; cliArgs?: string; prompt?: string; sessionId?: string }) => {
+    async (options?: { cwd?: string; cliArgs?: string; prompt?: string; sessionId?: string; title?: string }) => {
       try {
         const id = await terminals.openTerminal(
           selectedTarget,
@@ -168,7 +168,15 @@ export function App() {
         );
         setTabs((current) => [
           ...current,
-          { key: id, kind: "terminal", title: "终端", terminalId: id }
+          {
+            key: id,
+            kind: "terminal",
+            title: options?.title ?? "终端",
+            terminalId: id,
+            // **这条终端属于哪条会话。** 有它，标签才能既当终端又当那个会话的入口：
+            // 终端退出后会话仍在，选中会话时也不会再建第二个标签。
+            ...(options?.sessionId ? { sessionId: options.sessionId } : {})
+          }
         ]);
         setActiveKey(id);
       } catch (error) {
@@ -225,7 +233,12 @@ export function App() {
         });
         return;
       }
-      void openTerminal({ cwd: plan.cwd, sessionId: session.id });
+      void openTerminal({
+        cwd: plan.cwd,
+        sessionId: session.id,
+        // 标签直接叫这条会话的名字：用户点的是「会话甲」，标签上却写「终端」会很怪。
+        title: displayTitle(session)
+      });
     },
     [console, openTerminal]
   );

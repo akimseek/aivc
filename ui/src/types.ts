@@ -190,6 +190,13 @@ export type TerminalAttention = {
   kind: TerminalStatus;
   title: string;
   detail?: string;
+  /**
+   * 这条提醒是什么时候来的（毫秒）。
+   *
+   * 界面自己盖的时间戳，后端不发这个字段——它只用于**排序**：
+   * 「会话提醒」里最新的一条要在最上面，否则用户得自己找哪条是刚发生的。
+   */
+  updatedAt?: number;
 };
 
 /** `terminal:status` 事件的载荷。 */

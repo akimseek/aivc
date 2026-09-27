@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AppMenuBar } from "./app-menu-bar";
+import { AttentionCenter } from "./attention-center";
 import { BranchPanel } from "./branch-panel";
 import { createAppMenus } from "./app-menus";
 import { NewSessionDialog } from "./new-session-dialog";
@@ -269,10 +270,13 @@ export function App() {
   /**
    * 正在等待用户确认的终端。
    *
+  /**
+   * 有提醒的终端。
+   *
    * 标签上的小点只在**看得到那条标签时**才有用——而「程序在等你确认」恰恰常常发生在
-   * 标签被滚出视野、或者用户在看另一个会话的时候。所以还需要一处汇总。
+   * 标签被滚出视野、或者用户在看另一个会话的时候。现在由**菜单栏右侧的铃铛**
+   * （`AttentionCenter`）直接汇总，这里不再另存一份。
    */
-  const waitingTerminals = terminals.terminals.filter((item) => terminals.attention[item.id]);
 
   /** 导出：后端决定落点，这里只负责把「去了哪」告诉用户。 */
   const runExport = useCallback(
@@ -404,6 +408,28 @@ export function App() {
         <button type="button" onClick={() => setPaletteOpen(true)}>
           命令面板 ⌘K
         </button>
+        {/* 会话提醒：位置与旧平台一致（菜单栏右侧）。没有提醒时它自己不渲染。 */}
+        <AttentionCenter
+          entries={terminals.terminals
+            .filter((item) => terminals.attention[item.id])
+            .map((item) => {
+              const attention = terminals.attention[item.id]!;
+              return {
+                terminalId: item.id,
+                title: item.title,
+                provider: item.providerId,
+                kind: attention.kind,
+                detail: attention.detail,
+                updatedAt: attention.updatedAt
+              };
+            })}
+          onSelect={(terminalId) => {
+            setActiveKey(terminalId);
+            // 切过去就算看过了，清掉标记——否则铃铛上的数字一直不减。
+            terminals.clearAttention(terminalId);
+          }}
+          onDismiss={(terminalId) => terminals.clearAttention(terminalId)}
+        />
       </div>
 
       {paletteOpen && (
@@ -826,31 +852,14 @@ export function App() {
           />
 
           <div className="workspace-body">
-            {/* 关注中心：把「在等你的终端」汇总到一处，并且**一键切过去**。
-                只看小点的话，用户还得自己在标签里找是哪一条。 */}
-            {waitingTerminals.length > 0 && (
-              <div className="attention-bar">
-                <Notice
-                  message={`${waitingTerminals.length} 个终端在等你确认。`}
-                  actions={waitingTerminals.map((item) => (
-                    <Button
-                      key={item.id}
-                      small
-                      variant="primary"
-                      onClick={() => {
-                        setActiveKey(item.id);
-                        // 切过去就算看过了，清掉标记——否则小点一直亮着。
-                        terminals.clearAttention(item.id);
-                      }}
-                    >
-                      {terminals.attention[item.id]?.title ?? "切过去"}
-                    </Button>
-                  ))}
-                />
-              </div>
-            )}
-            {/* 终端**全部保持挂载**，非前台的只是隐藏——卸载会丢掉 PTY 的输出。
-                会话区只画当前那一个标签。 */}
+            {/*
+              会话提醒改成**菜单栏右侧的铃铛**（旧平台的位置：`AppMenuBar` 之后就是
+              `TerminalAttentionCenter`）。
+
+              此前这里是正文顶部的一条 Notice + 一排按钮：它有两个问题——
+              ① 只有正文可见时才有用，而「程序在等你确认」常常发生在用户切到别的窗口之后；
+              ② 每多一条就把布局往下压一截。铃铛 + 未读数不占正文，也不会随条数变形。
+            */}
             {terminals.terminals.length > 0 && (
               <div className={`terminal-stack${activeTab?.kind === "terminal" ? "" : " hidden"}`}>
                 <Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}>

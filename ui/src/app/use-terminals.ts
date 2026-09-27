@@ -133,7 +133,8 @@ export function useTerminals() {
         setAttention((current) => {
           const next = { ...current };
           if (payload.attention) {
-            next[payload.terminalId] = payload.attention;
+            // 盖一个界面侧的时间戳，只用于**排序**（最新的在最上面）。
+            next[payload.terminalId] = { ...payload.attention, updatedAt: Date.now() };
             // **顺带发一条系统通知**：标签上的小点只在窗口可见时有用，
             // 而「程序在等你确认」恰恰常常发生在用户切到别的窗口之后。
             void api.notify(

@@ -5,6 +5,7 @@ import { AttentionCenter } from "./attention-center";
 import { BranchPanel } from "./branch-panel";
 import { createAppMenus } from "./app-menus";
 import { NewSessionDialog } from "./new-session-dialog";
+import { SessionSettingsDialog } from "./session-settings-dialog";
 import { planResume } from "./resume-session";
 
 import {
@@ -72,6 +73,14 @@ export function App() {
   /** 最近一次导出的实际落点，显示出来让用户知道东西去哪了。 */
   const [exportedTo, setExportedTo] = useState("");
   const [configOpen, setConfigOpen] = useState(false);
+  /**
+   * 「设置会话」对话框的草稿；`null` 表示没打开。
+   *
+   * 只对 **WSL 目标**有意义：本机目标的会话目录就是用户目录，不需要手动设置。
+   */
+  const [sessionSettings, setSessionSettings] = useState<{ distro: string; path: string } | null>(
+    null
+  );
   const [configTab, setConfigTab] = useState<"vendors" | "skills" | "gateway" | "environment" | "diagnostics">("vendors");
   const [paletteOpen, setPaletteOpen] = useState(false);
   /**
@@ -366,11 +375,9 @@ export function App() {
           menus={createAppMenus(
             {
               supportsSkills: Boolean(selectedTarget),
-              // 「设置会话」只对 WSL 目标可用。当前一律按「不是 WSL」处理：
-              // 那个面（M5）还没实现，且 `openSessionSettings` 也没接，
-              // 这一项无论如何都是禁用的。**不猜 `AiTarget` 上的字段名** ——
-              // 等做 M5 时再按真实字段判定。
-              isWslTarget: false,
+              // 「设置会话」只对 WSL 目标可用。**按真实字段判定**
+              // （`AiTarget.kind === "wsl"`），而不是写死。
+              isWslTarget: selectedTarget?.kind === "wsl",
               hasActiveSession: tabs.some((tab) => tab.kind === "session")
             },
             {
@@ -387,6 +394,15 @@ export function App() {
                 setConfigTab("vendors");
                 setConfigOpen(true);
               },
+              // M5「设置会话」：只有 WSL 目标有 `distro` 可写，因此这里也按 WSL 判定。
+              openSessionSettings:
+                selectedTarget?.kind === "wsl" && selectedTarget.distro
+                  ? () =>
+                      setSessionSettings({
+                        distro: selectedTarget.distro ?? "",
+                        path: selectedTarget.codexHome ?? ""
+                      })
+                  : undefined,
               installCli: () => {
                 setConfigTab("environment");
                 setConfigOpen(true);
@@ -434,6 +450,42 @@ export function App() {
 
       {paletteOpen && (
         <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />
+      )}
+
+      {/*
+        「设置会话」：手动指定 WSL 里的 Codex 会话目录。自动探测受发行版、用户、
+        nvm/home 布局影响，探测不到时没有这个入口那台目标就等于用不了。
+      */}
+      {sessionSettings && (
+        <SessionSettingsDialog
+          wslPath={sessionSettings.path}
+          isWsl={selectedTarget?.kind === "wsl"}
+          supportsSessionSettings
+          onChange={(value) =>
+            setSessionSettings((current) => (current ? { ...current, path: value } : current))
+          }
+          onClose={() => setSessionSettings(null)}
+          onRestore={() => {
+            const draft = sessionSettings;
+            setSessionSettings(null);
+            void api
+              .clearWslCodexHome(draft.distro)
+              .then(() => console.reloadSessions())
+              .catch((error: unknown) =>
+                console.setError(error instanceof Error ? error.message : String(error))
+              );
+          }}
+          onSave={() => {
+            const draft = sessionSettings;
+            setSessionSettings(null);
+            void api
+              .setWslCodexHome(draft.distro, draft.path)
+              .then(() => console.reloadSessions())
+              .catch((error: unknown) =>
+                console.setError(error instanceof Error ? error.message : String(error))
+              );
+          }}
+        />
       )}
 
       {/*

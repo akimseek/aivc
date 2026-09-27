@@ -299,7 +299,7 @@ export function useTerminals() {
   }, []);
 
   const openTerminal = useCallback(
-    (target: AiTarget | null, cwd?: string): Promise<string> =>
+    (target: AiTarget | null, cwd?: string, cliArgs?: string): Promise<string> =>
       open({
         title: target ? `终端 · ${target.label}` : "终端",
         kind: "codex",
@@ -312,6 +312,9 @@ export function useTerminals() {
             // 网关上游地址。此前不传，WSL 目标会被静默当成本机目标。
             ...(target?.id ? { targetId: target.id } : {}),
             ...(cwd ? { cwd } : {}),
+            // 额外的 CLI 参数。旧平台由 `parseCliArgs(params.cliArgs)` 追加到命令行上，
+            // 后端这边 (`aivc-ipc/src/terminal.rs`) 已经收 `cliArgs`，这里只是把它递下去。
+            ...(cliArgs?.trim() ? { cliArgs: cliArgs.trim() } : {}),
             ...(target?.codexHome ? { codexHome: target.codexHome } : {})
           })
       }),

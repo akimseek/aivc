@@ -362,4 +362,48 @@ describe("useTerminals 的事件装配", () => {
       view.result.current.terminals.find((item) => item.id === id)!.vendorId
     ).toBe("vendor-a");
   });
+
+  it("把 CLI 参数与工作目录递给 terminal:start", async () => {
+    // 新会话对话框里的「CLI 参数」要真的到达命令上。旧平台是
+    // `parseCliArgs(params.cliArgs)` 追加为额外参数，后端 `terminal.rs` 已经收 `cliArgs`——
+    // 中间少接一环就等于用户填了没用。
+    const view = await render(() => useTerminals());
+
+    await act(async () => {
+      await view.result.current.openTerminal(
+        null,
+        "D:\\work",
+        "  --model gpt-5-codex --sandbox workspace-write  "
+      );
+    });
+
+    // 请求体在 `aivc_invoke` 的第二个参数里，形状是 `{ command, args }`。
+    const start = runtime
+      .invocations()
+      .find(
+        (item) => (item.args as { command?: string } | undefined)?.command === "terminal:start"
+      );
+    expect(start, "应当发出 terminal:start").toBeDefined();
+    const payload = (start!.args as { args?: Record<string, string> }).args ?? {};
+    // 参数要**去掉首尾空白**再传：用户随手多敲的空格不该进入命令行。
+    expect(payload.cliArgs).toBe("--model gpt-5-codex --sandbox workspace-write");
+    expect(payload.cwd).toBe("D:\\work");
+  });
+
+  it("没填 CLI 参数时不传这个字段", async () => {
+    // 传空串会拼出多余的空参数；不传才是「没有额外参数」。
+    const view = await render(() => useTerminals());
+
+    await act(async () => {
+      await view.result.current.openTerminal(null, undefined, "   ");
+    });
+
+    const start = runtime
+      .invocations()
+      .find(
+        (item) => (item.args as { command?: string } | undefined)?.command === "terminal:start"
+      );
+    const payload = (start!.args as { args?: Record<string, string> }).args ?? {};
+    expect(payload.cliArgs).toBeUndefined();
+  });
 });

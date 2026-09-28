@@ -300,11 +300,105 @@ export type UsageSummary = {
   switchedCount: number;
   retryCount?: number;
   averageDurationMs?: number;
+  /** token 分项。缺字段是常态——不同上游记录的信息多寡不一样。 */
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
   totalTokens?: number;
   costUsd?: number;
   periodStart: string;
   periodEnd: string;
 };
+
+/**
+ * 一个维度的用量汇总（`UsageReport.vendors` / `.models`）。
+ *
+ * `key` 是维度键（供应商编号 / 模型名），`label` 是展示名。二者**都要留着**：
+ * 供应商可能已被删除，那时 `label` 是占位文案而 `key` 才是真实身份。
+ */
+export type UsageDimension = {
+  key: string;
+  label: string;
+  providerId: AiProviderId;
+  requestCount: number;
+  successCount: number;
+  failureCount: number;
+  switchedCount: number;
+  retryCount: number;
+  averageDurationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+  totalTokens?: number;
+  costUsd?: number;
+};
+
+/** 用量报表（`gateway:get-usage-report`）：总览 + 按供应商 + 按模型。 */
+export type UsageReport = {
+  summary: UsageSummary;
+  vendors: UsageDimension[];
+  models: UsageDimension[];
+};
+
+/** 一条失败诊断（`gateway:get-failure-diagnostics`）。 */
+export type FailureDiagnostic = {
+  vendorId: string;
+  providerId: AiProviderId;
+  outcome: string;
+  upstreamStatus?: number;
+  retryCount: number;
+  durationMs: number;
+  errorCode?: string;
+  errorMessage?: string;
+  createdAt: string;
+};
+
+/** 诊断分页。页码从 1 起。 */
+export type FailureDiagnosticsPage = {
+  items: FailureDiagnostic[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/**
+ * 余额快照（`vendor:refresh-balance(s)` 的 `balance` 字段）。
+ *
+ * 全部可空：上游各式各样，很多中转站根本不返回余额。缺字段要显示「未提供」，
+ * 而不是 `0`——那会让人以为余额真的用光了。
+ */
+export type VendorBalance = {
+  remaining?: number;
+  total?: number;
+  used?: number;
+  unit?: string;
+  planName?: string;
+  isValid?: boolean;
+};
+
+/** 一个供应商的余额结果。失败时带 `error`（批量刷新**不会**因为一家失败就整体失败）。 */
+export type VendorBalanceResult = {
+  vendorId: string;
+  balance?: VendorBalance;
+  error?: string;
+};
+
+/** 一个可查询的模型（`vendor:list-models`）。 */
+export type VendorModel = {
+  id: string;
+  name?: string;
+};
+
+/** 读取到的一份配置文件（`vendor:read-configs`）。 */
+export type VendorConfigFile = {
+  path: string;
+  content: string;
+};
+
+/** 一条用量区间选择。界面提供几个常用区间，也允许自定义。 */
+export type UsageRangeKey = "today" | "7d" | "30d" | "all" | "custom";
 
 /**
  * 一条网关请求日志（`gateway:query-logs`）。
@@ -320,6 +414,14 @@ export type GatewayLogEntry = {
   providerId: AiProviderId;
   outcome: string;
   upstreamStatus?: number;
+  /**
+   * 错误代码。
+   *
+   * 后端**特意**加了这一段（见 `log_entry_value` 的注释）：「路由不存在 / 鉴权失败」
+   * 记的是 `outcome: ok`（那不是供应商的错），于是它与一次真正转发成功的记录
+   * 只差这一个字段。少了它，查「CLI 为什么失败」的人在日志里只能看到一串 `ok`。
+   */
+  errorCode?: string;
 };
 
 /** 故障规则作用域。 */

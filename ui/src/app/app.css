@@ -931,6 +931,43 @@ select {
 }
 
 /*
+ * CLI 配置文件的只读视图。
+ *
+ * 用 `pre` 而不是 `code`：配置文件是**有换行与缩进**的结构化文本，压成一行就没法读。
+ * 上限高度 + 滚动：`settings.json` 可能有几百行，不设上限会把整个面板顶下去。
+ */
+.config-view {
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius);
+  background: var(--ui-surface-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  /* 长行折行而不是横向滚动：配置文件里常有很长的 base_url。 */
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 复选 + 说明文字。用在「按平台筛选」这类开关旁边。 */
+.control-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--ui-text);
+}
+
+/* 表格单元格里的状态标记。与 `.tag` 配套但更紧凑，用在密集的表格行里。 */
+.data-table .tag {
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+/*
  * 消息：**用户与助手用形态区分，不是用深浅**。
  *
  * 此前两者都是「浅色底 + 边框」的方块——助手 `--ui-surface-subtle`（#f8fafb）、

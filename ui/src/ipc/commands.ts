@@ -7,6 +7,7 @@ import type {
   CliEnvironmentStatus,
   ExportFormat,
   ExternalApiStatus,
+  FailureDiagnosticsPage,
   FailoverRule,
   FailoverRuleScope,
   GatewayLogEntry,
@@ -18,7 +19,11 @@ import type {
   SessionQuickAccess,
   SessionView,
   SkillEntry,
+  UsageReport,
   UsageSummary,
+  VendorBalanceResult,
+  VendorConfigFile,
+  VendorModel,
   WorkspacePreset
 } from "../types";
 
@@ -242,6 +247,36 @@ export const saveVendor = (request: {
 /** 删除供应商。 */
 export const deleteVendor = (id: string) => invoke<boolean>("vendor:delete", { id });
 
+/**
+ * 向供应商的 HTTP 接口查可用模型。
+ *
+ * 这是**发起真实网络请求**的命令，因此它会慢、会失败，也可能因为 base_url 写错而超时。
+ * 界面必须给出「正在查询」与失败原因，而不是静默转圈。
+ */
+export const listVendorModels = (vendorId: string) =>
+  invoke<VendorModel[]>("vendor:list-models", { vendorId });
+
+/**
+ * 查询一个供应商的余额。
+ *
+ * 单家与批量是**两条命令**：批量那条会对十几家并发（仓储自己分批，
+ * 避免给中转站造成瞬时压力）。界面上的「刷新全部」用批量，行内那个用单家。
+ */
+export const refreshVendorBalance = (vendorId: string) =>
+  invoke<VendorBalanceResult>("vendor:refresh-balance", { vendorId });
+
+export const refreshAllVendorBalances = () =>
+  invoke<VendorBalanceResult[]>("vendor:refresh-balances");
+
+/**
+ * 读取若干配置文件的内容。
+ *
+ * **路径白名单在后端强制**：不加限制的话这条命令就成了「读取任意文件」的入口，
+ * 而配置文件里通常有 API Key。界面只应传后端已知的那几个路径。
+ */
+export const readVendorConfigs = (paths: string[]) =>
+  invoke<VendorConfigFile[]>("vendor:read-configs", { paths });
+
 /* ── 技能 ───────────────────────────────────────────── */
 
 /** 列出某目标下的技能。 */
@@ -320,12 +355,51 @@ export const setGatewayPort = (port: number) =>
 export const getVendorHealth = () =>
   invoke<GatewayVendorHealth[]>("gateway:get-vendor-health");
 
-/** 用量总览。 */
-export const getUsageSummary = () => invoke<UsageSummary>("gateway:get-usage-summary");
+/** 用量总览。**区间必填**——后端 `period()` 在缺 `periodStart`/`periodEnd` 时直接报错。 */
+export const getUsageSummary = (periodStart: string, periodEnd: string) =>
+  invoke<UsageSummary>("gateway:get-usage-summary", { periodStart, periodEnd });
 
-/** 查请求日志（按时间倒序的一页）。 */
-export const queryGatewayLogs = (page = 1, pageSize = 20) =>
-  invoke<GatewayLogEntry[]>("gateway:query-logs", { page, pageSize });
+/** 用量报表（总览 + 按供应商 + 按模型）。 */
+export const getUsageReport = (periodStart: string, periodEnd: string) =>
+  invoke<UsageReport>("gateway:get-usage-report", { periodStart, periodEnd });
+
+/**
+ * 失败诊断分页。
+ *
+ * 页码从 **1** 起；`pageSize` 由仓储钳制在上限内。筛选条件全部可选，
+ * 但不传**不等于传空字符串**：后端把空串当作「不筛选」，
+ * 因此这里显式省略掉空值，避免多传一堆无用参数。
+ */
+export const getFailureDiagnostics = (request: {
+  page: number;
+  pageSize: number;
+  vendorId?: string;
+  providerId?: string;
+  outcome?: "error" | "timeout";
+  periodStart?: string;
+  periodEnd?: string;
+}) => invoke<FailureDiagnosticsPage>("gateway:get-failure-diagnostics", request);
+
+/**
+ * 查可清理的日志条目。
+ *
+ * # 这个函数此前传错了参数
+ *
+ * 它原本传的是 `{ page, pageSize }`，而后端的 `query_logs` 用的是
+ * `filter(args)`——只读 `vendorId` / `outcome` / `periodStart` / `periodEnd`。
+ * 也就是说那两个参数**被静默忽略了**，函数看起来「分页」，实际每次都是全量。
+ * 现在按后端的真实参数传，并如实说明它不分页。
+ */
+export const queryGatewayLogs = (request: {
+  vendorId?: string;
+  outcome?: "ok" | "error" | "timeout" | "client-aborted";
+  periodStart?: string;
+  periodEnd?: string;
+} = {}) => invoke<GatewayLogEntry[]>("gateway:query-logs", request);
+
+/** 删除指定请求编号的日志，返回删除条数。 */
+export const deleteGatewayLogEntries = (requestIds: string[]) =>
+  invoke<number>("gateway:delete-log-entries", { requestIds });
 
 /** 清空日志。 */
 export const clearGatewayLogs = () => invoke<number>("gateway:clear-logs", {});

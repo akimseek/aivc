@@ -3,6 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, ChipGroup, EmptyState, Field, Notice, Select, TextInput, Toolbar, ToolbarSpacer } from "../components";
 import * as api from "../ipc/commands";
 import { GatewayInsights } from "./gateway-insights";
+import { GatewayFailurePanel } from "./gateway-failure-panel";
+import { GatewayLogPanel } from "./gateway-log-panel";
+import { GatewayUsagePanel } from "./gateway-usage-panel";
+import { VendorProbePanel } from "./vendor-probe-panel";
 import type {
   AiProviderId,
   AiTarget,
@@ -27,11 +31,24 @@ import type {
  * 覆盖层还带来一个好处：它是**临时**的——关掉就回到原来的视图，不需要「返回」。
  */
 
-/** 配置面的分页。导出给命令面板用——它要能直接打开某一页。 */
+/**
+ * 配置面的分页。导出给命令面板用——它要能直接打开某一页。
+ *
+ * 分成「网关」与「用量 / 异常 / 日志」三页而不是全塞进「网关」一页：
+ *
+ * - 「网关」是**设置**（开关、端口、故障规则、外部接入），改的是行为；
+ * - 另外三页是**观测**（花在哪、为什么失败、有哪些日志），只看不改。
+ *
+ * 混在一页里的后果是实测过的：`config-overlay.tsx` 一度到 1380 行，
+ * 打开「网关」要同时渲染设置表单与三张只读表格，滚动条拉到一半就找不到开关了。
+ */
 export type ConfigTab =
   | "vendors"
   | "skills"
   | "gateway"
+  | "usage"
+  | "failures"
+  | "logs"
   | "environment"
   | "presets"
   | "diagnostics";
@@ -74,6 +91,9 @@ export function ConfigOverlay({
               { value: "vendors", label: "供应商" },
               { value: "skills", label: "技能" },
               { value: "gateway", label: "网关" },
+              { value: "usage", label: "用量" },
+              { value: "failures", label: "异常" },
+              { value: "logs", label: "日志" },
               { value: "environment", label: "环境" },
               { value: "presets", label: "工作区预设" },
               { value: "diagnostics", label: "诊断" }
@@ -85,6 +105,12 @@ export function ConfigOverlay({
           {tab === "vendors" && <VendorsPanel providerId={providerId} onError={onError} />}
           {tab === "skills" && <SkillsPanel targetId={targetId} onError={onError} />}
           {tab === "gateway" && <GatewayPanel onError={onError} />}
+          {/* 观测三页：看，不改。设置仍然在「网关」那一页。 */}
+          {tab === "usage" && <GatewayUsagePanel onError={onError} />}
+          {tab === "failures" && (
+            <GatewayFailurePanel providerId={providerId} onError={onError} />
+          )}
+          {tab === "logs" && <GatewayLogPanel onError={onError} />}
           {tab === "environment" && (
             <EnvironmentPanel providerId={providerId} targetId={targetId} onError={onError} />
           )}
@@ -475,6 +501,11 @@ function VendorsPanel({
           </tbody>
         </table>
       )}
+
+      {/* 探活三条：测连接 / 查余额 / 读 CLI 实际读到的配置。
+          它们与上面的编辑表单是**两件事**：表单改的是应用的记录，
+          这里验证的是「那家供应商现在到底能不能用」。 */}
+      <VendorProbePanel vendors={vendors} onError={onError} />
     </>
   );
 }

@@ -24,6 +24,8 @@ function fakeRuntime(overrides: {
   logs?: unknown[];
 } = {}) {
   const calls: string[] = [];
+  /** 带参数的调用。断言「区间真的传下去了」要靠它。 */
+  const callsWithArgs: { command: string; args: unknown }[] = [];
   const listeners = new Map<string, Handler>();
 
   window.__TAURI__ = {
@@ -32,6 +34,7 @@ function fakeRuntime(overrides: {
         const payload = args as { command?: string; args?: Record<string, unknown> } | undefined;
         const name = payload?.command ?? "";
         calls.push(name);
+        callsWithArgs.push({ command: name, args: payload?.args ?? {} });
         if (name === "gateway:get-vendor-health") return overrides.health ?? [];
         if (name === "gateway:get-usage-summary") return overrides.usage ?? null;
         if (name === "gateway:query-logs") return overrides.logs ?? [];
@@ -49,6 +52,7 @@ function fakeRuntime(overrides: {
 
   return {
     calls,
+    callsWithArgs,
     /** 推一条事件，模拟后端转发了一个请求。 */
     emit: async (channel: string) => {
       const handler = listeners.get(channel);
@@ -182,6 +186,79 @@ describe("GatewayInsights", () => {
 
     await waitFor(() => {
       expect(runtime.channels()).not.toContain("gateway:request-recorded");
+    });
+  });
+
+  it("用量请求**带上了区间**——后端缺任一端会直接报错", async () => {
+    // 这一条是这次接线里最要紧的：此前调 `getUsageSummary()` 一个参数都不传，
+    // 后端 `period()` 立刻报「参数无效」，于是用量那几格**从来没显示过**。
+    const runtime = fakeRuntime();
+    await renderInsights(runtime);
+
+    const call = runtime.callsWithArgs.find((item) => item.command === "gateway:get-usage-summary");
+    expect(call).toBeTruthy();
+    const args = call!.args as { periodStart?: string; periodEnd?: string };
+    expect(typeof args.periodStart).toBe("string");
+    expect(typeof args.periodEnd).toBe("string");
+    expect(args.periodStart).not.toBe("");
+  });
+
+  it("日志查询也带上区间，而不是传被忽略的 page/pageSize", async () => {
+    // 后端 `query_logs` 只读 `vendorId` / `outcome` / `periodStart` / `periodEnd`；
+    // 传 `page` / `pageSize` 会被**静默忽略**，函数看起来分页、实际每次全量。
+    const runtime = fakeRuntime();
+    await renderInsights(runtime);
+
+    const call = runtime.callsWithArgs.find((item) => item.command === "gateway:query-logs");
+    expect(call).toBeTruthy();
+    const args = call!.args as Record<string, unknown>;
+    expect(args).not.toHaveProperty("page");
+    expect(args).not.toHaveProperty("pageSize");
+    expect(typeof args.periodStart).toBe("string");
+  });
+
+  it("换时间区间会重新取数，且新区间与旧区间不同", async () => {
+    // 「今天」与「全部时间」的起点差了几十年，这一点必须真的传到后端。
+    const runtime = fakeRuntime();
+    const { view } = await renderInsights(runtime);
+
+    const all = [...view.container.querySelectorAll("button")].find(
+      (item) => item.textContent?.trim() === "全部时间"
+    );
+    expect(all).toBeTruthy();
+
+    await act(async () => {
+      all!.click();
+    });
+
+    await waitFor(() => {
+      const starts = runtime.callsWithArgs
+        .filter((item) => item.command === "gateway:get-usage-summary")
+        .map((item) => (item.args as { periodStart: string }).periodStart);
+      // 至少两次，且起点里出现了纪元起点。
+      expect(starts.length).toBeGreaterThan(1);
+      expect(starts.some((value) => new Date(value).getTime() === 0)).toBe(true);
+    });
+  });
+
+  it("失败诊断里那列错误代码必须存在", async () => {
+    // 「路由不存在 / 鉴权失败」记的是 `ok`，与真正成功只差这一个字段。
+    // 界面不显示它，查「CLI 为什么失败」的人只能看到一串成功。
+    const runtime = fakeRuntime({
+      logs: [
+        {
+          requestId: "r1",
+          createdAt: new Date().toISOString(),
+          vendorId: "v1",
+          providerId: "codex",
+          outcome: "ok",
+          errorCode: "route-missing"
+        }
+      ]
+    });
+    const { view } = await renderInsights(runtime);
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("route-missing");
     });
   });
 });

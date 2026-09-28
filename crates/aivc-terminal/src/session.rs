@@ -429,21 +429,43 @@ impl SessionRegistry {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(REAP_INTERVAL).await;
-                let mut guard = sessions.lock().await;
-                // 会话已被 `stop` / `stop_all` 摘走：那一侧已经收过尾了。
-                let Some(session) = guard.get_mut(&id) else {
-                    return;
-                };
-                match session.try_wait() {
-                    Ok(Some(code)) => {
-                        exits.lock().await.insert(id, code);
-                        session.release();
+                // 先只在锁里**问一次**子进程状态，把「退出码」带出来；
+                // 落码与摘项都在锁外做——`sessions → exits` 的嵌套加锁顺序
+                // 与 `stop` 那一路相反，会造成死锁。
+                let code = {
+                    let mut guard = sessions.lock().await;
+                    // 会话已被 `stop` / `stop_all` 摘走：那一侧已经收过尾了。
+                    let Some(session) = guard.get_mut(&id) else {
                         return;
+                    };
+                    match session.try_wait() {
+                        Ok(Some(code)) => {
+                            // **先释放 PTY**，读取线程才会收到 EOF、泵才会收尾。
+                            session.release();
+                            Some(code)
+                        }
+                        Ok(None) => None,
+                        // 查询失败时收手：再轮询下去只是每 250 毫秒白跑一次。
+                        Err(_) => return,
                     }
-                    Ok(None) => {}
-                    // 查询失败时收手：再轮询下去只是每 250 毫秒白跑一次。
-                    Err(_) => return,
-                }
+                };
+                let Some(code) = code else { continue };
+
+                // 顺序不能反：**先落退出码，再摘登记项**。
+                // 泵就是靠这个码来区分「自己退出」与「被主动关闭」的，
+                // 摘早了它会拿到 `None`，把一次正常退出报成崩溃。
+                exits.lock().await.insert(id.clone(), code);
+                // **摘掉登记项。**
+                //
+                // 这里此前只 `release()`，会话对象仍留在表里：`terminalId` 对应的
+                // 登记项在子进程自己退出后**永不消失**，表随终端开关持续增长，
+                // 而那一项里的 `master` / `writer` 已经是 `None`——
+                // 「资源没释放」的用户观感就是这么来的。
+                //
+                // 摘掉时对象被 drop，`Drop` 里的 `kill` / `wait` 对已退出的子进程
+                // 是无害的（`kill` 报错被忽略、`wait` 立刻返回）。
+                sessions.lock().await.remove(&id);
+                return;
             }
         });
     }

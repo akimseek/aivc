@@ -518,4 +518,86 @@ describe("useTerminals 的事件装配", () => {
       .filter((item) => (item.args as { command?: string } | undefined)?.command === "terminal:write");
     expect(writes).toHaveLength(0);
   });
+
+  /* ── 退出：干净退出要收掉，异常退出要留现场 ──
+   *
+   * 这是「`/exit` 后再次进入被锁住」的根因所在：界面此前只把 `running` 置 false，
+   * 清理逻辑无从判断「这一次该不该收掉那一路」。旧平台的语义是
+   * `if (exitCode !== 0) return;`——**只有干净退出才收**，
+   * 异常退出保留现场让用户看得到最后几行报错。
+   */
+  it("退出码 0 → 标成「干净退出」，供上层收掉标签", async () => {
+    const view = await render(() => useTerminals());
+    const id = await openTerminal(view.result);
+
+    await act(async () => {
+      runtime.emit("terminal:exit", { terminalId: id, exitCode: 0 });
+    });
+
+    const terminal = view.result.current.terminals.find((item) => item.id === id)!;
+    expect(terminal.running).toBe(false);
+    expect(terminal.exitedCleanly).toBe(true);
+  });
+
+  it("非零退出 → **不**标成干净退出（异常退出要保留现场）", async () => {
+    const view = await render(() => useTerminals());
+    const id = await openTerminal(view.result);
+
+    await act(async () => {
+      runtime.emit("terminal:exit", { terminalId: id, exitCode: 1 });
+    });
+
+    const terminal = view.result.current.terminals.find((item) => item.id === id)!;
+    expect(terminal.running).toBe(false);
+    expect(terminal.exitedCleanly).not.toBe(true);
+  });
+
+  it("退出码缺失时按干净退出处理", async () => {
+    // 用户点标签上的 ✕ 主动关闭时不该被当成异常。
+    const view = await render(() => useTerminals());
+    const id = await openTerminal(view.result);
+
+    await act(async () => {
+      runtime.emit("terminal:exit", { terminalId: id, exitCode: null });
+    });
+
+    expect(
+      view.result.current.terminals.find((item) => item.id === id)!.exitedCleanly
+    ).toBe(true);
+  });
+
+  it("退出后清掉这一路的提醒", async () => {
+    // 提醒说的是「它在等你」，而它已经不在了——留着只会让铃铛一直亮。
+    const view = await render(() => useTerminals());
+    const id = await openTerminal(view.result);
+
+    await act(async () => {
+      runtime.emit("terminal:status", {
+        terminalId: id,
+        status: "awaiting-confirmation",
+        attention: { kind: "awaiting-confirmation", title: "等确认" }
+      });
+    });
+    expect(view.result.current.attention[id]).toBeDefined();
+
+    await act(async () => {
+      runtime.emit("terminal:exit", { terminalId: id, exitCode: 0 });
+    });
+    expect(view.result.current.attention[id]).toBeUndefined();
+  });
+
+  it("别路终端退出不影响这一路", async () => {
+    const view = await render(() => useTerminals());
+    const first = await openTerminal(view.result);
+    const second = await openTerminal(view.result);
+
+    await act(async () => {
+      runtime.emit("terminal:exit", { terminalId: first, exitCode: 0 });
+    });
+
+    const after = view.result.current.terminals;
+    expect(after.find((item) => item.id === first)!.exitedCleanly).toBe(true);
+    expect(after.find((item) => item.id === second)!.running).toBe(true);
+    expect(after.find((item) => item.id === second)!.exitedCleanly).toBeUndefined();
+  });
 });

@@ -272,6 +272,37 @@ export function App() {
     [tabs, terminals]
   );
 
+  /**
+   * **干净退出的终端：收掉它的标签。**
+   *
+   * # 为什么要收
+   *
+   * 不收的后果实测过：用户敲 `/exit` 之后那一路终端**永远留在标签里**，而
+   * `activateSessionTab` 又会优先切到「已经挂着这条会话的那张标签」——
+   * 于是再次进入会话时，用户看到的是那一路**已经死掉的**终端：不能输入、不再产出，
+   * 表现就是「被锁住」。用户原话：「`/exit` 退出了会话终端，再次进入会被锁住，
+   * 并没有释放资源」。
+   *
+   * # 与旧平台一致的语义
+   *
+   * 旧平台 `handleTerminalExit` 的第一行是 `if (exitCode !== 0) return;`——
+   * **只有干净退出（退出码 0）才收标签**；异常退出保留现场，
+   * 让用户看得到最后几行报错（`embedded-terminal.tsx`：非零退出保留现有终端错误输出）。
+   *
+   * 退出码的判断在 `use-terminals` 里做（只有它拿得到），这里只负责执行。
+   */
+  useEffect(() => {
+    const finished = tabs.filter(
+      (tab) =>
+        tab.kind === "terminal" &&
+        tab.terminalId !== undefined &&
+        terminals.terminals.some(
+          (item) => item.id === tab.terminalId && item.exitedCleanly === true
+        )
+    );
+    for (const tab of finished) closeTab(tab.key);
+  }, [tabs, terminals.terminals, closeTab]);
+
   const tabItems: TabItem[] = useMemo(
     () =>
       tabs.map((tab) => {

@@ -348,6 +348,7 @@ impl TerminalCommands {
             Arc::clone(&self.emitter),
             Arc::clone(&self.registry),
             Arc::clone(&self.detectors),
+            Arc::clone(&self.routes),
             terminal_id.clone(),
             detector,
             output,
@@ -545,6 +546,7 @@ async fn pump_output(
     emitter: Arc<std::sync::RwLock<Arc<dyn EventEmitter>>>,
     registry: Arc<SessionRegistry>,
     detectors: Arc<Mutex<HashMap<String, DetectorHandle>>>,
+    routes: Arc<dyn RouteSource>,
     terminal_id: String,
     detector: DetectorHandle,
     mut output: mpsc::Receiver<Vec<u8>>,
@@ -589,6 +591,17 @@ async fn pump_output(
     if let Ok(mut map) = detectors.lock() {
         map.remove(&terminal_id);
     }
+    // **子进程自己退出时也要销毁路由。**
+    //
+    // 此前只有 `stop`（用户主动关终端）会销毁它。子进程自己退出——`/exit`、
+    // 或 CLI 崩溃——走的是这条路，路由于是留在网关路由表里：
+    //
+    // - 那条路由的**本地令牌仍然有效**，能继续打到那家供应商；
+    // - `route_id` 用的就是终端编号，而界面的编号是「时间戳 + 自增」，
+    //   正常情况下不会撞上；但**表本身会随终端开关一直增长**。
+    //
+    // 与 `stop` 的语义一致：路由不存在时静默返回（终端可能压根没走网关）。
+    routes.destroy(&terminal_id).await;
     emit(
         &emitter,
         CHANNEL_EXIT,

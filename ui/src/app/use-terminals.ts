@@ -63,6 +63,13 @@ export type TerminalSession = {
   vendorMode?: VendorRouteMode;
   /** 最近一次切换。有值时界面上会标出来「已自动切换」之类。 */
   lastSwitch?: VendorSwitch;
+  /**
+   * 这一路是**干净退出**（退出码 0）的。
+   *
+   * 干净退出要把标签收掉（见退出处理的文档）；异常退出保留现场看报错，
+   * 因此这里必须把两者区分开，不能只看 `running`。
+   */
+  exitedCleanly?: boolean;
 };
 
 export function useTerminals() {
@@ -159,25 +166,43 @@ export function useTerminals() {
     };
   }, []);
 
-  /* ── 退出：标记为已退出，不自动关闭标签 ──
+  /* ── 退出：干净退出要**关掉**这一路的登记项，异常退出才保留 ──
    *
-   * 自动关闭会让用户来不及看到最后几行输出——而最后几行往往正是失败原因。 */
+   * # 为什么不能一律保留
+   *
+   * 原先这里只把 `running` 置 false、什么都留着。后果是：用户敲 `/exit` 退出后，
+   * 那一路终端**永远留在列表里**；而 `activateSessionTab` 又会优先切到「已经挂着
+   * 这条会话的那张标签」——于是再次进入会话时，用户看到的是**那一路已经死掉的终端**，
+   * 既不能输入也不再产出，表现就是「被锁住」。
+   *
+   * # 与旧平台一致的语义
+   *
+   * 旧平台 `handleTerminalExit`：`if (exitCode !== 0) return;` ——**只有干净退出
+   * （退出码 0）才收掉标签**；异常退出保留现场，让用户看得到最后几行报错
+   * （`embedded-terminal.tsx` 里那句注释：非零退出保留现有终端错误输出）。
+   *
+   * 界面不能自己「关闭」终端——那要与后端确认。因此这里只标记「这一路已结束」，
+   * 由 `app.tsx` 在标签层收掉它，并顺手 `closeTerminal` 把后端登记项也摘掉。 */
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     void api
-      .listen<{ terminalId: string }>(api.CHANNEL_TERMINAL_EXIT, (payload) => {
-        setTerminals((current) =>
-          current.map((item) =>
-            item.id === payload.terminalId ? { ...item, running: false } : item
-          )
-        );
-        setAttention((current) => {
-          const next = { ...current };
-          delete next[payload.terminalId];
-          return next;
-        });
-      })
+      .listen<{ terminalId: string; exitCode?: number | null }>(
+        api.CHANNEL_TERMINAL_EXIT,
+        (payload) => {
+          const clean = (payload.exitCode ?? 0) === 0;
+          setTerminals((current) =>
+            current.map((item) =>
+              item.id === payload.terminalId ? { ...item, running: false, exitedCleanly: clean } : item
+            )
+          );
+          setAttention((current) => {
+            const next = { ...current };
+            delete next[payload.terminalId];
+            return next;
+          });
+        }
+      )
       .then((fn) => {
         if (cancelled) fn();
         else unlisten = fn;

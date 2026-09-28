@@ -51,3 +51,32 @@ export function activateSessionTab<T extends WorkspaceTabLike>(
   } as T;
   return { tabs: [...tabs, created], activeKey: session.id };
 }
+
+/**
+ * 找出「挂着这条会话、但终端已经不在跑」的标签。
+ *
+ * # 为什么必须有这一步
+ *
+ * 用户报的现象是「`/exit` 退出了会话终端，再次进入会被锁住，并没有释放资源」。
+ * 根因有两层，这是第二层：
+ *
+ * 1. 干净退出时标签没收掉（已修）——但那一条**只覆盖干净退出**，
+ *    因为异常退出要保留现场让用户看得到报错；
+ * 2. 于是**异常退出的那一张标签会留在那里**，而 `activateSessionTab` 的逻辑是
+ *    「已经有标签挂着这条会话就切过去」——再次进入时用户切到的是
+ *    **那一路已经死掉的终端**：不能输入、不再产出，看起来就是被锁住。
+ *
+ * 所以再次进入一条会话之前，要先把这类的死标签清掉，再开新的。
+ * 判据是「终端不在了」，不是「标签存在」。
+ */
+export function deadTabsForSession<T extends WorkspaceTabLike>(
+  tabs: T[],
+  sessionId: string,
+  isTerminalRunning: (terminalId: string) => boolean
+): string[] {
+  return tabs
+    .filter((tab) => tab.sessionId === sessionId)
+    // 没有终端编号的会话标签（只是「看正文」那一种）不算死的。
+    .filter((tab) => tab.terminalId !== undefined && !isTerminalRunning(tab.terminalId))
+    .map((tab) => tab.key);
+}

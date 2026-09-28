@@ -80,6 +80,38 @@ export function toRefs(sessions: AiSession[], ids: string[]): SessionMutationRef
 /** 侧栏当前显示哪一类列表。 */
 export type SidebarPane = "sessions" | "quick" | "search";
 
+/**
+ * 打开一条会话时，平台与目标该不该真的换。
+ *
+ * # 为什么要单独算这一步
+ *
+ * `selectTarget` 带一个**清空会话列表**的副作用（换目标时必须清，否则会显示
+ * 上一个目标的残留）。而它的重载 effect 只依赖 `[targetId, view, query]`——
+ * **目标没变时 effect 不会重跑**，于是清了就再也填不回来。
+ *
+ * 用户报的「点击进入终端会话后，列表内容就消失了」正是这条路径：
+ * 在当前目标下点会话 → `setTargetId(同一个值)`（无变化）+ `setSessions([])`（清了）。
+ *
+ * 所以判据必须是「**真的换了**」而不是「打开了一条会话」。
+ * 抽成纯函数是为了能直接断言，而不是靠渲染去猜。
+ *
+ * 泛型参数让调用方能保留自己的平台编号类型（调用处是 `AiProviderId`），
+ * 而不是被这个纯函数抹成 `string`。
+ */
+export function planTargetSwitch<P extends string>(
+  currentProvider: string,
+  currentTargetId: string,
+  target: { id: string; provider: P }
+): { provider: P | null; target: string | null } {
+  const providerChanged = target.provider !== currentProvider;
+  // 平台变了，目标一定要换（新平台的目标集合与旧平台不通用）。
+  const targetChanged = providerChanged || target.id !== currentTargetId;
+  return {
+    provider: providerChanged ? target.provider : null,
+    target: targetChanged ? target.id : null
+  };
+}
+
 /** 跨平台搜索的一条结果：会话 + 它属于哪个目标。 */
 export type GlobalSearchResult = {
   target: AiTarget;
@@ -648,15 +680,36 @@ export function useConsole() {
    * 先切到它所属的目标与平台，再选中会话，最后回到会话视图——否则用户会看到
    * 「选中了但列表里没有这条」。
    */
+  /**
+   * 打开一条会话：切到它所属的平台与目标，选中它，回到会话视图。
+   *
+   * # 为什么必须判断「目标是不是真的变了」
+   *
+   * 这里此前**无条件**调用 `selectTarget(target.id)`，而 `selectTarget` 会
+   * `setSessions([])` 把列表清空；列表的重载 effect 只依赖 `[targetId, view, query]`。
+   *
+   * 于是最常见的那条路径——**在当前目标下点一条会话**——会这样：
+   *
+   * 1. `setTargetId(同一个值)` → React 认为状态没变，**effect 不重跑**；
+   * 2. `setSessions([])` → 列表已经空了；
+   * 3. 没有任何东西会把它填回来。
+   *
+   * 用户看到的就是「点击进入会话后，会话列表的内容消失了」。
+   *
+   * 修法不是「别清空」，而是**只在真的换目标时才清空**——那条路径上 effect 会
+   * 重跑并把新目标的会话装回来，清空正是为了避免显示上一个目标的残留。
+   */
   const openAt = useCallback(
     (target: AiTarget, session: AiSession) => {
-      if (target.provider !== providerId) selectProvider(target.provider);
-      selectTarget(target.id);
+      const plan = planTargetSwitch(providerId, targetId, target);
+      if (plan.provider) selectProvider(plan.provider);
+      // 平台或目标**确实**变了才走 `selectTarget`（它带清空副作用）。
+      if (plan.target) selectTarget(plan.target);
       setSelectedId(session.id);
       setPane("sessions");
       void api.markSessionOpened(target.id, session.id).catch(() => undefined);
     },
-    [providerId, selectProvider, selectTarget]
+    [providerId, targetId, selectProvider, selectTarget]
   );
 
   return {

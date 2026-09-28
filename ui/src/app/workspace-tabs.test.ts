@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { activateSessionTab, type WorkspaceTabLike } from "./workspace-tabs";
+import { activateSessionTab, deadTabsForSession, type WorkspaceTabLike } from "./workspace-tabs";
 
 /**
  * 标签规则。
@@ -56,5 +56,56 @@ describe("activateSessionTab", () => {
     const result = activateSessionTab(tabs, session);
     expect(result.tabs).toBe(tabs);
     expect(result.activeKey).toBe("sess-1");
+  });
+});
+
+/**
+ * 「再次进入被锁住」的第二层根因。
+ *
+ * 干净退出的标签会被收掉，但**异常退出的标签是故意留着的**（要让人看到报错）。
+ * 于是再次进入这条会话时，`activateSessionTab` 会切到那一张**已经死掉的**终端标签上，
+ * 用户看到的就是不能输入、不再产出的终端。
+ *
+ * 因此在进入之前要先找出这些死标签——判据是「终端不在了」，不是「标签存在」。
+ */
+describe("deadTabsForSession", () => {
+  const running = (ids: string[]) => (id: string) => ids.includes(id);
+
+  it("终端已经不在跑的标签会被找出来", () => {
+    const tabs: WorkspaceTabLike[] = [
+      { key: "t1", kind: "terminal", title: "死掉的", terminalId: "t1", sessionId: "s1" }
+    ];
+    expect(deadTabsForSession(tabs, "s1", running([]))).toEqual(["t1"]);
+  });
+
+  it("终端还在跑的不算死", () => {
+    const tabs: WorkspaceTabLike[] = [
+      { key: "t1", kind: "terminal", title: "活的", terminalId: "t1", sessionId: "s1" }
+    ];
+    expect(deadTabsForSession(tabs, "s1", running(["t1"]))).toEqual([]);
+  });
+
+  it("只是看正文的会话标签（没有终端）永远不算死", () => {
+    // 它本来就没有终端，清掉它会把用户正在看的正文也关掉。
+    const tabs: WorkspaceTabLike[] = [
+      { key: "s1", kind: "session", title: "会话", sessionId: "s1" }
+    ];
+    expect(deadTabsForSession(tabs, "s1", running([]))).toEqual([]);
+  });
+
+  it("别的会话的死标签不动手", () => {
+    const tabs: WorkspaceTabLike[] = [
+      { key: "t9", kind: "terminal", title: "别人的", terminalId: "t9", sessionId: "s9" }
+    ];
+    expect(deadTabsForSession(tabs, "s1", running([]))).toEqual([]);
+  });
+
+  it("一条会话上多个死标签全都找出来", () => {
+    const tabs: WorkspaceTabLike[] = [
+      { key: "t1", kind: "terminal", title: "死一", terminalId: "t1", sessionId: "s1" },
+      { key: "t2", kind: "terminal", title: "活", terminalId: "t2", sessionId: "s1" },
+      { key: "t3", kind: "terminal", title: "死二", terminalId: "t3", sessionId: "s1" }
+    ];
+    expect(deadTabsForSession(tabs, "s1", running(["t2"]))).toEqual(["t1", "t3"]);
   });
 });

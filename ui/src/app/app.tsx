@@ -7,7 +7,7 @@ import { BranchPanel } from "./branch-panel";
 import { createAppMenus } from "./app-menus";
 import { NewSessionDialog } from "./new-session-dialog";
 import { SessionSettingsDialog } from "./session-settings-dialog";
-import { activateSessionTab } from "./workspace-tabs";
+import { activateSessionTab, deadTabsForSession } from "./workspace-tabs";
 import { planResume } from "./resume-session";
 
 import {
@@ -218,6 +218,37 @@ export function App() {
    */
   const beginResumeSession = useCallback(
     async (target: AiTarget, session: AiSession) => {
+      // **先把这条会话上「已经死掉」的终端标签清掉。**
+      //
+      // 不清的话下一步 `console.openAt` 会让 `activateSessionTab` 切到
+      // 那一张死标签上——用户看到的就是「再次进入被锁住」。
+      // 异常退出的标签是**故意**留着的（要让人看报错），所以这里必须主动清。
+      //
+      // 这里不用 `closeTab`：它在下面才定义（`const` 有暂时性死区），
+      // 而为了这一处把它挪到前面会让「标签相关操作集中在一起」这个结构散掉。
+      // 清掉的动作就三步，写在这里更清楚。
+      const dead = deadTabsForSession(
+        tabs,
+        session.id,
+        (terminalId) =>
+          terminals.terminals.some((item) => item.id === terminalId && item.running)
+      );
+      if (dead.length > 0) {
+        const removing = new Set(dead);
+        setTabs((current) => {
+          const next = current.filter((tab) => !removing.has(tab.key));
+          setActiveKey((currentKey) =>
+            removing.has(currentKey) ? (next.at(-1)?.key ?? "") : currentKey
+          );
+          return next;
+        });
+        for (const tab of tabs) {
+          if (removing.has(tab.key) && tab.terminalId) {
+            void terminals.closeTerminal(tab.terminalId);
+          }
+        }
+      }
+
       // 先把选中态切过去（列表高亮、标签），与从前一致。
       console.openAt(target, session);
       const cwd = session.cwd ?? "";
@@ -240,7 +271,7 @@ export function App() {
         title: displayTitle(session)
       });
     },
-    [console, openTerminal]
+    [console, openTerminal, tabs, terminals]
   );
 
   const openSystemTerminal = useCallback(async () => {

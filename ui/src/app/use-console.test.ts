@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pickTarget, toRefs } from "./use-console";
+import { pickTarget, planTargetSwitch, toRefs } from "./use-console";
 import type { AiSession, AiTarget } from "../types";
 
 const target = (id: string, available: boolean): AiTarget => ({
@@ -67,5 +67,41 @@ describe("mutation references", () => {
 
   it("returns nothing when nothing is selected", () => {
     expect(toRefs([session("s1")], [])).toEqual([]);
+  });
+});
+
+/**
+ * 「点击进入终端会话后，列表内容就消失了」的根因就在这一组断言里。
+ *
+ * `selectTarget` 会清空会话列表，而重载 effect 只在 `targetId` 变化时重跑。
+ * 所以在**当前目标**下点会话时绝不能走 `selectTarget`——否则清了没人填。
+ */
+describe("打开会话时的目标切换", () => {
+  it("在当前目标下打开会话：**什么都不换**（否则列表被清空且不会重载）", () => {
+    expect(planTargetSwitch("codex", "codex:local", { id: "codex:local", provider: "codex" })).toEqual(
+      { provider: null, target: null }
+    );
+  });
+
+  it("同一个平台下换了目标：只换目标，不动平台", () => {
+    expect(
+      planTargetSwitch("codex", "codex:local", { id: "codex:wsl:ubuntu", provider: "codex" })
+    ).toEqual({ provider: null, target: "codex:wsl:ubuntu" });
+  });
+
+  it("跨平台打开会话：平台与目标一起换", () => {
+    // 平台变了但目标没跟着换，就会拿新平台去查旧目标——列表必然是空的。
+    expect(
+      planTargetSwitch("codex", "codex:local", { id: "claude:local", provider: "claude" })
+    ).toEqual({ provider: "claude", target: "claude:local" });
+  });
+
+  it("目标编号相同但平台变了，仍必须换目标", () => {
+    // 「编号相同」在跨平台时是个陷阱：`local` 在两家平台上都叫 `local`，
+    // 但它们是两个不同的目标，会话也完全不同。
+    expect(planTargetSwitch("codex", "local", { id: "local", provider: "claude" })).toEqual({
+      provider: "claude",
+      target: "local"
+    });
   });
 });

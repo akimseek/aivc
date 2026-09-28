@@ -60,8 +60,8 @@ export function SessionWorkspace({
   tabItems: TabItem[];
   activeKey: string;
   activeTab: WorkspaceTab | null;
-  /** 当前挂着的终端（全部，不只是前台那一个）。 */
-  terminalItems: { id: string; running: boolean }[];
+  /** 当前挂着的终端（全部，不只是前台那一个）。`sessionId` 决定自管输入的初始可见性。 */
+  terminalItems: { id: string; running: boolean; sessionId?: string }[];
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
@@ -108,6 +108,8 @@ export function SessionWorkspace({
                   terminalId={item.id}
                   active={activeTab?.kind === "terminal" && activeTab.terminalId === item.id}
                   running={item.running}
+                  /* 自管输入的初始可见性由「是不是恢复历史会话」决定。 */
+                  sessionId={item.sessionId}
                   registerSink={registerSink}
                   unregisterSink={unregisterSink}
                   onError={onError}

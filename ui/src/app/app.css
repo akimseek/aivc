@@ -1042,6 +1042,9 @@ select {
 .terminal-slot {
   position: absolute;
   inset: 0;
+  /* 终端与自管输入上下排：终端占满剩余空间，输入框贴底。 */
+  display: flex;
+  flex-direction: column;
 }
 
 .terminal-slot.inactive {
@@ -1050,10 +1053,126 @@ select {
 }
 
 .terminal-host {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   padding: 8px 10px 10px;
   background: var(--term-bg);
   overflow: hidden;
+}
+
+/* ── 自管输入 ────────────────────────────────────────── */
+
+/*
+ * 它是终端区的一部分，因此**用终端的深色底**，而不是工作区的浅色底。
+ * 用浅色会让人以为它属于上面那块会话正文，而不是下面这个终端。
+ */
+.composer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  padding: 6px 10px 10px;
+  border-top: 1px solid #1f2a3a;
+  background: var(--term-bg);
+}
+
+/* 拖动手柄：只有 4px 高，但**命中区比看起来大**（上下各扩 3px）。
+   细到看不见又要能拖到，只能这样。 */
+.composer-resize {
+  height: 4px;
+  margin: -6px 0 -2px;
+  border-radius: 2px;
+  cursor: ns-resize;
+}
+
+.composer-resize:hover {
+  background: #2f3b4d;
+}
+
+.composer-text {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #2f3b4d;
+  border-radius: var(--ui-radius-sm);
+  background: #131c2b;
+  color: #c9d1d9;
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.composer-text:focus-visible {
+  outline: 2px solid #7ee787;
+  outline-offset: 1px;
+}
+
+.composer-text::placeholder {
+  color: #6b7688;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  font-size: var(--ui-text-xs);
+  color: #8b949e;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+}
+
+.composer-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 46ch;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid #2f3b4d;
+  border-radius: var(--ui-radius-sm);
+  background: #131c2b;
+}
+
+.composer-attachment-file {
+  overflow: hidden;
+  color: #c9d1d9;
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-attachment button {
+  border: none;
+  background: none;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.composer-attachment button:hover {
+  color: #f0f6fc;
+}
+
+/* 终端区里的按钮沿用工作区的样式，但深底上要提亮，否则看不出来。 */
+.composer .btn {
+  border-color: #2f3b4d;
+  background: #1a2434;
+  color: #c9d1d9;
+}
+
+.composer .btn:hover:not(:disabled) {
+  background: #22304a;
+}
+
+.composer .btn-primary {
+  border-color: #2ea043;
+  background: #238636;
+  color: #ffffff;
 }
 
 /* ── 状态栏 ──────────────────────────────────────────── */

@@ -1,9 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
 import * as api from "../ipc/commands";
+import { ComposerInput } from "./composer-input";
+import { initialComposerVisible, shouldRevealComposer } from "./composer-text";
 import type { TerminalSink } from "./terminal-output";
 
 /**
@@ -23,6 +25,11 @@ export function TerminalPane({
   terminalId,
   active,
   running,
+  /**
+   * 这条终端属于哪条会话。为空表示「新会话」——自管输入的初始可见性由它决定：
+   * 新会话一进去就有输入框，恢复历史会话时先藏着（见 `initialComposerVisible`）。
+   */
+  sessionId,
   registerSink,
   unregisterSink,
   onError
@@ -38,6 +45,7 @@ export function TerminalPane({
    * 与原因毫无关系的报错。
    */
   running: boolean;
+  sessionId?: string;
   registerSink: (id: string, sink: TerminalSink) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
@@ -48,6 +56,22 @@ export function TerminalPane({
   // 尺寸回调挂在 ResizeObserver 里，拿不到最新的 prop，因此用一个 ref 镜像它。
   const runningRef = useRef(running);
   runningRef.current = running;
+
+  /**
+   * 自管输入是否显示。
+   *
+   * 初值由「是不是恢复历史会话」决定，之后由**第一段输出**把它打开——
+   * 那是唯一的入口（旧平台的 `revealComposer()` 也只能被这条路径触发）。
+   */
+  const [composerVisible, setComposerVisible] = useState(() =>
+    initialComposerVisible(sessionId)
+  );
+  const composerVisibleRef = useRef(composerVisible);
+  composerVisibleRef.current = composerVisible;
+  /** 每次挂载都从初值重新判断：换了一条终端（key 变了）就是另一路。 */
+  useEffect(() => {
+    setComposerVisible(initialComposerVisible(sessionId));
+  }, [sessionId, terminalId]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -71,7 +95,32 @@ export function TerminalPane({
     fitRef.current = fit;
 
     // 输出：把这一路的字节接进 xterm。
-    registerSink(terminalId, (bytes) => term.write(bytes));
+    registerSink(terminalId, (bytes) => {
+      term.write(bytes);
+      /**
+       * **第一段输出到达时把自管输入露出来。**
+       *
+       * 恢复历史会话时它初值是隐藏的（那时终端正在重放历史，输入框会挡住输出），
+       * 而这是唯一能把它们显示出来的路径——旧平台也是这么做的
+       * （`embedded-terminal.tsx` 的 `onTerminalData` 里那句 `revealComposer()`）。
+       *
+       * 少了这一条，恢复的会话里用户**永远看不到**自管输入。
+       */
+      if (shouldRevealComposer(composerVisibleRef.current, bytes.length > 0)) {
+        setComposerVisible(true);
+        // 输入框占了一块高度，终端要重新量一次，否则最后几行会被它挡住。
+        window.requestAnimationFrame(() => {
+          try {
+            fit.fit();
+            if (runningRef.current) {
+              void api.resizeTerminal(terminalId, term.cols, term.rows).catch(() => undefined);
+            }
+          } catch {
+            /* 容器不可测量，忽略。 */
+          }
+        });
+      }
+    });
 
     // 输入：**这是终端能动的关键一环**（见文件头注释）。
     const dataSub = term.onData((data) => {
@@ -144,13 +193,21 @@ export function TerminalPane({
     if (!active) return;
     const term = termRef.current;
     if (!term) return;
+    // 自管输入显示时，它才是用户想打字的地方——抢焦点会把光标从输入框里拽走。
+    if (composerVisible) return;
     try {
       term.focus();
     } catch {
       /* 还没挂到 DOM 上，下一轮 active 变化时再试。 */
     }
-  }, [active, terminalId]);
+  }, [active, terminalId, composerVisible]);
 
+  /**
+   * 自管输入**只在前台显示**。
+   *
+   * 非前台的终端仍然挂载（不能卸载，会丢输出），但它的输入框不该占位置：
+   * 用户在看另一路终端时，屏幕下方多出一个属于别处的输入框只会让人写错地方。
+   */
   return (
     <div
       className={`terminal-slot${active ? "" : " inactive"}`}
@@ -159,6 +216,22 @@ export function TerminalPane({
       aria-hidden={!active}
     >
       <div className="terminal-host" ref={hostRef} />
+      {active && composerVisible && (
+        <ComposerInput
+          terminalId={terminalId}
+          onSent={() => {
+            // 发完把焦点还给终端：用户下一件事通常是看 CLI 的回应。
+            window.requestAnimationFrame(() => {
+              try {
+                termRef.current?.focus();
+              } catch {
+                /* 终端还没挂上，忽略。 */
+              }
+            });
+          }}
+          onError={onError}
+        />
+      )}
     </div>
   );
 }

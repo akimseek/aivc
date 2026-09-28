@@ -461,13 +461,9 @@ export function App() {
             }
           )}
         />
-        <button type="button" onClick={() => setConfigOpen(true)}>
-          配置
-        </button>
-        <ToolbarSpacer />
-        <button type="button" onClick={() => setPaletteOpen(true)}>
-          命令面板 ⌘K
-        </button>
+        {/* 「配置」与「命令面板」两个按钮**删掉了**：它们与菜单完全重复。
+            旧平台的顶栏只有 `AppMenuBar` + 提醒铃铛，命令面板靠 Ctrl+K 或菜单打开。
+            重复的入口不只是多余——它们让「功能到底从哪进」变得含糊。 */}
         {/* 会话提醒：位置与旧平台一致（菜单栏右侧）。没有提醒时它自己不渲染。 */}
         <AttentionCenter
           entries={terminals.terminals

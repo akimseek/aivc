@@ -346,6 +346,9 @@ pub fn run(app: App) -> tauri::Result<()> {
             .title(spec.title)
             .inner_size(spec.width, spec.height)
             .min_inner_size(spec.min_width, spec.min_height)
+            // **居中。** 不设的话位置由系统决定，实测打开时贴左上角。
+            // 必须在 `inner_size` 之后：居中按**当前尺寸**算，先居中再改尺寸就白居中了。
+            .center()
             .background_color(background)
             .resizable(true)
             .on_navigation(move |url| {

@@ -137,6 +137,13 @@ $env:CDP_PROBE = $expression
 $env:CDP_PROBE_WAIT = "2500"
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
 
+# **靠环境变量把运行根挪开，而不是靠工作目录。**
+#
+# 运行根已改成「与工作目录无关」（按可执行文件位置 + 编译期的工作区根），
+# 因此只设 `-WorkingDirectory` **不再有效**——应用会在 `aivc-rs\data` 上跑，
+# 那正是要避免的事。这一条必须跟着一起改。
+$env:AIVC_RUNTIME_ROOT = $runRoot
+
 Write-Host "运行根：$runRoot"
 
 $process = Start-Process -FilePath $exe -WorkingDirectory $runRoot -PassThru `

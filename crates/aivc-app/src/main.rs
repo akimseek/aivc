@@ -34,14 +34,39 @@ fn main() {
 /// 真正的启动流程。
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?;
-    let cwd = std::env::current_dir()?;
-    let root = resolve_runtime_storage_root(
-        // `isPackaged` 的等价物：发布构建视为已打包。
-        !cfg!(debug_assertions),
-        &executable,
-        &cwd,
-        Platform::current(),
-    );
+    // **运行根与「当前工作目录」无关。**
+    //
+    // 开发构建用编译期已知的工作区根，因此不论从哪儿启动、`CARGO_TARGET_DIR` 怎么改，
+    // 数据都落在同一处，而且**独立于编译产物**（`cargo clean` 不会连数据一起删）。
+    //
+    // 路径怎么算：`CARGO_MANIFEST_DIR` 是**本 crate** 的目录
+    // （`<工作区>/crates/aivc-app`），因此要往上**两级**才是工作区根。
+    //
+    // **踩过一次**：这里原本只往上取一级，运行根于是变成 `<工作区>/crates`——
+    // 日志落进了 `crates/logs`。它看起来「正常」（文件确实生成了），但位置是错的。
+    // 实测是从 `D:\` 启动应用时发现的：写出的路径是 `…/crates/logs/app.log`。
+    //
+    // 刻意不写成「找 target 的祖父目录」：`CARGO_TARGET_DIR` 一改那个约定就不成立，
+    // 而编译期常量没有这个不确定性。
+    let development_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .map_or_else(|| std::path::PathBuf::from("."), std::path::Path::to_path_buf);
+    // 显式覆盖优先（探针用它把数据挪到临时目录，见 `RUNTIME_ROOT_ENV` 的文档）。
+    let root = aivc_infra::config::overridden_root(
+        std::env::var(aivc_infra::config::RUNTIME_ROOT_ENV)
+            .ok()
+            .as_deref(),
+    )
+    .unwrap_or_else(|| {
+        resolve_runtime_storage_root(
+            // `isPackaged` 的等价物：发布构建视为已打包。
+            !cfg!(debug_assertions),
+            &executable,
+            &development_root,
+            Platform::current(),
+        )
+    });
     tracing::info!(
         root = %root.root.display(),
         shape = ?root.shape,

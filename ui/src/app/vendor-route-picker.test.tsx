@@ -102,11 +102,21 @@ describe("VendorRoutePicker", () => {
     expect(view.container.querySelector(".status-vendor")).toBeNull();
   });
 
-  it("没有绑定时显示「直连」而不是一个空的选择器", async () => {
-    // 用户需要能区分「没配供应商」与「配了但不生效」——空选择器说不出这件事。
+  it("没有绑定时**显眼地**说明「没走网关」，而不是一个中性的「直连」", async () => {
+    // 用户真的因为这个吃过亏：界面上写着「直连」，他就以为一切正常，
+    // 而请求其实去了 `~/.codex/config.toml` 里那个地址、用的是他自己的密钥，
+    // 一直到余额耗尽看到 403 才发现。
+    //
+    // 因此这里断言的不只是「有字」，而是**那层警示**：`warn` 类、
+    // 明说「未走网关」、并且点出「用自己的密钥」。
     const { view } = await renderPicker(terminal());
-    const text = view.container.querySelector(".status-vendor")?.textContent ?? "";
+    const node = view.container.querySelector(".status-vendor");
+    const text = node?.textContent ?? "";
+
+    expect(text).toContain("未走网关");
     expect(text).toContain("直连");
+    expect(text).toContain("用自己的密钥");
+    expect(node?.className).toContain("warn");
     expect(view.container.querySelector(".vendor-pick")).toBeNull();
   });
 

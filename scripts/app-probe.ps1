@@ -5,19 +5,33 @@
 .DESCRIPTION
   把「验证真实运行时行为」这件事收敛成一条命令。它做四件手工时容易漏掉的事：
 
-  1. **每次都以干净状态启动**：残留的 logs / data 会让「首次运行」的路径测不到；
+  1. **在隔离的运行根里启动**：应用在开发构建下把 `data/` 与 `logs/` 放在**当前工作目录**
+     下（`resolve_runtime_storage_root`），因此探针把工作目录指到一个临时目录，
+     于是**永远碰不到用户的真实数据**；
   2. **等 CDP 真的可用**再跑探针（固定 sleep 要么太短要么白等）；
-  3. **总是收尾**：进程、日志、数据目录，无论探针成功还是抛异常；
+  3. **总是收尾**：进程、临时目录，无论探针成功还是抛异常；
   4. **顺手打印日志里命中的行**——很多结论要靠后端日志才能下定论。
 
   探针文件由 `scripts/probe-helpers.js`（定义 `window.__p`）与探针本身拼成。
   因此探针必须是**最后一个表达式**，它的值就是打印出来的结果。
 
+  # 为什么改成临时运行根（这是一次事故换来的）
+
+  原先这个脚本每次都 `Remove-Item logs, data`。它的本意是「保证从干净状态启动」，
+  但**应用的数据目录就是工作目录下的那两份**——也就是说，只要探针的工作目录
+  恰好与用户启动应用时相同，它删的就是**用户自己的供应商配置与历史**。
+
+  实测中用户就是因此在终端里看到 `INSUFFICIENT_BALANCE`：探针删掉了供应商，
+  路由无法建立，CLI 于是直连了他自己配置里的第三方地址。
+
+  现在的做法把两件事分开：**干净状态**由「每次一个全新的临时目录」保证，
+  而**用户的数据**根本不在这条路径上，因此不需要（也不允许）删除任何东西。
+
 .EXAMPLE
   .\scripts\app-probe.ps1 -Probe probes\gateway-e2e.js
 
 .EXAMPLE
-  # 保留现场（日志、数据目录、stderr）以便排查
+  # 保留临时运行根（日志、数据、stderr）以便排查
   .\scripts\app-probe.ps1 -Probe probes\gateway-e2e.js -Keep
 
 .EXAMPLE
@@ -32,10 +46,15 @@ param(
   [string] $Log = "",
   # 最多等多少秒让 CDP 就绪。
   [int] $Ready = 40,
-  # 跑完保留 logs / data / stderr，便于排查。
+  # 跑完保留临时运行根（日志 / 数据 / stderr），并把路径打出来。
   [switch] $Keep,
   # 注入到页面的探针参数，作为 `window.__pArgs`。
-  [string] $ProbeArgs = ""
+  [string] $ProbeArgs = "",
+  # 用**已存在的**运行根（例如应用真实数据目录 `target\debug`），而不是新建临时目录。
+  #
+  # 用途只有一个：**排查用户实际遇到的现象**——那种情况必须先看到用户自己的数据。
+  # 给了这个参数时脚本**不会删除任何东西**，而且会先把运行根打印出来让人确认。
+  [string] $RunRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,12 +90,41 @@ if (-not $Shot) {
 }
 New-Item -ItemType Directory -Path (Split-Path -Parent $Shot) -Force | Out-Null
 
-# 每次都以干净状态启动。
-foreach ($dir in @("logs", "data")) {
-  Remove-Item (Join-Path $root $dir) -Recurse -Force -ErrorAction SilentlyContinue
+# **两种运行根，两条规则，绝不混用。**
+#
+# - 不给 `-RunRoot`（默认）：新建临时目录，**保证干净**，且绝不碰工程目录；
+# - 给了 `-RunRoot`：**只读地**用那个目录，用来排查「用户实际遇到的」现象
+#   （那种情况必须先看到用户自己的数据）。这条路径**不删任何东西**。
+if ($RunRoot) {
+  if (-not (Test-Path $RunRoot)) { throw "运行根不存在：$RunRoot" }
+  $runRoot = (Resolve-Path $RunRoot).Path
+  $ephemeral = $false
+  Write-Host "**注意：使用已有运行根，不会删除任何内容**：$runRoot"
+} else {
+  $runRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("aivc-probe-" + [System.Guid]::NewGuid().ToString("N").Substring(0, 8))
+  New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
+  $ephemeral = $true
 }
-$errFile = Join-Path $root "shots\probe-stderr.txt"
-Remove-Item $errFile -Force -ErrorAction SilentlyContinue
+
+# **守卫：临时运行根绝不许落在工程目录里。**
+#
+# 这一条是把事故钉死的地方。原先的工作目录就是工程根，而开发构建把
+# `data/`（供应商、会话、设置）与 `logs/` 都写在工作目录下——于是任何
+# 「先删掉 data 与 logs 再从干净状态启动」的写法，删的都是**工程目录里的那份**，
+# 而它可能正是用户在用的数据。实测中用户就是这么在终端里撞上第三方
+# `INSUFFICIENT_BALANCE` 的。
+#
+# 现在默认运行根是临时目录，这条断言保证**将来有人改回工程目录时立刻失败**，
+# 而不是又一次悄悄删掉用户的数据。显式 `-RunRoot` 是唯一的例外，且它不删东西。
+if ($ephemeral) {
+  $projectRoot = (Resolve-Path $root).Path
+  $resolvedRunRoot = (Resolve-Path $runRoot).Path
+  if ($resolvedRunRoot.StartsWith($projectRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "临时运行根不能落在工程目录内（会把工程目录当成应用数据目录）：$resolvedRunRoot"
+  }
+}
+
+$errFile = Join-Path $runRoot "stderr.txt"
 
 # **必须显式指定 UTF-8**：Windows PowerShell 的 `Get-Content -Raw` 默认按 ANSI 读，
 # 而这两个文件里有中文（注释与字符串字面量）。读错会把源码变成乱码，
@@ -89,7 +137,9 @@ $env:CDP_PROBE = $expression
 $env:CDP_PROBE_WAIT = "2500"
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
 
-$process = Start-Process -FilePath $exe -WorkingDirectory $root -PassThru `
+Write-Host "运行根：$runRoot"
+
+$process = Start-Process -FilePath $exe -WorkingDirectory $runRoot -PassThru `
   -RedirectStandardError $errFile
 $failed = $false
 try {
@@ -122,12 +172,13 @@ try {
   }
 
   if ($Keep) {
-    Write-Host "`n（-Keep：保留了 logs\、data\ 与 shots\probe-stderr.txt）"
+    Write-Host "`n（-Keep：保留了运行根 $runRoot）"
+  } elseif ($ephemeral) {
+    # **只删自己刚建的那个临时目录。**
+    # 用 `-RunRoot` 指定时（排查用户实际现象）绝不删任何东西。
+    Remove-Item $runRoot -Recurse -Force -ErrorAction SilentlyContinue
   } else {
-    foreach ($dir in @("logs", "data")) {
-      Remove-Item (Join-Path $root $dir) -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    Remove-Item $errFile -Force -ErrorAction SilentlyContinue
+    Write-Host "`n（使用了已有运行根，未删除任何内容）"
   }
 }
 

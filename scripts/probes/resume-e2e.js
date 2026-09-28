@@ -12,6 +12,15 @@
  *    那一刻屏幕上其实是**信任提示**，那里的 `esc` 是 **quit**，
  *    于是终端被自己关掉，后续只剩一句「终端已关闭」。
  *
+ * **还有一条铁律（事故换来的）：绝不对可能改动用户环境的提示按「确认」。**
+ *
+ * 上面第 4 条里那个「误按回车」不是小事——它真的执行了
+ * `npm install -g @openai/codex`，把用户本机的 Codex 从 0.156.1 升到了 0.157.1。
+ * 用户随后在物理机终端里撞上 0.157 的后台守护进程报错，**根源就在这一下**。
+ *
+ * 因此：**升级提示一律选「跳过」，目录信任才允许按回车**（信任只写本地配置、
+ * 不改变安装），拿不准就不按。
+ *
  * 所以现在是**读屏幕再决定按哪个键**：看到升级提示按 esc（跳过），
  * 看到信任提示按回车（信任），出现 `session id:` 就停下。
  *
@@ -91,11 +100,15 @@
       break;
     }
     if (/Update available/i.test(text)) {
+      // **一律跳过升级。** 按回车会真的执行 `npm install -g @openai/codex`，
+      // 而探针**没有资格改动用户安装的 CLI 版本**——上一次就是这么把 0.156.1
+      // 升成 0.157.1 的，用户随后撞上了 0.157 的后台守护进程报错。
       await safe("write", () => p.invoke("terminal:write", { terminalId, data: "\u001b" }));
-      out.steps.push("按 esc 跳过升级");
+      out.steps.push("按 esc 跳过升级（绝不选「立即更新」）");
       continue;
     }
     if (/Trust this folder\?/i.test(text)) {
+      // 信任只写本地配置、不改变安装，因此这一处按回车是安全的。
       await safe("write", () => p.invoke("terminal:write", { terminalId, data: "\r" }));
       out.steps.push("按回车信任目录");
       continue;

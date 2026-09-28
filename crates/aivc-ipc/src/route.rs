@@ -189,18 +189,25 @@ impl RouteSource for GatewayRouteSource {
             }
             // 网关地址为空 = 没有在跑。这不是错误（用户可能关掉了网关），但**必须留痕**：
             // 否则「配了供应商却不生效」在日志里查不出任何线索。
+            //
+            // 用 **warn** 而不是 info：这条一旦出现，就意味着用户这次是在**花自己的钱**
+            // （CLI 会直连它自己配置的上游）。实践证明 info 级别的这行话在实际排查时
+            // 根本没被看到——用户是看到第三方的「余额不足」才发现没走网关的。
             let address = self.gateway.address().await;
             if address.trim().is_empty() {
-                tracing::info!(
+                tracing::warn!(
                     provider = provider.as_str(),
-                    "网关未运行，本次终端不注入路由"
+                    terminal = terminal_id,
+                    "网关未运行，本次终端未接入网关：CLI 将直连它自己配置的上游"
                 );
                 return Ok(None);
             }
             let Some(vendor) = self.pick_vendor(provider, vendor_id).await? else {
-                tracing::info!(
+                // 同上：这是「没走网关」的另一种成因，级别与措辞保持一致。
+                tracing::warn!(
                     provider = provider.as_str(),
-                    "该平台没有可用的供应商，本次终端不注入路由"
+                    terminal = terminal_id,
+                    "该平台没有可用的供应商，本次终端未接入网关：CLI 将直连它自己配置的上游"
                 );
                 return Ok(None);
             };

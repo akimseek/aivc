@@ -1088,6 +1088,17 @@ select {
   min-width: 0;
 }
 
+/* 「没走网关」必须看得出来。
+   用户真的因为这个吃过亏：中性地写着「直连」，他就以为一切正常，而请求去的是
+   CLI 自己配置的上游、花的是他自己的余额。这里用警示色 + 加粗。 */
+.status-vendor.warn {
+  border-radius: var(--ui-radius-sm);
+  padding: 0 6px;
+  background: color-mix(in srgb, var(--ui-warning, #b8860b) 18%, transparent);
+  color: var(--ui-warning, #b8860b);
+  font-weight: 600;
+}
+
 .vendor-pick {
   /* 供应商名通常很短；给个上限是为了防止用户起了一个超长名字把网关信息挤出去。 */
   max-width: 18ch;

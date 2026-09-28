@@ -103,11 +103,19 @@ export function VendorRoutePicker({
   const eligible = vendors.filter((vendor) => vendor.enabled);
   const nameOf = (id: string) => vendors.find((vendor) => vendor.id === id)?.name ?? id;
 
-  // 没有绑定：说明后端没有可用供应商（没配、被禁用、或配置不全）。
+  // 没有绑定：说明后端没有可用供应商（没配、被禁用、或配置不全），
+  // 于是**这一次终端根本没走网关**，CLI 会用它自己的登录 / 配置文件直连上游。
+  //
+  // **这一条必须显眼。** 用户真的撞上过：界面上写着「直连」，他就以为一切正常，
+  // 而实际上请求去的是 `~/.codex/config.toml` 里那个地址、用的是他自己的密钥，
+  // 直到余额耗尽看到 403 才发现。所以这里不能只是一个中性的状态词。
   if (!terminal.vendorId) {
     return (
-      <span className="status-vendor" title="未配置可用供应商，本终端直连官方 API">
-        供应商 <b>直连</b>
+      <span
+        className="status-vendor warn"
+        title="没有可用供应商，本次终端没有接入网关：CLI 会直连它自己配置的上游，并使用你自己的凭据"
+      >
+        ⚠ 未走网关 · <b>直连</b>（用自己的密钥）
       </span>
     );
   }

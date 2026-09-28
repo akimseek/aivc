@@ -51,7 +51,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let development_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
-        .map_or_else(|| std::path::PathBuf::from("."), std::path::Path::to_path_buf);
+        .map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        );
     // 显式覆盖优先（探针用它把数据挪到临时目录，见 `RUNTIME_ROOT_ENV` 的文档）。
     let root = aivc_infra::config::overridden_root(
         std::env::var(aivc_infra::config::RUNTIME_ROOT_ENV)

@@ -396,3 +396,161 @@
   text-align: center;
   font-size: 12.5px;
 }
+
+/* ── 加载态 ──────────────────────────────────────────── */
+
+/*
+ * 转圈用 `border` 做：一条边着色、其余透明，旋转起来就是进度感。
+ * 不用 SVG 是为了不引依赖，也不用图片是为了跟随主题色。
+ */
+.spinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  border: 2px solid var(--ui-border-strong);
+  border-top-color: var(--ui-accent);
+  border-radius: 50%;
+  animation: ui-spin 0.7s linear infinite;
+}
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 尊重「减少动态效果」：前庭功能敏感的用户会因旋转不适。 */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+
+.loading-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-5);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-sm);
+}
+
+.loading-label {
+  font-weight: 600;
+}
+
+.loading-hint {
+  max-width: 46ch;
+  color: var(--ui-faint);
+  text-align: center;
+  font-size: var(--ui-text-xs);
+}
+
+/* 盖在已有内容之上：旧数据还看得见，但要在视觉上说明「正在换」。 */
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-space-2);
+  background: rgb(255 255 255 / 72%);
+  color: var(--ui-text-soft);
+  font-size: var(--ui-text-sm);
+}
+
+/* ── 卡片 ────────────────────────────────────────────── */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-3);
+  padding: var(--ui-space-3) var(--ui-space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-space-3);
+}
+
+.card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.card-title {
+  margin: 0;
+  color: var(--ui-text);
+  font-size: var(--ui-text-md);
+  font-weight: 700;
+}
+
+.card-description {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  line-height: var(--ui-leading-tight);
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  margin-left: auto;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  min-width: 0;
+}
+
+/* ── 键值对 ──────────────────────────────────────────── */
+
+.description-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  margin: 0;
+}
+
+.description-list > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-2);
+}
+
+.description-list dt {
+  flex: 0 0 auto;
+  min-width: 84px;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+}
+
+.description-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text);
+  font-size: var(--ui-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.description-list .tone-ok dd {
+  color: var(--ui-accent-strong);
+  font-weight: 600;
+}
+
+.description-list .tone-warn dd {
+  color: var(--ui-warn);
+  font-weight: 600;
+}

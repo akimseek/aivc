@@ -1,0 +1,217 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import type { TabItem } from "../components";
+import type { AiSession, AiTarget } from "../types";
+import { displayTitle } from "./session-display";
+import { activateSessionTab, deadTabsForSession } from "./workspace-tabs";
+import type { useTerminals } from "./use-terminals";
+
+/**
+ * 工作区的标签。
+ *
+ * # 为什么这段逻辑必须离开 `app.tsx`
+ *
+ * 它包含三类东西，而它们**都不该出现在渲染代码里**：
+ *
+ * 1. **标签的增删规则**（已有的就切过去，不新建第二张）——规则本身在
+ *    `workspace-tabs.ts` 里且可单测，但「谁在什么时候调用它」有六条路径
+ *    （选中会话、开 Codex 终端、开系统终端、手动关闭、干净退出自动收、
+ *    再次进入时清死标签）；
+ * 2. **一个真实的时间差**：标签的 key 由 `terminal:start` 返回的编号决定，
+ *    而 `setTabs` 是异步的——`activeKey` 必须同时设好，否则新终端起来了却不在前台；
+ * 3. **一条容易漏的分支**：终端自己退出（干净退出）时不收标签，用户会看到一张
+ *    已经死掉的标签，再次进入会话时被它挡住。这条此前真的漏过。
+ *
+ * 抽出来之后 `app.tsx` 只需在事件里调一个方法，而这里可以按「给定这些事件，
+ * 标签变成什么样」来断言。
+ */
+
+/** 工作区的一个标签：会话或终端。 */
+export type WorkspaceTab = {
+  key: string;
+  kind: "session" | "terminal";
+  title: string;
+  /** `kind === "session"` 时是会话编号。 */
+  sessionId?: string;
+  /** `kind === "terminal"` 时是终端编号（同时用作 key）。 */
+  terminalId?: string;
+};
+
+export function useWorkspaceTabs(
+  terminals: ReturnType<typeof useTerminals>,
+  selectedSession: AiSession | null
+) {
+  const [tabs, setTabs] = useState<WorkspaceTab[]>([]);
+  const [activeKey, setActiveKey] = useState("");
+
+  /** 加一张终端标签并让它到前台。 */
+  const addTerminalTab = useCallback((id: string, title: string, sessionId?: string) => {
+    setTabs((current) => [
+      ...current,
+      {
+        key: id,
+        kind: "terminal",
+        title,
+        terminalId: id,
+        // **这条终端属于哪条会话。** 有它，标签才能既当终端又当那个会话的入口：
+        // 终端退出后会话仍在，选中会话时也不会再建第二个标签。
+        ...(sessionId ? { sessionId } : {})
+      }
+    ]);
+    setActiveKey(id);
+  }, []);
+
+  /**
+   * 关一张标签。
+   *
+   * 关掉当前标签时**切到剩下最后一张**，而不是回到空：空工作区看起来像「什么都没了」，
+   * 而用户通常只是想回到刚才那条。
+   *
+   * # 那个 `terminalId` 必须从**闭包里的 `tabs`** 取，不能在更新函数里取
+   *
+   * 这一条踩过：写成
+   *
+   * ```text
+   * let closingTerminalId;
+   * setTabs((current) => { closingTerminalId = current.find(...)?.terminalId; ... });
+   * if (closingTerminalId) void terminals.closeTerminal(closingTerminalId);  // ← 永远是 undefined
+   * ```
+   *
+   * 看起来等价，实际不等价：**React 不保证同步调用更新函数**（它可能推迟到渲染阶段）。
+   * 于是那一行读到的还是 `undefined`，`closeTerminal` 从未被调用——标签消失了，
+   * 但终端进程还活着、xterm 还挂在 DOM 上。探针读数直接暴露了它：
+   * 退出后 `xterms` 应该是 0，实际是 1，而且每开关一次就多一个。
+   */
+  const closeTab = useCallback(
+    (key: string) => {
+      const closing = tabs.find((tab) => tab.key === key);
+      setTabs((current) => {
+        const next = current.filter((tab) => tab.key !== key);
+        setActiveKey((currentKey) =>
+          currentKey === key ? (next.at(-1)?.key ?? "") : currentKey
+        );
+        return next;
+      });
+      if (closing?.terminalId) void terminals.closeTerminal(closing.terminalId);
+    },
+    [tabs, terminals]
+  );
+
+  /**
+   * 清掉某条会话上**已经死掉**的终端标签。
+   *
+   * 干净退出的标签会被自动收掉，但**异常退出的标签是故意留着的**（要让人看报错）。
+   * 于是再次进入这条会话时，`activateSessionTab` 会切到那一张死标签上——
+   * 用户看到的是不能输入、不再产出的终端。用户原话：
+   * 「`/exit` 退出了会话终端，再次进入会被锁住，并没有释放资源」。
+   *
+   * 所以进入之前必须先清，判据是「终端不在了」而不是「标签存在」。
+   */
+  const clearDeadTabs = useCallback(
+    (sessionId: string) => {
+      const dead = deadTabsForSession(tabs, sessionId, (terminalId) =>
+        terminals.terminals.some((item) => item.id === terminalId && item.running)
+      );
+      if (dead.length === 0) return;
+      const removing = new Set(dead);
+      setTabs((current) => {
+        const next = current.filter((tab) => !removing.has(tab.key));
+        setActiveKey((currentKey) =>
+          removing.has(currentKey) ? (next.at(-1)?.key ?? "") : currentKey
+        );
+        return next;
+      });
+      for (const tab of tabs) {
+        if (removing.has(tab.key) && tab.terminalId) void terminals.closeTerminal(tab.terminalId);
+      }
+    },
+    [tabs, terminals]
+  );
+
+  /**
+   * 选中的会话自动成为当前标签。
+   *
+   * 由 `selectedId` 驱动而不是在每个点击处手写一次：列表里点击、搜索后跳转、
+   * 批量操作后刷新——每条路径都会改 `selectedId`，只在一处响应才不会漏。
+   */
+  useEffect(() => {
+    if (!selectedSession) return;
+    let activated = selectedSession.id;
+    setTabs((current) => {
+      const result = activateSessionTab(current, {
+        id: selectedSession.id,
+        title: displayTitle(selectedSession)
+      });
+      activated = result.activeKey;
+      return result.tabs;
+    });
+    setActiveKey(activated);
+  }, [selectedSession]);
+
+  /**
+   * **干净退出的终端：收掉它的标签。**
+   *
+   * 与旧平台一致的语义（`handleTerminalExit` 第一行 `if (exitCode !== 0) return;`）：
+   * 只有干净退出才收；异常退出保留现场，让用户看得到最后几行报错。
+   * 退出码的判断在 `use-terminals` 里做（只有它拿得到），这里只负责执行。
+   */
+  useEffect(() => {
+    const finished = tabs.filter(
+      (tab) =>
+        tab.kind === "terminal" &&
+        tab.terminalId !== undefined &&
+        terminals.terminals.some(
+          (item) => item.id === tab.terminalId && item.exitedCleanly === true
+        )
+    );
+    for (const tab of finished) closeTab(tab.key);
+  }, [tabs, terminals.terminals, closeTab]);
+
+  const tabItems: TabItem[] = useMemo(
+    () =>
+      tabs.map((tab) => {
+        // 终端进程结束后必须在标签上看得出来。
+        //
+        // 这一条此前**永远不会出现**：`terminal:exit` 只有在我们主动关闭终端时才发得出来
+        // ——ConPTY 下子进程自己退出不会让读取线程收到 EOF——所以 `running` 一直是 true，
+        // 标签也就一直没有任何变化。用户敲了 `exit`，界面看起来跟还在运行一模一样。
+        const exited =
+          tab.kind === "terminal" &&
+          terminals.terminals.some((item) => item.id === tab.terminalId && !item.running);
+        return {
+          key: tab.key,
+          label: exited ? `${tab.title}（已退出）` : tab.title,
+          // 等待确认的终端在标签上打一个点。这正是「关注中心」要解决的问题：
+          // 用户切到别的标签后，那一路还在等他，而界面上没有任何提示。
+          tone: terminals.attention[tab.key] ? ("attention" as const) : ("normal" as const)
+        };
+      }),
+    [tabs, terminals.attention, terminals.terminals]
+  );
+
+  const activeTab = tabs.find((tab) => tab.key === activeKey) ?? null;
+
+  return {
+    tabs,
+    activeKey,
+    setActiveKey,
+    tabItems,
+    activeTab,
+    addTerminalTab,
+    closeTab,
+    clearDeadTabs
+  };
+}
+
+/** 供上层判断「有没有能导出的活动会话」。 */
+export function hasSessionTab(tabs: WorkspaceTab[]): boolean {
+  return tabs.some((tab) => tab.kind === "session");
+}
+
+/** 从会话列表里按编号找回完整会话——右键菜单与外链都需要它。 */
+export function findSession(sessions: AiSession[], id: string): AiSession | null {
+  return sessions.find((item) => item.id === id) ?? null;
+}
+
+/** 目标与编号一起用来还原一条会话的入口。 */
+export type ResumeRequest = { target: AiTarget; sessionId: string };

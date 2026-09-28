@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Button, Dialog, Field, TextInput } from "../components";
 
 /**
  * 「设置会话」对话框：**手动指定 WSL 里的 Codex 会话目录**。
@@ -13,9 +13,13 @@ import { useEffect, useRef } from "react";
  * **输入框与两个按钮全部禁用**，并把这一点写在占位符里
  * （旧平台就是这么做的：`disabled = !supportsSessionSettings || !isWsl`）。
  *
- * 文案照抄旧平台 `session-settings-dialog.tsx`。
+ * 这里比旧平台多一项「已有会话目录」的只读显示：旧平台只能盲填，填错了没有反馈。
+ * 该值的来源与目标列表同源（`AiTarget.codexHome`），因此不会出现「界面说 A、
+ * 后端用 B」。
  */
 export type SessionSettingsDialogProps = {
+  /** 当前生效的会话目录（可能来自自动探测）。 */
+  currentPath?: string;
   wslPath: string;
   isWsl: boolean;
   supportsSessionSettings: boolean;
@@ -27,6 +31,7 @@ export type SessionSettingsDialogProps = {
 };
 
 export function SessionSettingsDialog({
+  currentPath,
   wslPath,
   isWsl,
   supportsSessionSettings,
@@ -35,52 +40,41 @@ export function SessionSettingsDialog({
   onRestore,
   onSave
 }: SessionSettingsDialogProps) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
   const disabled = !supportsSessionSettings || !isWsl;
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   return (
-    <div className="dialog-overlay">
-      <div
-        className="dialog-panel session-settings-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="设置会话"
-        tabIndex={-1}
-        ref={panelRef}
-      >
-        <header className="dialog-header">
-          <strong>设置会话</strong>
-        </header>
-
-        <label className="session-path-field">
-          <span>会话目录</span>
-          <input
-            value={wslPath}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder={isWsl ? "WSL 内 Codex 目录，例如 ~/.codex" : "当前目标不需要手动设置"}
-            disabled={disabled}
-            // eslint-disable-next-line jsx-a11y/no-autofocus -- 这是弹层的唯一输入，打开即可输入
-            autoFocus
-          />
-        </label>
-
-        <footer className="dialog-footer">
-          <button type="button" onClick={onRestore} disabled={disabled}>
+    <Dialog
+      title="设置会话"
+      panelClassName="session-settings-dialog"
+      ariaLabel="设置会话"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onRestore} disabled={disabled}>
             恢复自动探测
-          </button>
-          <button type="button" className="primary" onClick={onSave} disabled={disabled}>
+          </Button>
+          <Button variant="primary" onClick={onSave} disabled={disabled}>
             保存
-          </button>
-        </footer>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      <Field label="会话目录" hint={isWsl ? undefined : "当前目标不需要手动设置"}>
+        <TextInput
+          value={wslPath}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={isWsl ? "WSL 内 Codex 目录，例如 ~/.codex" : "当前目标不需要手动设置"}
+          disabled={disabled}
+          // 这是弹层的唯一输入，打开即可输入。
+          autoFocus
+        />
+      </Field>
+
+      {currentPath !== undefined && (
+        <Field label="当前生效">
+          <code title={currentPath}>{currentPath || "（未探测到）"}</code>
+        </Field>
+      )}
+    </Dialog>
   );
 }

@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   baseName,
   displayTitle,
+  emptySessionMessage,
+  formatTokens,
   isTitleFallback,
   messageCountLabel,
   pickPreview,
@@ -139,5 +141,40 @@ describe("isTitleFallback", () => {
     expect(isTitleFallback({ id, title: id })).toBe(true);
     expect(isTitleFallback({ id, title: "  " })).toBe(true);
     expect(isTitleFallback({ id, title: "真标题" })).toBe(false);
+  });
+});
+
+describe("formatTokens", () => {
+  it("万级以上收成 k，百万级收成 M", () => {
+    expect(formatTokens(999)).toBe("999");
+    // 六位数在窄条里读不出来——这就是它存在的理由。
+    expect(formatTokens(419_430)).toBe("419.4k");
+    expect(formatTokens(2_500_000)).toBe("2.5M");
+  });
+
+  it("正好 1000 走 k 而不是原样输出", () => {
+    expect(formatTokens(1000)).toBe("1.0k");
+  });
+});
+
+describe("emptySessionMessage", () => {
+  it("没选目标时说「先选目标」", () => {
+    expect(emptySessionMessage("", null, false)).toBe("请先在上面选择目标。");
+  });
+
+  it("目标不可用时**说出原因**，而不是「未找到会话」", () => {
+    // 这两种处境要做的事完全不同：一个是去修目标，一个是换筛选条件。
+    expect(
+      emptySessionMessage("codex:wsl:broken", { available: false, detail: "发行版进不去" }, false)
+    ).toBe("发行版进不去");
+  });
+
+  it("目标不可用但没有原因时也给一句人话", () => {
+    expect(emptySessionMessage("t", { available: false }, false)).toBe("此目标当前不可用。");
+  });
+
+  it("回收站与活跃会话的空是两句话", () => {
+    expect(emptySessionMessage("t", { available: true }, true)).toBe("回收站为空。");
+    expect(emptySessionMessage("t", { available: true }, false)).toBe("未找到会话。");
   });
 });

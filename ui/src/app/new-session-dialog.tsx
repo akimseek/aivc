@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Button, Dialog, Field } from "../components";
 
 /**
  * 新会话 / 恢复历史会话的对话框。
@@ -22,7 +22,7 @@ import { useEffect, useRef } from "react";
  * # 点遮罩**不关闭**
  *
  * 旧平台传的是 `closeOnOverlay={false}`。这不是小事：这个对话框里可能有用户已经敲了
- * 一半的提示词，点偏一下就全丢了。
+ * 一半的提示词，点偏一下就全丢了。[`Dialog`] 的默认值正是它。
  */
 export type NewSessionDialogProps = {
   /** 恢复历史会话、但原工作目录不存在时传入；`null` 表示新建。 */
@@ -55,94 +55,65 @@ export function NewSessionDialog({
   onClose,
   onConfirm
 }: NewSessionDialogProps) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-
-  // Escape 关闭（与旧平台一致）；遮罩点击**不**关闭。
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  // 打开时把焦点放进面板，否则键盘用户会落在背后的界面上。
-  useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
-
   return (
-    <div className="dialog-overlay">
-      <div
-        className="dialog-panel new-session-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={pendingResume ? "设置工作目录" : "新会话"}
-        tabIndex={-1}
-        ref={panelRef}
-      >
-        <header className="dialog-header">
-          <strong>{pendingResume ? "设置工作目录" : "新会话"}</strong>
-        </header>
-
-        {pendingResume && (
-          <div className="missing-directory-notice">
-            <strong>原工作目录不存在</strong>
-            <code title={pendingResume.missingCwd}>{pendingResume.missingCwd}</code>
-            <span>请选择新的工作目录后继续打开此历史会话。</span>
-          </div>
-        )}
-
-        {supportsCustomCwd && (
-          <div className="directory-field">
-            <span>工作目录</span>
-            <code title={cwd}>{cwd}</code>
-            <button type="button" onClick={onChooseDirectory}>
-              设置工作目录
-            </button>
-          </div>
-        )}
-
-        {!pendingResume && (
-          <>
-            <label className="session-template-field compact">
-              <span>会话标题</span>
-              <input
-                value={title}
-                maxLength={120}
-                onChange={(event) => onTitleChange(event.target.value)}
-                placeholder="可选，便于在历史列表中识别"
-              />
-            </label>
-            <label className="session-template-field">
-              <span>启动提示词</span>
-              <textarea
-                value={prompt}
-                onChange={(event) => onPromptChange(event.target.value)}
-                placeholder="打开新会话后自动发送，可留空"
-                rows={4}
-              />
-            </label>
-            <label className="session-template-field compact">
-              <span>CLI 参数</span>
-              <input
-                value={cliArgs}
-                onChange={(event) => onCliArgsChange(event.target.value)}
-                placeholder="例如：--model gpt-5-codex --sandbox workspace-write"
-              />
-            </label>
-          </>
-        )}
-
-        <footer className="dialog-footer">
-          <button type="button" onClick={onClose}>
-            取消
-          </button>
-          <button type="button" className="primary" onClick={onConfirm}>
+    <Dialog
+      title={pendingResume ? "设置工作目录" : "新会话"}
+      panelClassName="new-session-dialog"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>取消</Button>
+          <Button variant="primary" onClick={onConfirm}>
             {pendingResume ? "继续打开" : "打开"}
-          </button>
-        </footer>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      {pendingResume && (
+        <div className="missing-directory-notice">
+          <strong>原工作目录不存在</strong>
+          <code title={pendingResume.missingCwd}>{pendingResume.missingCwd}</code>
+          <span>请选择新的工作目录后继续打开此历史会话。</span>
+        </div>
+      )}
+
+      {supportsCustomCwd && (
+        <div className="directory-field">
+          <span>工作目录</span>
+          <code title={cwd}>{cwd}</code>
+          <Button small onClick={onChooseDirectory}>
+            设置工作目录
+          </Button>
+        </div>
+      )}
+
+      {!pendingResume && (
+        <>
+          <Field label="会话标题">
+            <input
+              value={title}
+              maxLength={120}
+              onChange={(event) => onTitleChange(event.target.value)}
+              placeholder="可选，便于在历史列表中识别"
+            />
+          </Field>
+          <Field label="启动提示词">
+            <textarea
+              value={prompt}
+              onChange={(event) => onPromptChange(event.target.value)}
+              placeholder="打开新会话后自动发送，可留空"
+              rows={4}
+            />
+          </Field>
+          <Field label="CLI 参数">
+            <input
+              value={cliArgs}
+              onChange={(event) => onCliArgsChange(event.target.value)}
+              placeholder="例如：--model gpt-5-codex --sandbox workspace-write"
+            />
+          </Field>
+        </>
+      )}
+    </Dialog>
   );
 }

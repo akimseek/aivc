@@ -27,7 +27,15 @@ import type {
  * 覆盖层还带来一个好处：它是**临时**的——关掉就回到原来的视图，不需要「返回」。
  */
 
-type ConfigTab = "vendors" | "skills" | "gateway" | "environment" | "presets" | "diagnostics";
+/** 配置面的分页。导出给命令面板用——它要能直接打开某一页。 */
+export type ConfigTab =
+  | "vendors"
+  | "skills"
+  | "gateway"
+  | "environment"
+  | "presets"
+  | "diagnostics";
+
 
 export function ConfigOverlay({
   providerId,

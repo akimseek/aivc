@@ -139,3 +139,30 @@ export function messageCountLabel(count: number, lowerBound = false): string {
   if (count <= 0) return "—";
   return lowerBound ? `≥${count} 条` : `${count} 条`;
 }
+
+/**
+ * 把 token 数显示成 `12.4k` 这样的紧凑形式。
+ *
+ * 原始值常有六位以上（`4194304`），在状态栏那样窄的地方会把相邻字段挤掉。
+ */
+export function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
+}
+
+/**
+ * 会话区为空时**必须说清是哪一种空**。
+ *
+ * 几种完全不同的处境曾经长得一模一样，而用户需要做不同的事：
+ * 没选目标 → 去选目标；目标进不去 → 看原因或指定目录；真没有 → 换筛选。
+ */
+export function emptySessionMessage(
+  targetId: string,
+  target: { available: boolean; detail?: string } | null,
+  trash: boolean
+): string {
+  if (!targetId) return "请先在上面选择目标。";
+  if (target && !target.available) return target.detail || "此目标当前不可用。";
+  return trash ? "回收站为空。" : "未找到会话。";
+}

@@ -1,80 +1,83 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-
-import { AboutDialog } from "./about-dialog";
-import { AppMenuBar } from "./app-menu-bar";
-import { AttentionCenter } from "./attention-center";
-import { BranchPanel } from "./branch-panel";
-import { createAppMenus } from "./app-menus";
-import { NewSessionDialog } from "./new-session-dialog";
-import { SessionSettingsDialog } from "./session-settings-dialog";
-import { activateSessionTab, deadTabsForSession } from "./workspace-tabs";
-import { planResume } from "./resume-session";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   Button,
-  ChipGroup,
   CommandPalette,
-  EmptyState,
-  Field,
-  Notice,
-  SearchInput,
-  Select,
-  Tabs,
-  TextInput,
-  Toolbar,
-  ToolbarSpacer
+  ToolbarSpacer,
+  useToast,
+  type Command
 } from "../components";
-import type { Command, TabItem } from "../components";
-import type { AiMessage, AiProviderId, AiSession, AiTarget, SessionQuickAccessItem } from "../types";
 import * as api from "../ipc/commands";
-import { ConfigOverlay } from "./config-overlay";
+import type { AiSession, AiTarget } from "../types";
+import { AboutDialog } from "./about-dialog";
+import { AppMenuBar } from "./app-menu-bar";
+import { AttentionCenter } from "./attention-center";
+import { createAppMenus } from "./app-menus";
+import { ConfigOverlay, type ConfigTab } from "./config-overlay";
 import { ExitConfirm } from "./exit-confirm";
-import { displayTitle, formatWhen, messageCountLabel, pickPreview } from "./session-display";
+import { NewSessionDialog } from "./new-session-dialog";
+import { planResume } from "./resume-session";
+import { SessionContextMenu } from "./session-context-menu";
+import { SessionActions, exportToDirectory } from "./session-actions";
+import { displayTitle } from "./session-display";
+import { SessionSettingsDialog } from "./session-settings-dialog";
+import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
+import { Sidebar } from "./sidebar";
+import { StatusBar } from "./status-bar";
 import { useConsole } from "./use-console";
 import { useTerminals } from "./use-terminals";
-import { VendorRoutePicker } from "./vendor-route-picker";
-
-/**
- * 终端**按需加载**。
- *
- * xterm 大约 340 KB，而它只在用户真的打开终端时才需要。静态引入会让每一个用户
- * 在首屏就为它付出代价——实测把主包从 235 KB 顶到 573 KB。
- */
-const TerminalPane = lazy(() =>
-  import("./terminal-pane").then((module) => ({ default: module.TerminalPane }))
-);
-
-/** 工作区的一个标签：会话或终端。 */
-type WorkspaceTab = {
-  key: string;
-  kind: "session" | "terminal";
-  title: string;
-  /** `kind === "session"` 时是会话编号。 */
-  sessionId?: string;
-  /** `kind === "terminal"` 时是终端编号（同时用作 key）。 */
-  terminalId?: string;
-};
+import { useWorkspaceTabs } from "./use-workspace-tabs";
 
 /**
  * 应用外壳。
  *
- * 布局沿用旧平台的形状：**菜单栏 /〔侧栏 360px + 工作区〕/ 状态栏**。
- * 取数顺序与竞态处理在 [`useConsole`]；终端在 [`useTerminals`] 与 [`TerminalPane`]。
+ * 布局沿用旧平台的形状：**菜单栏 /〔侧栏 + 工作区〕/ 状态栏**。
+ *
+ * # 这个文件只负责「接线」
+ *
+ * 它此前有 1460 行，其中绝大部分是**可以直接搬走的**：侧栏 260 行、
+ * 工作区正文 240 行、状态栏 100 行、右键菜单 55 行、标签逻辑 120 行。
+ * 现在它们分别在：
+ *
+ * | 内容 | 位置 |
+ * | --- | --- |
+ * | 侧栏（平台/目标/两级导航/三种列表） | [`Sidebar`](./sidebar.tsx) |
+ * | 工作区（标签 + 终端栈 + 会话正文） | [`SessionWorkspace`](./session-workspace.tsx) |
+ * | 状态栏 | [`StatusBar`](./status-bar.tsx) |
+ * | 右键菜单 | [`SessionContextMenu`](./session-context-menu.tsx) |
+ * | 标签的增删与竞态 | [`useWorkspaceTabs`](./use-workspace-tabs.ts) |
+ *
+ * 留在这里的只有三类东西：**状态**（选中的标签、打开的弹层）、
+ * **动作**（开终端、导出、改配置）、**组装**。
  */
 export function App() {
   const console = useConsole();
   const terminals = useTerminals();
   const { selectedTarget } = console;
-  const trash = console.view === "trash";
-  const selectedCount = console.selectedIds.length;
 
-  const [tabs, setTabs] = useState<WorkspaceTab[]>([]);
-  const [activeKey, setActiveKey] = useState("");
-  /** 正在重命名的草稿；`null` 表示不在重命名。 */
-  const [renameDraft, setRenameDraft] = useState<string | null>(null);
-  /** 最近一次导出的实际落点，显示出来让用户知道东西去哪了。 */
-  const [exportedTo, setExportedTo] = useState("");
+  const workspace = useWorkspaceTabs(terminals, console.selectedSession);
+
+  /**
+   * 从会话列表里按编号找回完整会话——右键菜单要它的文件路径，
+   * 分支面板要它的父会话。
+   *
+   * 返回 `undefined` 而不是 `null`：调用方（`branchParent`）的契约就是
+   * 「找不到就没有」，而 `null` 会在类型上要求每个调用点各写一次转换。
+   */
+  const sessionById = useCallback(
+    (id: string) => console.sessions.find((item) => item.id === id),
+    [console.sessions]
+  );
+
+  /* ── 弹层 ─────────────────────────────────────────────── */
+
   const [configOpen, setConfigOpen] = useState(false);
+  const [configTab, setConfigTab] = useState<ConfigTab>("vendors");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+  const [menu, setMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+
   /**
    * 「设置会话」对话框的草稿；`null` 表示没打开。
    *
@@ -83,18 +86,19 @@ export function App() {
   const [sessionSettings, setSessionSettings] = useState<{ distro: string; path: string } | null>(
     null
   );
-  /** 「关于」是否打开，以及取回来的版本号（还没取到就是空串）。 */
-  const [aboutOpen, setAboutOpen] = useState(false);
-  const [appVersion, setAppVersion] = useState("");
+
   /**
    * 一句话的操作结果提示。
    *
-   * 菜单里的动作（清理日志）没有自己的界面，做完必须说一声——**静默完成与没执行
-   * 在用户看来是一样的**。
+   * 菜单里的动作（清理 Gateway 日志）没有自己的界面，做完必须说一声——
+   * **静默完成与没执行在用户看来是一样的**。用 [`useToast`] 是因为它要自动消失：
+   * 常驻的条幅会把正文往下压，而这条消息过几秒就没有价值了。
    */
-  const [notice, setNotice] = useState("");
-  const [configTab, setConfigTab] = useState<"vendors" | "skills" | "gateway" | "environment" | "diagnostics">("vendors");
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const toast = useToast();
+
+  /** 最近一次导出的实际落点，显示出来让用户知道东西去哪了。 */
+  const [exportedTo, setExportedTo] = useState("");
+
   /**
    * 新会话对话框的内容；`null` 表示没打开。
    *
@@ -110,13 +114,16 @@ export function App() {
      * 非空表示这是**恢复**历史会话（`sessionId` 会被变成 `--resume <id>`）。
      *
      * `missingCwd` 只在**确认**原工作目录已不在时才有值——那时对话框切成
-     * `设置工作目录` / `继续打开` 形态。判断不出来（例如 WSL 目标上那条检查没接线）
-     * 就保持 `undefined`：**不知道不等于丢了**。
+     * `设置工作目录` / `继续打开` 形态。判断不出来就保持 `undefined`：
+     * **不知道不等于丢了**。
      */
     resume?: { sessionId: string; missingCwd?: string };
   } | null>(null);
-  /** 右键菜单的位置与目标会话。`null` 表示没打开。 */
-  const [menu, setMenu] = useState<{ x: number; y: number; session: AiSession } | null>(null);
+
+  const openConfig = useCallback((tab: ConfigTab) => {
+    setConfigTab(tab);
+    setConfigOpen(true);
+  }, []);
 
   /** ⌘K / Ctrl+K 打开命令面板。 */
   useEffect(() => {
@@ -130,25 +137,7 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /* 选中的会话自动成为当前标签。
-   *
-   * 由 `selectedId` 驱动而不是在每个点击处手写一次：列表里点击、搜索后跳转、
-   * 批量操作后刷新——每条路径都会改 `selectedId`，只在一处响应才不会漏。
-   *
-   * **规则本身在 `workspace-tabs.ts` 里**（可单测）：如果一个标签已经挂着这条会话
-   * ——**哪怕它是终端标签**——就切过去而不是再建一个。少了这条，点历史会话会同时
-   * 冒出一个会话标签和一个终端标签。 */
-  useEffect(() => {
-    const session = console.selectedSession;
-    if (!session) return;
-    let activated = session.id;
-    setTabs((current) => {
-      const result = activateSessionTab(current, { id: session.id, title: displayTitle(session) });
-      activated = result.activeKey;
-      return result.tabs;
-    });
-    setActiveKey(activated);
-  }, [console.selectedSession]);
+  /* ── 终端 ─────────────────────────────────────────────── */
 
   /**
    * 起一路 Codex 终端。
@@ -157,7 +146,13 @@ export function App() {
    * 不传时沿用「当前选中会话的目录」，也就是旧行为。
    */
   const openTerminal = useCallback(
-    async (options?: { cwd?: string; cliArgs?: string; prompt?: string; sessionId?: string; title?: string }) => {
+    async (options?: {
+      cwd?: string;
+      cliArgs?: string;
+      prompt?: string;
+      sessionId?: string;
+      title?: string;
+    }) => {
       try {
         const id = await terminals.openTerminal(
           selectedTarget,
@@ -166,32 +161,20 @@ export function App() {
           options?.prompt,
           options?.sessionId
         );
-        setTabs((current) => [
-          ...current,
-          {
-            key: id,
-            kind: "terminal",
-            title: options?.title ?? "终端",
-            terminalId: id,
-            // **这条终端属于哪条会话。** 有它，标签才能既当终端又当那个会话的入口：
-            // 终端退出后会话仍在，选中会话时也不会再建第二个标签。
-            ...(options?.sessionId ? { sessionId: options.sessionId } : {})
-          }
-        ]);
-        setActiveKey(id);
+        workspace.addTerminalTab(id, options?.title ?? "终端", options?.sessionId);
       } catch (error) {
         console.setError(error instanceof Error ? error.message : String(error));
       }
     },
-    [terminals, selectedTarget, console]
+    [terminals, selectedTarget, console, workspace]
   );
 
   /**
    * 打开「新会话」对话框。
    *
    * 旧平台的流程是**先在这个对话框里定下工作目录、会话标题、启动提示词与 CLI 参数，
-   * 再打开**（`app.tsx:407` 的 `onCreate`）。此前这里是「点一下直接进终端」——
-   * 用户报的 H2 说的就是这件事：「**默认不选择平台、目标**，选中后直接进入终端会话」。
+   * 再打开**。此前这里是「点一下直接进终端」——用户报的 H2 说的就是这件事：
+   * 「**默认不选择平台、目标**，选中后直接进入终端会话」。
    */
   const beginNewSession = useCallback(() => {
     setNewSession({
@@ -201,6 +184,16 @@ export function App() {
       cliArgs: ""
     });
   }, [console.selectedSession?.cwd]);
+
+  const openSystemTerminal = useCallback(async () => {
+    try {
+      // 系统终端不依赖目标：没选目标时也能开一个本机 shell。
+      const id = await terminals.openSystemTerminal(selectedTarget, console.selectedSession?.cwd);
+      workspace.addTerminalTab(id, "系统终端");
+    } catch (error) {
+      console.setError(error instanceof Error ? error.message : String(error));
+    }
+  }, [terminals, selectedTarget, console, workspace]);
 
   /**
    * 点历史会话：**恢复那次会话并进入终端**（旧平台 `openResumeWithDirectory`）。
@@ -218,39 +211,13 @@ export function App() {
    */
   const beginResumeSession = useCallback(
     async (target: AiTarget, session: AiSession) => {
-      // **先把这条会话上「已经死掉」的终端标签清掉。**
-      //
-      // 不清的话下一步 `console.openAt` 会让 `activateSessionTab` 切到
-      // 那一张死标签上——用户看到的就是「再次进入被锁住」。
-      // 异常退出的标签是**故意**留着的（要让人看报错），所以这里必须主动清。
-      //
-      // 这里不用 `closeTab`：它在下面才定义（`const` 有暂时性死区），
-      // 而为了这一处把它挪到前面会让「标签相关操作集中在一起」这个结构散掉。
-      // 清掉的动作就三步，写在这里更清楚。
-      const dead = deadTabsForSession(
-        tabs,
-        session.id,
-        (terminalId) =>
-          terminals.terminals.some((item) => item.id === terminalId && item.running)
-      );
-      if (dead.length > 0) {
-        const removing = new Set(dead);
-        setTabs((current) => {
-          const next = current.filter((tab) => !removing.has(tab.key));
-          setActiveKey((currentKey) =>
-            removing.has(currentKey) ? (next.at(-1)?.key ?? "") : currentKey
-          );
-          return next;
-        });
-        for (const tab of tabs) {
-          if (removing.has(tab.key) && tab.terminalId) {
-            void terminals.closeTerminal(tab.terminalId);
-          }
-        }
-      }
+      // 先清掉这条会话上已经死掉的终端标签——否则下一步会切到那一张死标签上，
+      // 用户看到的是「再次进入被锁住」。
+      workspace.clearDeadTabs(session.id);
 
-      // 先把选中态切过去（列表高亮、标签），与从前一致。
+      // 先把选中态切过去（列表高亮、标签）。
       console.openAt(target, session);
+
       const cwd = session.cwd ?? "";
       // 决策本身在 `resume-session.ts` 里，**有四条分支**且逐条有测试。
       const plan = await planResume(cwd || undefined, (path) => api.pathExists(path));
@@ -271,107 +238,24 @@ export function App() {
         title: displayTitle(session)
       });
     },
-    [console, openTerminal, tabs, terminals]
+    [console, openTerminal, workspace]
   );
 
-  const openSystemTerminal = useCallback(async () => {
-    try {
-      // 系统终端不依赖目标：没选目标时也能开一个本机 shell。
-      const id = await terminals.openSystemTerminal(selectedTarget, console.selectedSession?.cwd);
-      setTabs((current) => [
-        ...current,
-        { key: id, kind: "terminal", title: "系统终端", terminalId: id }
-      ]);
-      setActiveKey(id);
-    } catch (error) {
-      console.setError(error instanceof Error ? error.message : String(error));
-    }
-  }, [terminals, selectedTarget, console]);
-
-  const closeTab = useCallback(
-    (key: string) => {
-      const closing = tabs.find((tab) => tab.key === key);
-      setTabs((current) => {
-        const next = current.filter((tab) => tab.key !== key);
-        setActiveKey((currentKey) =>
-          currentKey === key ? (next.at(-1)?.key ?? "") : currentKey
-        );
-        return next;
-      });
-      if (closing?.terminalId) void terminals.closeTerminal(closing.terminalId);
+  /** 侧栏回传的是编号（它不持有会话内容），这里还原成完整会话。 */
+  const resumeById = useCallback(
+    (target: AiTarget, sessionId: string) => {
+      const session = sessionById(sessionId) ?? console.selectedSession;
+      if (!session || session.id !== sessionId) {
+        // 会话可能刚被别处删掉。给一句明确的说明，而不是静默无反应。
+        toast.show("该会话已不在当前列表里，请刷新后重试。");
+        return;
+      }
+      void beginResumeSession(target, session);
     },
-    [tabs, terminals]
+    [sessionById, console.selectedSession, beginResumeSession, toast]
   );
 
-  /**
-   * **干净退出的终端：收掉它的标签。**
-   *
-   * # 为什么要收
-   *
-   * 不收的后果实测过：用户敲 `/exit` 之后那一路终端**永远留在标签里**，而
-   * `activateSessionTab` 又会优先切到「已经挂着这条会话的那张标签」——
-   * 于是再次进入会话时，用户看到的是那一路**已经死掉的**终端：不能输入、不再产出，
-   * 表现就是「被锁住」。用户原话：「`/exit` 退出了会话终端，再次进入会被锁住，
-   * 并没有释放资源」。
-   *
-   * # 与旧平台一致的语义
-   *
-   * 旧平台 `handleTerminalExit` 的第一行是 `if (exitCode !== 0) return;`——
-   * **只有干净退出（退出码 0）才收标签**；异常退出保留现场，
-   * 让用户看得到最后几行报错（`embedded-terminal.tsx`：非零退出保留现有终端错误输出）。
-   *
-   * 退出码的判断在 `use-terminals` 里做（只有它拿得到），这里只负责执行。
-   */
-  useEffect(() => {
-    const finished = tabs.filter(
-      (tab) =>
-        tab.kind === "terminal" &&
-        tab.terminalId !== undefined &&
-        terminals.terminals.some(
-          (item) => item.id === tab.terminalId && item.exitedCleanly === true
-        )
-    );
-    for (const tab of finished) closeTab(tab.key);
-  }, [tabs, terminals.terminals, closeTab]);
-
-  const tabItems: TabItem[] = useMemo(
-    () =>
-      tabs.map((tab) => {
-        // 终端进程结束后必须在标签上看得出来。
-        //
-        // 这一条此前**永远不会出现**：`terminal:exit` 只有在我们主动关闭终端时才发得出来
-        // ——ConPTY 下子进程自己退出不会让读取线程收到 EOF——所以 `running` 一直是 true，
-        // 标签也就一直没有任何变化。用户敲了 `exit`，界面看起来跟还在运行一模一样。
-        //
-        // `running` 这个状态应用一直记着，却从来没有显示过：它此前只被用来「不在运行时
-        // 跳过 resize」。记着而不显示，等于没记。
-        const exited =
-          tab.kind === "terminal" &&
-          terminals.terminals.some((item) => item.id === tab.terminalId && !item.running);
-        return {
-          key: tab.key,
-          label: exited ? `${tab.title}（已退出）` : tab.title,
-          // 等待确认的终端在标签上打一个点。这正是「关注中心」要解决的问题：
-          // 用户切到别的标签后，那一路还在等他，而界面上没有任何提示。
-          tone: terminals.attention[tab.key] ? ("attention" as const) : ("normal" as const)
-        };
-      }),
-    [tabs, terminals.attention, terminals.terminals]
-  );
-
-  const activeTab = tabs.find((tab) => tab.key === activeKey) ?? null;
-  const sessionTabs = tabs.filter((tab) => tab.kind === "session");
-
-  /**
-   * 正在等待用户确认的终端。
-   *
-  /**
-   * 有提醒的终端。
-   *
-   * 标签上的小点只在**看得到那条标签时**才有用——而「程序在等你确认」恰恰常常发生在
-   * 标签被滚出视野、或者用户在看另一个会话的时候。现在由**菜单栏右侧的铃铛**
-   * （`AttentionCenter`）直接汇总，这里不再另存一份。
-   */
+  /* ── 导出 ─────────────────────────────────────────────── */
 
   /** 导出：后端决定落点，这里只负责把「去了哪」告诉用户。 */
   const runExport = useCallback(
@@ -382,32 +266,7 @@ export function App() {
     [console]
   );
 
-  /**
-   * 另存到…：先用**原生目录选择框**问用户放哪，再导出到那里。
-   *
-   * 与「一键导出」并存：默认落点让导出立即可用，指定目录让用户能放到自己想要的地方。
-   */
-  const runExportTo = useCallback(
-    async (format: "markdown" | "json" | "html") => {
-      const directory = await api.chooseDirectory("选择导出到的目录");
-      // `null` 表示用户取消——取消是正常操作，什么都不做。
-      if (!directory) return;
-      const separator = directory.includes("\\") ? "\\" : "/";
-      const extension = format === "markdown" ? "md" : format;
-      const path = `${directory}${directory.endsWith(separator) ? "" : separator}session-${console.selectedId.slice(0, 8)}.${extension}`;
-      const result = await console.exportCurrentTo(format, path);
-      if (result) setExportedTo(result.filePath);
-    },
-    [console]
-  );
-
-  const openConfig = useCallback(
-    (tab: "vendors" | "skills" | "gateway" | "environment" | "diagnostics") => {
-      setConfigTab(tab);
-      setConfigOpen(true);
-    },
-    []
-  );
+  /* ── 命令面板 ─────────────────────────────────────────── */
 
   /**
    * 命令面板的命令表。
@@ -434,8 +293,13 @@ export function App() {
       { id: "config.environment", group: "配置", label: "CLI 环境", run: () => openConfig("environment") },
       { id: "config.diagnostics", group: "配置", label: "诊断（全部目标状态）", run: () => openConfig("diagnostics") }
     ],
-    [console, openTerminal, openSystemTerminal, runExport, openConfig]
+    [console, beginNewSession, openSystemTerminal, runExport, openConfig]
   );
+
+  /* ── 组装 ─────────────────────────────────────────────── */
+
+  const menuSession = menu ? sessionById(menu.sessionId) : null;
+  const trash = console.view === "trash";
 
   return (
     <div className="shell">
@@ -443,20 +307,12 @@ export function App() {
         菜单栏。「文件」「帮助」两个按钮**曾经没有 `onClick`**——点了没反应，是死按钮。
         死按钮比没有按钮更糟：它让用户以为自己点错了。
 
-        这里**先移除**而不是假装接上：真实的「文件 / 视图 / 帮助」分组菜单需要按 `commands`
-        的 group 生成下拉并管理开合与定位，是一件独立的事（也是 L16「命令面板复用菜单
-        action」的前提）。在它做出来之前，菜单栏只留**确实能用的入口**。
+        现在补上真正的分组菜单（结构在 `app-menus.ts`，数据与渲染分开、可单测）。
+        **动作缺失的项一律显示为禁用**（见 `disabledWhenMissing`）：
+        面还没实现的会显示成「这里有个东西、现在还不能用」，而不是点了没反应的死按钮。
       */}
       <div className="menubar">
         <span className="brand">AI 控制台</span>
-        {/*
-          分组菜单。此前这里只有「配置」与命令面板两个按钮——上面那段注释说明了
-          「文件 / 帮助」曾经是**没有 onClick 的死按钮**，因此被移除；那个判断是对的。
-
-          现在补上真正的分组菜单（结构在 `app-menus.ts`，数据与渲染分开、可单测）。
-          **动作缺失的项一律显示为禁用**（见 `disabledWhenMissing`）：
-          面还没实现的会显示成「这里有个东西、现在还不能用」，而不是点了没反应的死按钮。
-        */}
         <AppMenuBar
           menus={createAppMenus(
             {
@@ -464,23 +320,14 @@ export function App() {
               // 「设置会话」只对 WSL 目标可用。**按真实字段判定**
               // （`AiTarget.kind === "wsl"`），而不是写死。
               isWslTarget: selectedTarget?.kind === "wsl",
-              hasActiveSession: tabs.some((tab) => tab.kind === "session")
+              hasActiveSession: workspace.tabs.some((tab) => tab.kind === "session")
             },
             {
               openCommandPalette: () => setPaletteOpen(true),
-              manageSkills: () => {
-                setConfigTab("skills");
-                setConfigOpen(true);
-              },
-              openGatewaySettings: () => {
-                setConfigTab("gateway");
-                setConfigOpen(true);
-              },
-              manageVendors: () => {
-                setConfigTab("vendors");
-                setConfigOpen(true);
-              },
-              // M5「设置会话」：只有 WSL 目标有 `distro` 可写，因此这里也按 WSL 判定。
+              manageSkills: () => openConfig("skills"),
+              openGatewaySettings: () => openConfig("gateway"),
+              manageVendors: () => openConfig("vendors"),
+              // 「设置会话」：只有 WSL 目标有 `distro` 可写，因此这里也按 WSL 判定。
               openSessionSettings:
                 selectedTarget?.kind === "wsl" && selectedTarget.distro
                   ? () =>
@@ -489,13 +336,9 @@ export function App() {
                         path: selectedTarget.codexHome ?? ""
                       })
                   : undefined,
-              installCli: () => {
-                setConfigTab("environment");
-                setConfigOpen(true);
-              },
-              exportSession: (format) => runExport(format),
+              installCli: () => openConfig("environment"),
+              exportSession: (format) => void runExport(format),
               openSystemTerminal: () => void openSystemTerminal(),
-              // M6「关于」：先把版本取回来再打开（或读取失败时显示「无法读取」）。
               showAbout: () => {
                 setAboutOpen(true);
                 void api
@@ -504,22 +347,19 @@ export function App() {
                   .catch(() => setAppVersion("无法读取"));
               },
               // 打开日志目录：后端按运行根算出 `log_dir()` 并在文件管理器里打开它
-              // （`app:command` 的 `openLogDir`，见 `tauri_app.rs`）。界面不需要知道路径。
+              // （`app:command` 的 `openLogDir`）。界面不需要知道路径。
               openLogDirectory: () => void api.appCommand("openLogDir"),
               // 清理 Gateway 日志：做完要说一声，否则「静默完成」与「没执行」看起来一样。
               clearGatewayLogs: () => {
                 void api
                   .clearGatewayLogs()
-                  .then((removed) => setNotice(`已清理 ${removed} 条 Gateway 日志。`))
+                  .then((removed) => toast.show(`已清理 ${removed} 条 Gateway 日志。`))
                   .catch((error: unknown) =>
                     console.setError(error instanceof Error ? error.message : String(error))
                   );
               },
               // 退出走浏览器窗口关闭，与标题栏的关闭同一条路，避免两套退出语义。
               quit: () => window.close()
-              // 暂不接的：`openSessionSettings`（M5 未实现）、`showAbout`（M6 未实现）、
-              // `openLogDirectory`、`clearGatewayLogs`（需要先确认日志目录与清空动作的
-              // 现有入口在哪）。它们会以**禁用**呈现，而不是死按钮。
             }
           )}
         />
@@ -542,7 +382,7 @@ export function App() {
               };
             })}
           onSelect={(terminalId) => {
-            setActiveKey(terminalId);
+            workspace.setActiveKey(terminalId);
             // 切过去就算看过了，清掉标记——否则铃铛上的数字一直不减。
             terminals.clearAttention(terminalId);
           }}
@@ -556,11 +396,11 @@ export function App() {
 
       {aboutOpen && <AboutDialog version={appVersion} onClose={() => setAboutOpen(false)} />}
 
-      {/* 菜单动作的一句话结果。与「已导出到…」同一形状：都要能被看见、也都能收掉。 */}
-      {notice && (
+      {/* 菜单动作与侧栏提示共用的条幅。与「已导出到…」同一形状：都要能被看见、也都能收掉。 */}
+      {toast.message && (
         <div className="export-hint" role="status">
-          {notice}
-          <Button small onClick={() => setNotice("")}>
+          {toast.message}
+          <Button small onClick={toast.dismiss}>
             知道了
           </Button>
         </div>
@@ -572,6 +412,7 @@ export function App() {
       */}
       {sessionSettings && (
         <SessionSettingsDialog
+          currentPath={selectedTarget?.codexHome}
           wslPath={sessionSettings.path}
           isWsl={selectedTarget?.kind === "wsl"}
           supportsSessionSettings
@@ -603,12 +444,8 @@ export function App() {
       )}
 
       {/*
-        新会话对话框。旧平台的流程是**先定工作目录 / 标题 / 启动提示词 / CLI 参数，再打开**
-        （`app.tsx:407` 的 `onCreate`）。此前这里是「点一下直接进终端」——
-        用户报的 H2 说的就是这件事。
-
-        `prompt`（启动提示词）暂时**不接**：它是渲染层的事，必须等会话可交互再写进 PTY，
-        否则 ConPTY 还没准备好读输入时会丢字。那是单独一件事，见 docs/rust-rewrite/33 §5.5.1。
+        新会话对话框。旧平台的流程是**先定工作目录 / 标题 / 启动提示词 / CLI 参数，再打开**。
+        此前这里是「点一下直接进终端」——用户报的 H2 说的就是这件事。
       */}
       {newSession && (
         <NewSessionDialog
@@ -651,62 +488,22 @@ export function App() {
         />
       )}
 
-      {/* 右键菜单：铺一层透明背景接管「点别处关闭」。
-          不用全局 click 监听——那样点菜单自身也会被当成「别处」。 */}
-      {menu && (
-        <div className="menu-backdrop" onClick={() => setMenu(null)} onContextMenu={(event) => event.preventDefault()}>
-          <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
-            <button
-              type="button"
-              onClick={() => {
-                console.setSelectedId(menu.session.id);
-                void console.openCurrentFolder();
-                setMenu(null);
-              }}
-            >
-              打开所在目录
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void console.toggleFavorite(menu.session);
-                setMenu(null);
-              }}
-            >
-              {menu.session.metadata?.favorite ? "取消收藏" : "收藏"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                // 复制**编号**而不是标题：编号是稳定的标识，粘到别处能用来定位；
-                // 标题可能重复，也常常很长。
-                void api.copyText(menu.session.id);
-                setMenu(null);
-              }}
-            >
-              复制会话编号
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void api.copyText(menu.session.filePath);
-                setMenu(null);
-              }}
-            >
-              复制文件路径
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => {
-                void console.removeSession(menu.session, trash);
-                setMenu(null);
-              }}
-            >
-              {trash ? "彻底删除" : "移入回收站"}
-            </button>
-          </div>
-        </div>
+      {menu && menuSession && (
+        <SessionContextMenu
+          x={menu.x}
+          y={menu.y}
+          session={menuSession}
+          trash={trash}
+          onClose={() => setMenu(null)}
+          onOpenFolder={() => {
+            console.setSelectedId(menuSession.id);
+            void console.openCurrentFolder();
+          }}
+          onToggleFavorite={() => void console.toggleFavorite(menuSession)}
+          onCopyId={() => void api.copyText(menuSession.id)}
+          onCopyPath={() => void api.copyText(menuSession.filePath)}
+          onRemove={() => void console.removeSession(menuSession, trash)}
+        />
       )}
 
       {/* 退出确认由**后端**发起（它拦得住窗口关闭），这里只负责显示与回答。 */}
@@ -724,739 +521,103 @@ export function App() {
       )}
 
       <div className="main">
-        <aside className="sidebar">
-          <div className="sidebar-head">
-            <div className="title">
-              <span className={`status-dot${console.busy ? " off" : ""}`} />
-              <h1>会话</h1>
-            </div>
-          </div>
+        <Sidebar
+          console={console}
+          selectedTarget={selectedTarget}
+          onResume={resumeById}
+          onMenu={(x, y, sessionId) => setMenu({ x, y, sessionId })}
+        />
 
-          <div className="pickers">
-            <Field label="平台">
-              <Select
-                value={console.providerId}
-                onChange={(event) =>
-                  console.selectProvider(event.target.value as AiProviderId | "")
-                }
-              >
-                {console.providers.length === 0 && <option value="">加载中…</option>}
-                {console.providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            <Field label="目标">
-              <Select
-                value={console.targetId}
-                disabled={console.targets.length === 0}
-                onChange={(event) => console.selectTarget(event.target.value)}
-              >
-                {console.targets.length === 0 && <option value="">暂无可用目标</option>}
-                {console.targets.map((target) => (
-                  <option key={target.id} value={target.id}>
-                    {/* 不可用的目标在选择列表里就标出来——等选中了才发现，用户已经先点了一次。 */}
-                    {target.available ? target.label : `${target.label}（不可用）`}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            {/* 目标状态说明。后端给出了四态 detail，界面必须显示：
-                否则用户只看到「列表是空的」，分不清是**没有会话**还是**这个目标进不去**。 */}
-            {selectedTarget && (
-              <div className={`target-detail${selectedTarget.available ? "" : " bad"}`}>
-                <span title={selectedTarget.detail ?? ""}>
-                  {selectedTarget.detail ?? "（无状态说明）"}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {selectedTarget && !selectedTarget.available && (
-            <div className="sidebar-notice">
-              <Notice
-                message={selectedTarget.detail || "此目标当前不可用。"}
-                actions={
-                  <>
-                    <Button small onClick={() => void console.reloadTargets()}>
-                      重新探测
-                    </Button>
-                    {selectedTarget.kind === "wsl" && selectedTarget.distro && (
-                      <WslHomeForm
-                        distro={selectedTarget.distro}
-                        onSave={(home) =>
-                          void console.configureWslCodexHome(selectedTarget.distro!, home)
-                        }
-                        onClear={() =>
-                          void console.clearWslCodexHomeOverride(selectedTarget.distro!)
-                        }
-                      />
-                    )}
-                  </>
-                }
-              />
-            </div>
-          )}
-
-          <div className="list-head">
-            <Toolbar>
-              {/* 一级导航。**包一层**是为了在 CSS 里和二级拉开轻重——两级用的是同一个
-                  `ChipGroup`，不区分的话看上去完全一样，用户分不出哪层是哪层。 */}
-              <div className="pane-nav">
-                <ChipGroup
-                  value={console.pane}
-                  onChange={(value) => console.setPane(value as "sessions" | "quick" | "search")}
-                  options={[
-                    { value: "sessions", label: "会话" },
-                    { value: "quick", label: "快捷" },
-                    { value: "search", label: "搜索" }
-                  ]}
-                />
-              </div>
-              <ToolbarSpacer />
-              <span className="row-meta">
-                {console.pane === "sessions"
-                  ? `${console.sessions.length} 条`
-                  : console.pane === "quick"
-                    ? `${console.quickAccess.favorites.length + console.quickAccess.recent.length} 条`
-                    : `${console.globalResults.length} 条`}
-              </span>
-            </Toolbar>
-
-            {console.pane === "sessions" && (
-              <Toolbar>
-                {/* 二级视图。比一级轻一档：它是**同一批内容的筛选**，不是另一处地方。 */}
-                <div className="view-nav">
-                  <ChipGroup
-                    value={console.view}
-                    onChange={(value) => console.setView(value === "trash" ? "trash" : "active")}
-                    options={[
-                      { value: "active", label: "活跃" },
-                      { value: "trash", label: "回收站" }
-                    ]}
-                  />
-                </div>
-              </Toolbar>
-            )}
-
-            {console.pane === "sessions" && (
-              <SearchInput
-                value={console.query}
-                onChange={console.setQuery}
-                placeholder="搜索标题、编号、正文…"
-                busy={console.searching}
-              />
-            )}
-
-            {console.pane === "search" && (
-              <>
-                <SearchInput
-                  value={console.globalQuery}
-                  onChange={console.setGlobalQuery}
-                  placeholder="在所有目标里搜索…"
-                  busy={console.globalSearching}
-                />
-                {/* 范围收窄：不只是少显示结果，而是**少发请求**——
-                    全量搜完再在前端过滤掉，那些请求已经付过代价了。 */}
-                <Field label="搜索范围">
-                  <Select
-                    value={console.searchTargetId}
-                    onChange={(event) => console.setSearchTargetId(event.target.value)}
-                  >
-                    <option value="">全部目标（{console.targets.length}）</option>
-                    {console.targets.map((target) => (
-                      <option key={target.id} value={target.id}>
-                        {target.available ? target.label : `${target.label}（不可用）`}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </>
-            )}
-          </div>
-
-          {console.pane === "sessions" && selectedCount > 0 && (
-            <div className="batchbar">
-              <span>已选 {selectedCount} 项</span>
-              <ToolbarSpacer />
-              <Button small onClick={console.toggleSelectAll}>
-                全选
-              </Button>
-              {trash ? (
-                <>
-                  <Button small onClick={() => void console.restoreSelected()}>
-                    还原
-                  </Button>
-                  <Button small variant="danger" onClick={() => void console.purgeSelected()}>
-                    彻底删除
-                  </Button>
-                </>
-              ) : (
-                <Button small variant="danger" onClick={() => void console.deleteSelected()}>
-                  移入回收站
-                </Button>
-              )}
-            </div>
-          )}
-
-          <div className="rows">
-            {console.pane === "sessions" &&
-              console.sessions.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  session={session}
-                  active={session.id === console.selectedId}
-                  checked={console.selectedIds.includes(session.id)}
-                  onOpen={() => {
-                    // **主列表也要走恢复流程。**
-                    //
-                    // 这里此前是 `console.setSelectedId(session.id)`——只选中、不起终端。
-                    // T2 接线时我漏了这一处（只改了收藏/最近两组与搜索结果），
-                    // 于是「点历史会话进终端」在最主要的入口上**根本没生效**。
-                    // 探针点真实列表行时才发现：终端数 0 → 0。
-                    if (selectedTarget) void beginResumeSession(selectedTarget, session);
-                  }}
-                  onToggle={() => console.toggleSelected(session.id)}
-                  onFavorite={() => void console.toggleFavorite(session)}
-                  onMenu={(x, y) => setMenu({ x, y, session })}
-                />
-              ))}
-
-            {console.pane === "quick" && (
-              <>
-                <QuickGroup
-                  title="收藏"
-                  items={console.quickAccess.favorites}
-                  empty="还没有收藏。在会话行上点 ☆ 收藏它。"
-                  onOpen={beginResumeSession}
-                />
-                <QuickGroup
-                  title="最近打开"
-                  items={console.quickAccess.recent}
-                  empty="还没有打开过会话。"
-                  onOpen={beginResumeSession}
-                />
-              </>
-            )}
-
-            {console.pane === "search" &&
-              console.globalResults.map((result) => (
-                <div
-                  key={`${result.target.id}:${result.session.id}`}
-                  className="row"
-                  onClick={() => void beginResumeSession(result.target, result.session)}
-                  title={displayTitle(result.session)}
-                >
-                  <div className="row-line">
-                    <span className="row-title">{displayTitle(result.session)}</span>
-                  </div>
-                  {/* 跨平台搜索必须标出**这条属于哪个目标**——否则同名会话分不清。 */}
-                  <div className="row-meta">
-                    <span>{result.target.label}</span>
-                    
-                  </div>
-                </div>
-              ))}
-
-            {console.pane === "sessions" && console.sessions.length === 0 && (
-              <EmptyState
-                message={
-                  console.query.trim()
-                    ? "没有匹配的会话。"
-                    : emptyMessage(console.targetId, selectedTarget, trash)
-                }
-              />
-            )}
-            {console.pane === "search" && console.globalResults.length === 0 && (
-              <EmptyState
-                message={
-                  console.globalQuery.trim() ? "没有匹配的会话。" : "输入关键词，在所有目标里搜索。"
-                }
-                hint={
-                  console.globalQuery.trim()
-                    ? "后端会先匹配摘要，摘要不中再读整个文件——因此结果可能稍慢。"
-                    : undefined
-                }
-              />
-            )}
-          </div>
-        </aside>
-
-        <section className="workspace">
-          <Tabs
-            items={tabItems}
-            activeKey={activeKey}
-            onActivate={(key) => {
-              setActiveKey(key);
-              // 看过就算处理过：清掉这一路的提醒标记，否则小点一直亮着，
-              // 用户会以为还有事没处理。
-              if (tabs.find((tab) => tab.key === key)?.kind === "terminal") {
-                terminals.clearAttention(key);
-              }
-            }}
-            onClose={closeTab}
-            trailing={
-              <>
-                <Button
-                  small
-                  disabled={!selectedTarget}
-                  onClick={beginNewSession}
-                  title="在目标里启动 Codex"
-                >
-                  + Codex
-                </Button>
-                <Button
-                  small
-                  onClick={() => void openSystemTerminal()}
-                  title="启动系统 shell（WSL 目标会开该发行版的 shell）"
-                >
-                  + Shell
-                </Button>
-                {activeTab?.kind === "session" && (
-                  <Button small onClick={() => void console.reloadSessions()}>
-                    刷新
-                  </Button>
-                )}
-              </>
+        <SessionWorkspace
+          tabItems={workspace.tabItems}
+          activeKey={workspace.activeKey}
+          activeTab={workspace.activeTab}
+          terminalItems={terminals.terminals}
+          registerSink={terminals.registerSink}
+          unregisterSink={terminals.unregisterSink}
+          onError={console.setError}
+          onActivate={(key) => {
+            workspace.setActiveKey(key);
+            // 看过就算处理过：清掉这一路的提醒标记，否则小点一直亮着，
+            // 用户会以为还有事没处理。
+            if (workspace.tabs.find((tab) => tab.key === key)?.kind === "terminal") {
+              terminals.clearAttention(key);
             }
-          />
-
-          <div className="workspace-body">
-            {/*
-              会话提醒改成**菜单栏右侧的铃铛**（旧平台的位置：`AppMenuBar` 之后就是
-              `TerminalAttentionCenter`）。
-
-              此前这里是正文顶部的一条 Notice + 一排按钮：它有两个问题——
-              ① 只有正文可见时才有用，而「程序在等你确认」常常发生在用户切到别的窗口之后；
-              ② 每多一条就把布局往下压一截。铃铛 + 未读数不占正文，也不会随条数变形。
-            */}
-            {terminals.terminals.length > 0 && (
-              <div className={`terminal-stack${activeTab?.kind === "terminal" ? "" : " hidden"}`}>
-                <Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}>
-                  {terminals.terminals.map((item) => (
-                    <TerminalPane
-                      key={item.id}
-                      terminalId={item.id}
-                      active={activeTab?.kind === "terminal" && activeTab.terminalId === item.id}
-                      running={item.running}
-                      registerSink={terminals.registerSink}
-                      unregisterSink={terminals.unregisterSink}
-                      onError={console.setError}
-                    />
-                  ))}
-                </Suspense>
-              </div>
-            )}
-
-            {activeTab?.kind === "terminal" ? null : sessionTabs.length === 0 ? (
-              <EmptyState
-                message="没有打开的会话。"
-                hint="从左侧选择一个会话，或新建一个终端。"
-                action={
-                  <Button disabled={!selectedTarget} onClick={beginNewSession}>
-                    新建终端
-                  </Button>
-                }
-              />
-            ) : (
-              <>
-                {/* 会话级操作。放在内容上方而不是右键菜单里：这些是**常用**动作，
-                    藏进右键菜单会让它们难以发现。 */}
-                <div className="session-head">
-                  {renameDraft === null ? (
-                    <h2 title={console.selectedSession?.title}>
-                      {console.selectedSession ? displayTitle(console.selectedSession) : "未选择会话"}
-                    </h2>
-                  ) : (
-                    <input
-                      className="rename-input"
-                      autoFocus
-                      value={renameDraft}
-                      onChange={(event) => setRenameDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          void console.renameSession(renameDraft);
-                          setRenameDraft(null);
-                        }
-                        if (event.key === "Escape") setRenameDraft(null);
-                      }}
-                      onBlur={() => setRenameDraft(null)}
-                    />
-                  )}
-                  <span className="meta">
-                    {/* 优先用**详情路径**带回来的精确总数；它还没到时回退到列表的条数，
-                        并如实标注那是下界。 */}
-                    {console.selectedSession
-                      ? messageCountLabel(
-                          console.messageTotal ?? console.selectedSession.messageCount,
-                          console.messageTotal === null
-                        )
-                      : ""}
-                  </span>
-                  {/* 工作台要点：上下文占用、累计 token、模型。全都在会话自带的数据里，
-                      此前界面上一个都没显示。 */}
-                  {console.selectedSession?.usage && (
-                    <span className="workbench">
-                      {console.selectedSession.usage.contextPercent !== undefined && (
-                        <span title="上下文占用">
-                          上下文 <b>{console.selectedSession.usage.contextPercent}%</b>
-                        </span>
-                      )}
-                      {console.selectedSession.usage.total?.totalTokens !== undefined && (
-                        <span title="累计 token">
-                          <b>{formatTokens(console.selectedSession.usage.total.totalTokens)}</b> token
-                        </span>
-                      )}
-                      {console.selectedSession.model && (
-                        <span title="模型">{console.selectedSession.model}</span>
-                      )}
-                    </span>
-                  )}
-                  <ToolbarSpacer />
-                  <Button
-                    small
-                    disabled={!console.selectedSession}
-                    onClick={() => setRenameDraft(console.selectedSession?.title ?? "")}
-                  >
-                    重命名
-                  </Button>
-                  <Button small disabled={!console.selectedSession} onClick={() => void console.duplicateCurrent()}>
-                    复制
-                  </Button>
-                  <Button small disabled={!console.selectedSession} onClick={() => void runExport("markdown")}>
-                    导出 MD
-                  </Button>
-                  <Button small disabled={!console.selectedSession} onClick={() => void runExport("json")}>
-                    导出 JSON
-                  </Button>
-                  <Button small disabled={!console.selectedSession} onClick={() => void runExportTo("markdown")}>
-                    另存到…
-                  </Button>
-                </div>
-
-                {exportedTo && (
-                  <div className="export-hint">
-                    已导出到 <code>{exportedTo}</code>
-                    <Button small onClick={() => void api.openPath(exportedTo)}>
-                      打开
-                    </Button>
-                  </div>
-                )}
-
-                {/* 分支关系。放在正文**上方**、会话头下方：
-                    它讲的是「这条会话从哪来、分出去了哪些」，属于这条会话的元信息，
-                    而不是正文的一部分。没有分支时它自己整块不渲染。 */}
-                {console.selectedSession && (
-                  <BranchPanel
-                    session={console.selectedSession}
-                    resolveParent={(sessionId) =>
-                      console.sessions.find((item) => item.id === sessionId)
-                    }
-                    listChildren={(parentSessionId) =>
-                      api.listSessionChildren(parentSessionId, selectedTarget?.id)
-                    }
-                    onOpen={(session) => {
-                      const target =
-                        console.targets.find((item) => item.id === session.metadata?.branch?.parentTargetId) ??
-                        selectedTarget;
-                      if (target) void beginResumeSession(target, session);
-                    }}
-                  />
-                )}
-
-                <div className="thread">
-                  {/* 往前翻的入口放在**顶部**：更早的消息在视觉上就在上面。 */}
-                  {console.hasEarlier && (
-                    <div className="load-earlier">
-                      <Button
-                        small
-                        disabled={console.loadingMore}
-                        onClick={() => void console.loadEarlierMessages()}
-                      >
-                        {console.loadingMore ? "加载中…" : "加载更早的消息"}
-                      </Button>
-                    </div>
-                  )}
-
-                  {console.messages.map((message, index) => (
-                    <Message
-                      key={`${message.sourceLine ?? index}`}
-                      message={message}
-                      onBranch={
-                        // 只有带原始行号的消息才能分支——后端要靠行号定位到原始记录，
-                        // 拿可见序号去截会截错位置。
-                        message.sourceLine === undefined
-                          ? undefined
-                          : () => void console.branchFromMessage(message.sourceLine!)
-                      }
-                    />
-                  ))}
-
-                  {console.messages.length === 0 && (
-                    <EmptyState
-                      message={
-                        console.selectedId ? "这个会话没有可显示的消息。" : "从左侧选择一个会话。"
-                      }
-                      hint={
-                        console.selectedId
-                          ? "文件可能是空的，或消息都被解析规则过滤掉了。"
-                          : undefined
-                      }
-                    />
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </section>
-      </div>
-
-      <div className="statusbar">
-        <span>{console.busy ? "处理中…" : console.searching ? "搜索中…" : "就绪"}</span>
-        {/* 会话上下文：**现在在哪**。
-            只有计数（目标/会话/终端）回答不了这个问题——用户切了几个会话之后，
-            最常问的是「我现在看的是哪一个、在哪个目录」。L7 要的就是这一组。 */}
-        <span className="status-session">
-          会话{" "}
-          <code title={console.selectedSession?.id ?? undefined}>
-            {console.selectedSession?.id ?? "-"}
-          </code>
-        </span>
-        <span className="status-cwd" title={console.selectedSession?.cwd ?? undefined}>
-          目录 <b>{console.selectedSession?.cwd ?? "-"}</b>
-        </span>
-        <span className="status-updated">
-          更新 {formatWhen(console.selectedSession?.updatedAt) || "-"}
-        </span>
-        <span className="status-target">
-          目标 <b>{console.targets.length}</b>
-        </span>
-        <span className="status-sessions">
-          会话 <b>{console.sessions.length}</b>
-        </span>
-        <span className="status-terminals">
-          终端 <b>{terminals.terminals.length}</b>
-        </span>
-        {/* 当前终端由谁服务。**必须常驻可见**：走网关之后供应商可能被自动换掉，
-            用户没有做任何操作，界面不显示就会在账单上才发现。 */}
-        <VendorRoutePicker
-          terminal={terminals.terminals.find((item) => item.id === activeTab?.terminalId)}
-          onSwitch={terminals.switchVendor}
-          onSetMode={terminals.setRouteMode}
-        />
-        <ToolbarSpacer />
-        {console.error && <span className="err">{console.error}</span>}
-        <span>
-          网关{" "}
-          <b>
-            {console.gateway?.enabled
-              ? `:${console.gateway.activePort || console.gateway.configuredPort}`
-              : "未启用"}
-          </b>
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * 快捷访问里的一组（收藏 / 最近）。
- *
- * 每项都显示**它属于哪个目标**——快捷访问是跨目标的，不标出来就分不清同名会话。
- */
-function QuickGroup({
-  title,
-  items,
-  empty,
-  onOpen
-}: {
-  title: string;
-  items: SessionQuickAccessItem[];
-  empty: string;
-  onOpen: (target: AiTarget, session: AiSession) => void;
-}) {
-  return (
-    /*
-     * 每组**各自封顶、独立滚动**（L3）。
-     *
-     * 不包这一层时，收藏与最近两组共用外层的**同一个滚动区**：翻收藏的时候最近区会
-     * 跟着一起跑，用户没法在某一组里连续浏览。旧平台是每组单独封顶的。
-     */
-    <div className="quick-group">
-      <div className="group-title">{title}</div>
-      {items.length === 0 && <div className="group-empty">{empty}</div>}
-      {items.map((item) => (
-        <div
-          key={`${item.target.id}:${item.session.id}`}
-          className="row"
-          onClick={() => onOpen(item.target, item.session)}
-          title={displayTitle(item.session)}
-        >
-          <div className="row-line">
-            <span className="row-title">
-              {item.favorite ? "★ " : ""}
-              {displayTitle(item.session)}
-            </span>
-          </div>
-          <div className="row-meta">
-            <span>{item.target.label}</span>
-            <span>{formatWhen(item.lastOpenedAt ?? item.session.updatedAt)}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * 手动指定 WSL 内的 Codex 目录。
- *
- * # 为什么它必须出现在「目标不可用」的告警里
- *
- * 发行版进不去时，自动探测**注定失败**；而用户往往知道自己的 Codex 装在哪。
- * 这条路径此前只藏在菜单里（甚至压根没有入口），于是「目标不可用」变成了死路。
- *
- * 保存后必须**重新探测**——否则界面还停在旧结果上，用户会以为没生效。
- */
-function WslHomeForm({
-  distro,
-  onSave,
-  onClear
-}: {
-  distro: string;
-  onSave: (codexHome: string) => void;
-  onClear: () => void;
-}) {
-  const [draft, setDraft] = useState("");
-  return (
-    <div className="wsl-home">
-      <TextInput
-        value={draft}
-        placeholder={`${distro} 内的路径，例如 /home/你/.codex`}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && draft.trim()) onSave(draft.trim());
-        }}
-      />
-      <div className="wsl-home-actions">
-        <Button small disabled={!draft.trim()} onClick={() => onSave(draft.trim())}>
-          指定并重新探测
-        </Button>
-        <Button small onClick={onClear} title="清除人工指定，回到自动探测">
-          清除
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function SessionRow({
-  session,
-  active,
-  checked,
-  onOpen,
-  onToggle,
-  onFavorite,
-  onMenu
-}: {
-  session: AiSession;
-  active: boolean;
-  checked: boolean;
-  onOpen: () => void;
-  onToggle: () => void;
-  onFavorite: () => void;
-  onMenu: (x: number, y: number) => void;
-}) {
-  const preview = pickPreview(session);
-  const favorite = session.metadata?.favorite === true;
-  // 标题退化成了编号时显示「目录 · 时间」——列表要能区分会话，UUID 不能。
-  const title = displayTitle(session);
-  return (
-    <div
-      className={`row${active ? " on" : ""}`}
-      onClick={onOpen}
-      title={title}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        onMenu(event.clientX, event.clientY);
-      }}
-    >
-      <div className="row-line">
-        <input
-          type="checkbox"
-          checked={checked}
-          aria-label="选择会话"
-          // 勾选不该顺带把会话也打开——那是两件事。
-          onClick={(event) => event.stopPropagation()}
-          onChange={onToggle}
-        />
-        <span className="row-title">{title}</span>
-        <button
-          type="button"
-          className={`star${favorite ? " on" : ""}`}
-          aria-label={favorite ? "取消收藏" : "收藏"}
-          onClick={(event) => {
-            event.stopPropagation();
-            onFavorite();
           }}
-        >
-          {favorite ? "★" : "☆"}
-        </button>
+          onClose={workspace.closeTab}
+          trailing={
+            <>
+              <WorkspaceTrailing
+                canStartCodex={canStartCodex(selectedTarget)}
+                onNewCodex={beginNewSession}
+                onNewShell={() => void openSystemTerminal()}
+              />
+              <ToolbarSpacer />
+            </>
+          }
+          session={console.selectedSession}
+          messageTotal={console.messageTotal}
+          messages={console.messages}
+          hasEarlier={console.hasEarlier}
+          loadingMore={console.loadingMore}
+          onLoadEarlier={() => void console.loadEarlierMessages()}
+          onBranch={(sourceLine) => void console.branchFromMessage(sourceLine)}
+          onOpenSession={(session) => {
+            const target =
+              console.targets.find(
+                (item) => item.id === session.metadata?.branch?.parentTargetId
+              ) ?? selectedTarget;
+            if (target) void beginResumeSession(target, session);
+          }}
+          branchParent={(sessionId) => sessionById(sessionId)}
+          branchChildren={(parentSessionId) =>
+            api.listSessionChildren(parentSessionId, selectedTarget?.id)
+          }
+          sessionActions={
+            <SessionActions
+              session={console.selectedSession}
+              onRename={(title) => void console.renameSession(title)}
+              onDuplicate={() => void console.duplicateCurrent()}
+              onExport={(format, toDirectory) => {
+                if (!toDirectory) {
+                  void runExport(format);
+                  return;
+                }
+                void exportToDirectory(format, console.selectedId, (fmt, path) =>
+                  console.exportCurrentTo(fmt, path)
+                ).then((path) => {
+                  if (path) setExportedTo(path);
+                });
+              }}
+            />
+          }
+        />
       </div>
-      {preview && <div className="row-preview">{preview}</div>}
-      <div className="row-meta">
-        <span>{formatWhen(session.updatedAt ?? session.createdAt)}</span>
-        
-        {session.model && <span>{session.model}</span>}
-      </div>
+
+      {exportedTo && (
+        <div className="export-hint">
+          已导出到 <code>{exportedTo}</code>
+          <Button small onClick={() => void api.openPath(exportedTo)}>
+            打开
+          </Button>
+          <Button small onClick={() => setExportedTo("")}>
+            知道了
+          </Button>
+        </div>
+      )}
+
+      <StatusBar
+        busy={console.busy}
+        searching={console.searching}
+        session={console.selectedSession}
+        targetCount={console.targets.length}
+        sessionCount={console.sessions.length}
+        terminalCount={terminals.terminals.length}
+        activeTerminalId={workspace.activeTab?.terminalId}
+        terminals={terminals}
+        error={console.error}
+        gateway={console.gateway}
+      />
     </div>
   );
-}
-
-function Message({ message, onBranch }: { message: AiMessage; onBranch?: () => void }) {
-  const who =
-    message.role === "user"
-      ? "你"
-      : message.role === "assistant"
-        ? "助手"
-        : message.role === "tool"
-          ? "工具"
-          : message.role === "system"
-            ? "系统"
-            : "记录";
-  return (
-    <div className={`message ${message.role}`}>
-      <div className="who">
-        <span>{who}</span>
-        {onBranch && (
-          <button type="button" className="branch-action" onClick={onBranch}>
-            从此处分支
-          </button>
-        )}
-      </div>
-      <div className="text">{message.text}</div>
-    </div>
-  );
-}
-
-/**
- * 会话区为空时**必须说清是哪一种空**。
- *
- * 几种完全不同的处境此前长得一模一样，而用户需要做不同的事。
- */
-function emptyMessage(targetId: string, target: AiTarget | null, trash: boolean): string {
-  if (!targetId) return "请先在上面选择目标。";
-  if (target && !target.available) return target.detail || "此目标当前不可用。";
-  return trash ? "回收站为空。" : "未找到会话。";
-}
-
-/** 把 token 数显示成 `12.4k` 这样的紧凑形式——六位数在窄条里读不出来。 */
-function formatTokens(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return String(value);
 }

@@ -1,9 +1,4 @@
-import type {
-  ButtonHTMLAttributes,
-  InputHTMLAttributes,
-  ReactNode,
-  SelectHTMLAttributes
-} from "react";
+import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
 
 /**
  * 基础控件。
@@ -104,9 +99,26 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
   );
 }
 
-export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={["control", className ?? ""].filter(Boolean).join(" ")} {...rest} />;
-}
+/**
+ * 单行文本输入。
+ *
+ * # 为什么要 `forwardRef`
+ *
+ * 「打开查找栏就聚焦输入框」这类动作需要一个真实的 DOM 引用去调 `focus()`。
+ * 组件包住 `<input>` 之后，父组件拿不到那个元素——除非把 ref 透下去。
+ * 不透的话调用方只能 `querySelector` 去猜，而那在组件改结构时会静默失效。
+ */
+export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  function TextInput({ className, ...rest }, ref) {
+    return (
+      <input
+        ref={ref}
+        className={["control", className ?? ""].filter(Boolean).join(" ")}
+        {...rest}
+      />
+    );
+  }
+);
 
 /**
  * 搜索框。

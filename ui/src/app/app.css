@@ -1222,6 +1222,69 @@ select {
   color: #ffffff;
 }
 
+/* ── 终端内查找 ──────────────────────────────────────── */
+
+/*
+ * 浮在终端**右上角**，而不是占一整行。
+ *
+ * 占一行会把终端往下推、触发一次 fit，而用户正在看的那几行会跟着跳——
+ * 查找这个动作本身不该改变终端里的排版。
+ */
+.terminal-search {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  padding: 6px 8px;
+  border: 1px solid #2f3b4d;
+  border-radius: var(--ui-radius-sm);
+  background: #131c2b;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.terminal-search .control {
+  width: 22ch;
+  border-color: #2f3b4d;
+  background: #0f172a;
+  color: #c9d1d9;
+  font-size: var(--ui-text-sm);
+}
+
+.terminal-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #8b949e;
+  font-size: var(--ui-text-xs);
+  cursor: pointer;
+}
+
+.terminal-search-count {
+  min-width: 6ch;
+  color: #c9d1d9;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-xs);
+  text-align: center;
+}
+
+.terminal-search .btn {
+  padding: 2px 7px;
+  border-color: #2f3b4d;
+  background: #1a2434;
+  color: #c9d1d9;
+}
+
+/* 范围提示。**必须显示**：滚出缓冲区的输出搜不到，而用户会以为「日志里没有」。 */
+.terminal-search-hint {
+  color: #6b7688;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
 /* ── 状态栏 ──────────────────────────────────────────── */
 
 .statusbar {

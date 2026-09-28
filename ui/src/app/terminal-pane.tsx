@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import * as api from "../ipc/commands";
 import { ComposerInput } from "./composer-input";
 import { initialComposerVisible, shouldRevealComposer } from "./composer-text";
+import { TerminalSearchBar } from "./terminal-search-bar";
 import type { TerminalSink } from "./terminal-output";
 
 /**
@@ -72,6 +73,55 @@ export function TerminalPane({
   useEffect(() => {
     setComposerVisible(initialComposerVisible(sessionId));
   }, [sessionId, terminalId]);
+
+  /** 终端内查找栏是否打开。Ctrl+F 开、Escape 关。 */
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  /**
+   * 取当前缓冲区的文本行。
+   *
+   * xterm 的行对象有两种：**已折行**（`isWrapped`）的续行在逻辑上属于上一行，
+   * 直接拼会在每处折行都不该有的地方断开搜索词。因此续行的文本要接到上一行之后。
+   * 这一条不做的话，「一个词刚好被窗口宽度折断」就永远搜不到——而终端里
+   * 长 JSON、长 URL 被折断是常态。
+   */
+  const readLines = useCallback((): string[] => {
+    const term = termRef.current;
+    if (!term) return [];
+    const buffer = term.buffer.active;
+    const total = buffer.length;
+    const lines: string[] = [];
+    for (let index = 0; index < total; index += 1) {
+      const line = buffer.getLine(index);
+      if (!line) {
+        lines.push("");
+        continue;
+      }
+      const text = line.translateToString(true);
+      if (line.isWrapped && lines.length > 0) {
+        lines[lines.length - 1] = `${lines[lines.length - 1]}${text}`;
+      } else {
+        lines.push(text);
+      }
+    }
+    return lines;
+  }, []);
+
+  /**
+   * 把一处匹配滚到可见并选中。
+   *
+   * 三件事都要做：
+   * 1. **滚动**——不滚过去用户看不到，等于没找到；
+   * 2. **选中**——让他知道命中的是哪一段；
+   * 3. **进前台**——只有可见的终端才谈得上「看到」。
+   */
+  const revealMatch = useCallback((match: { row: number; column: number; length: number }) => {
+    const term = termRef.current;
+    if (!term) return;
+    term.scrollToLine(match.row);
+    term.select(match.column, match.row, match.length);
+    term.focus();
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -208,6 +258,34 @@ export function TerminalPane({
    * 非前台的终端仍然挂载（不能卸载，会丢输出），但它的输入框不该占位置：
    * 用户在看另一路终端时，屏幕下方多出一个属于别处的输入框只会让人写错地方。
    */
+  /**
+   * Ctrl+F 打开查找栏。
+   *
+   * 只在**前台**时响应：非前台的终端仍然挂载（不能卸载，会丢输出），
+   * 但绝不该抢走用户正在用的那一路的快捷键。
+   */
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    // 关掉查找栏把焦点还给终端：用户下一件事通常是继续打字。
+    try {
+      termRef.current?.focus();
+    } catch {
+      /* 终端没挂上，忽略。 */
+    }
+  }, []);
+
   return (
     <div
       className={`terminal-slot${active ? "" : " inactive"}`}
@@ -216,6 +294,14 @@ export function TerminalPane({
       aria-hidden={!active}
     >
       <div className="terminal-host" ref={hostRef} />
+      {active && searchOpen && (
+        <TerminalSearchBar
+          open={searchOpen}
+          readLines={readLines}
+          onReveal={revealMatch}
+          onClose={closeSearch}
+        />
+      )}
       {active && composerVisible && (
         <ComposerInput
           terminalId={terminalId}

@@ -79,8 +79,30 @@ export type SessionUsage = {
   /** 上下文占用百分比（后端保留 1 位小数）。 */
   contextPercent?: number;
   contextLeftPercent?: number;
+  /**
+   * 速率限制窗口。
+   *
+   * 与后端的 `RateLimits` 一一对应：`primary` / `secondary` 各是一个窗口。
+   * **字段全部可选**：只有部分 CLI 的会话摘要里带这个信息，缺了就是缺了——
+   * 工作台要能显示「这一项没有数据」，而不是显示 `undefined%`。
+   */
+  rateLimits?: {
+    primary?: RateLimitWindow;
+    secondary?: RateLimitWindow;
+  };
+  /** 用量数据的来源。不同 CLI 的统计口径不同，必须留着它。 */
   updatedAt?: string;
   source: string;
+};
+
+/** 一个速率限制窗口。 */
+export type RateLimitWindow = {
+  /** 已用百分比。 */
+  usedPercent?: number;
+  /** 窗口时长（分钟）。 */
+  windowMinutes?: number;
+  /** 重置时间。 */
+  resetsAt?: string;
 };
 
 /**

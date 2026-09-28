@@ -930,6 +930,53 @@ select {
   font-size: 11.5px;
 }
 
+/* ── 侧栏工作台 ──────────────────────────────────────── */
+
+/*
+ * 工作台在 `.rows`（一个滚动容器）里。
+ *
+ * 卡片之间要有间隔：它们是**四块不同的信息**，贴在一起会读成一整片。
+ * 底部留出的余量比别处大——最后一张卡片紧贴滚动条底部会让人以为还有内容。
+ */
+.rows > .card {
+  margin-bottom: var(--ui-space-3);
+}
+
+.rows > .card:last-child {
+  margin-bottom: var(--ui-space-2);
+}
+
+/* 异常列表：一条一行的紧凑排版，与表格区分开——它只有两行信息，做表格是浪费。 */
+.workbench-failures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workbench-failures li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.workbench-failures strong {
+  overflow: hidden;
+  color: var(--ui-danger);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-failures small {
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+}
+
 /*
  * CLI 配置文件的只读视图。
  *

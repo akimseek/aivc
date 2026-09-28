@@ -77,8 +77,13 @@ export function toRefs(sessions: AiSession[], ids: string[]): SessionMutationRef
     .map((session) => ({ id: session.id, filePath: session.filePath }));
 }
 
-/** 侧栏当前显示哪一类列表。 */
-export type SidebarPane = "sessions" | "quick" | "search";
+/**
+ * 侧栏当前显示哪一类列表。
+ *
+ * `workbench` 是**概览**而不是列表：点它时侧栏整块换成运行概览
+ * （旧平台的 `SidebarWorkbench` 就是一级视图之一，位置在「会话」之前）。
+ */
+export type SidebarPane = "workbench" | "sessions" | "quick" | "search";
 
 /**
  * 打开一条会话时，平台与目标该不该真的换。

@@ -13,9 +13,11 @@ import {
   Toolbar,
   ToolbarSpacer
 } from "../components";
-import type { AiTarget } from "../types";
+import type { AiProviderSummary, AiTarget, ApiVendor } from "../types";
 import { emptySessionMessage } from "./session-display";
 import { QuickGroup, SearchResultRow, SessionRow } from "./session-row";
+import { SidebarWorkbench } from "./sidebar-workbench";
+import type { SidebarPane } from "./use-console";
 import type { useConsole } from "./use-console";
 
 /** 侧栏需要的那部分 console 状态与动作。用具名类型而不是 `any`，字段改名时会编译报错。 */
@@ -54,7 +56,8 @@ export type SidebarConsole = Pick<
   | "restoreSelected"
   | "purgeSelected"
   | "deleteSelected"
-  | "toggleSelectAll"
+  /* 工作台要用：当前会话（含它自带的用量与速率限制）。 */
+  | "selectedSession"
 >;
 
 /**
@@ -84,16 +87,30 @@ export function Sidebar({
   console: state,
   selectedTarget,
   onResume,
-  onMenu
+  onMenu,
+  providers,
+  vendors,
+  gateway,
+  lastSwitch,
+  workbenchToken
 }: {
   console: SidebarConsole;
   selectedTarget: AiTarget | null;
   onResume: (target: AiTarget, sessionId: string) => void;
   onMenu: (x: number, y: number, sessionId: string) => void;
+  providers: AiProviderSummary[];
+  vendors: ApiVendor[];
+  gateway: { enabled: boolean; activePort: number; configuredPort: number } | null;
+  /** 最近一次供应商路由变更，来自终端状态。 */
+  lastSwitch?: { vendorId: string; reason: string; at: string };
+  /** 变化时让工作台重新取数（后端推送请求记录时外层会加一）。 */
+  workbenchToken: number;
 }) {
   const trash = state.view === "trash";
   const selectedCount = state.selectedIds.length;
   const quickCount = state.quickAccess.favorites.length + state.quickAccess.recent.length;
+  const workbenchOpen = state.pane === "workbench";
+  const provider = providers.find((item) => item.id === state.providerId);
 
   return (
     <aside className="sidebar">
@@ -177,8 +194,11 @@ export function Sidebar({
           <div className="pane-nav">
             <ChipGroup
               value={state.pane}
-              onChange={(value) => state.setPane(value as "sessions" | "quick" | "search")}
+              onChange={(value) => state.setPane(value as SidebarPane)}
               options={[
+                /* 一级导航的顺序与旧平台一致：**工作台在最前**。
+                   它是「现在怎么样」的概览，而会话列表是「我要打开哪一条」。 */
+                { value: "workbench", label: "工作台" },
                 { value: "sessions", label: "会话" },
                 { value: "quick", label: "快捷" },
                 { value: "search", label: "搜索" }
@@ -187,11 +207,13 @@ export function Sidebar({
           </div>
           <ToolbarSpacer />
           <span className="row-meta">
-            {state.pane === "sessions"
-              ? `${state.sessions.length} 条`
-              : state.pane === "quick"
-                ? `${quickCount} 条`
-                : `${state.globalResults.length} 条`}
+            {workbenchOpen
+              ? "概览"
+              : state.pane === "sessions"
+                ? `${state.sessions.length} 条`
+                : state.pane === "quick"
+                  ? `${quickCount} 条`
+                  : `${state.globalResults.length} 条`}
           </span>
         </Toolbar>
 
@@ -300,6 +322,21 @@ export function Sidebar({
           </>
         }
       >
+        {/* 工作台：**不占列表区**，它整块替换掉列表。
+            它是「现在怎么样」的概览，与会话列表是两种东西——
+            两者叠在一起会让人分不清哪些是概览、哪些是可点的会话。 */}
+        {workbenchOpen && (
+          <SidebarWorkbench
+            provider={provider}
+            target={selectedTarget}
+            session={state.selectedSession}
+            gateway={gateway}
+            vendors={vendors}
+            lastSwitch={lastSwitch}
+            refreshToken={workbenchToken}
+          />
+        )}
+
         {state.pane === "sessions" &&
           state.sessions.map((session) => (
             <SessionRow

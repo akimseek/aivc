@@ -8,7 +8,7 @@ import {
   type Command
 } from "../components";
 import * as api from "../ipc/commands";
-import type { AiSession, AiTarget } from "../types";
+import type { AiSession, AiTarget, ApiVendor } from "../types";
 import { AboutDialog } from "./about-dialog";
 import { AppMenuBar } from "./app-menu-bar";
 import { AttentionCenter } from "./attention-center";
@@ -123,6 +123,87 @@ export function App() {
   const openConfig = useCallback((tab: ConfigTab) => {
     setConfigTab(tab);
     setConfigOpen(true);
+  }, []);
+
+  /* ── 工作台要的数据 ───────────────────────────────────── */
+
+  /**
+   * 供应商清单。
+   *
+   * 工作台的「最近路由变更」要把供应商编号翻成名字——只显示一串 `vendor-3f2a`
+   * 用户认不出那是谁。**失败时留空数组**：工作台是概览，不该因为供应商列表读不到
+   * 就整块变成错误（编号仍然显示得出来）。
+   */
+  const [sidebarVendors, setSidebarVendors] = useState<ApiVendor[]>([]);
+  useEffect(() => {
+    if (!console.providerId) {
+      setSidebarVendors([]);
+      return;
+    }
+    let cancelled = false;
+    void api
+      .listVendors(console.providerId)
+      .then((list) => {
+        if (!cancelled) setSidebarVendors(list);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [console.providerId]);
+
+  /**
+   * 最近一次供应商路由变更。
+   *
+   * 从**当前前台终端**上取：路由是终端的属性，把所有终端的变更混在一起会让人
+   * 以为那是当前这一路发生的事。
+   */
+  const activeTerminal = terminals.terminals.find(
+    (item) => item.id === workspace.activeTab?.terminalId
+  );
+  /**
+   * 最近一次路由变更。
+   *
+   * `VendorSwitch` 里**没有时间戳**——后端的事件也不带。因此时间用「现在」：
+   * 这个值是在收到事件时算出来的，它就是那一刻。编一个过去的时间会比不显示更糟。
+   */
+  const lastRouteSwitch =
+    activeTerminal?.vendorId && activeTerminal.lastSwitch
+      ? {
+          vendorId: activeTerminal.lastSwitch.vendorId,
+          reason: activeTerminal.lastSwitch.reason,
+          at: new Date().toISOString()
+        }
+      : undefined;
+
+  /**
+   * 工作台的刷新计数器。
+   *
+   * 后端每转发一个请求就推一条事件；工作台据此重新取用量与异常。
+   * **合并刷新**：一个终端重试时一秒能推好几条，而每次刷新要拉两个接口。
+   */
+  const [workbenchToken, setWorkbenchToken] = useState(0);
+  useEffect(() => {
+    let timer: number | undefined;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void api
+      .listen(api.CHANNEL_GATEWAY_REQUEST_RECORDED, () => {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          timer = undefined;
+          setWorkbenchToken((value) => value + 1);
+        }, 300);
+      })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, []);
 
   /** ⌘K / Ctrl+K 打开命令面板。 */
@@ -526,6 +607,11 @@ export function App() {
           selectedTarget={selectedTarget}
           onResume={resumeById}
           onMenu={(x, y, sessionId) => setMenu({ x, y, sessionId })}
+          providers={console.providers}
+          vendors={sidebarVendors}
+          gateway={console.gateway}
+          lastSwitch={lastRouteSwitch}
+          workbenchToken={workbenchToken}
         />
 
         <SessionWorkspace

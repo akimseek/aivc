@@ -1342,6 +1342,8 @@ mod tests {
             Arc::new(std::sync::RwLock::new(Arc::clone(&emitter))),
             Arc::new(SessionRegistry::new()),
             Arc::new(Mutex::new(HashMap::new())),
+            // 这一路**没有**路由源：泵收尾时会去销毁路由，空实现是正确替身。
+            Arc::new(NullRouteSource),
             "t1".to_owned(),
             Arc::new(Mutex::new(TerminalStatusDetector::new(ProviderId::Codex))),
             output,
@@ -1460,6 +1462,8 @@ mod tests {
             Arc::new(std::sync::RwLock::new(Arc::clone(&emitter))),
             Arc::clone(&registry),
             Arc::new(Mutex::new(HashMap::new())),
+            // 同上：这一路也没有路由。
+            Arc::new(NullRouteSource),
             "t1".to_owned(),
             Arc::new(Mutex::new(TerminalStatusDetector::new(ProviderId::Codex))),
             output,

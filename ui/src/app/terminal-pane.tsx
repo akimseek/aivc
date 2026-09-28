@@ -125,6 +125,32 @@ export function TerminalPane({
     return () => window.cancelAnimationFrame(raf);
   }, [active, terminalId]);
 
+  /**
+   * 切到前台时**把焦点交给终端**。
+   *
+   * # 这是探针发现的真实缺陷
+   *
+   * 此前没有任何地方给 xterm 焦点。后果很隐蔽：终端起来了、CLI 也在跑，
+   * 但**用户敲键盘没有反应**——按键落在背后的界面上，而不是 PTY 里。
+   *
+   * 真实场景里立刻会撞上：Codex 启动时会问一句
+   * 「`Update available · 0.156.1 → 0.157.1` … `enter continue · esc skip`」，
+   * 用户按回车/esc 却什么都没发生，只能以为程序卡死了。
+   *
+   * 只在 `active` 时抢焦点：非前台的终端仍然挂载（不能卸载，会丢输出），
+   * 但绝不能把焦点从用户正在用的那一路抢走。
+   */
+  useEffect(() => {
+    if (!active) return;
+    const term = termRef.current;
+    if (!term) return;
+    try {
+      term.focus();
+    } catch {
+      /* 还没挂到 DOM 上，下一轮 active 变化时再试。 */
+    }
+  }, [active, terminalId]);
+
   return (
     <div
       className={`terminal-slot${active ? "" : " inactive"}`}

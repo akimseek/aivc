@@ -853,7 +853,15 @@ export function App() {
                   session={session}
                   active={session.id === console.selectedId}
                   checked={console.selectedIds.includes(session.id)}
-                  onOpen={() => console.setSelectedId(session.id)}
+                  onOpen={() => {
+                    // **主列表也要走恢复流程。**
+                    //
+                    // 这里此前是 `console.setSelectedId(session.id)`——只选中、不起终端。
+                    // T2 接线时我漏了这一处（只改了收藏/最近两组与搜索结果），
+                    // 于是「点历史会话进终端」在最主要的入口上**根本没生效**。
+                    // 探针点真实列表行时才发现：终端数 0 → 0。
+                    if (selectedTarget) void beginResumeSession(selectedTarget, session);
+                  }}
                   onToggle={() => console.toggleSelected(session.id)}
                   onFavorite={() => void console.toggleFavorite(session)}
                   onMenu={(x, y) => setMenu({ x, y, session })}

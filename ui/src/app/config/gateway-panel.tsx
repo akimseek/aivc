@@ -8,16 +8,32 @@ import type { ExternalApiStatus, FailoverRule, FailoverRuleScope, GatewayPortSta
 export function GatewayPanel({ onError }: { onError: (message: string) => void }) {
   const [status, setStatus] = useState<GatewayPortStatus | null>(null);
   const [portDraft, setPortDraft] = useState("");
+  /** 复制成功的一次性提示——复制是「做完没有任何反馈」的典型动作。 */
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const next = await api.getGatewayPort();
       setStatus(next);
+      // **`configuredPort` 现在是后端真的会发的字段**。此前它永远是 `undefined`，
+      // `String(undefined)` 让这个输入框里躺着字符串 `"undefined"`——
+      // 用户点一下「保存端口」就会把它解析成 NaN。
       setPortDraft(String(next.configuredPort));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     }
   }, [onError]);
+
+  const copyAddress = useCallback(async () => {
+    if (!status?.baseUrl) return;
+    try {
+      await api.copyText(status.baseUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
+  }, [status?.baseUrl, onError]);
 
   useEffect(() => {
     void load();
@@ -49,6 +65,40 @@ export function GatewayPanel({ onError }: { onError: (message: string) => void }
           />
         </Field>
       </div>
+
+      {/*
+        平台 Base URL：**别的客户端该连哪里**。
+        这是「把网关给外部用」这件事唯一要抄的值，因此必须有，而且要能一键复制。
+        值由后端给（它读的就是注入给 CLI 的那个地址）——界面自己拼的话，
+        端口为 0（自动分配）时只能拼出 `http://127.0.0.1:0`。
+      */}
+      <Field label="平台 Base URL">
+        {status.baseUrl ? (
+          <div className="gateway-address">
+            <code className="mono" title={status.baseUrl}>
+              {status.baseUrl}
+            </code>
+            <Button small onClick={() => void copyAddress()}>
+              {copied ? "已复制" : "复制"}
+            </Button>
+          </div>
+        ) : (
+          <span className="row-meta">当前没有在监听。开启网关并重启应用后这里会出现地址。</span>
+        )}
+      </Field>
+      {status.baseUrl && (
+        // 端口是自动分配还是固定的，决定这个地址能不能长期用。
+        // 不写清楚的话，用户可能拿一个「这次有效」的地址去配外部客户端，
+        // 下次重启连不上，看起来像客户端坏了。
+        //
+        // 用普通提示段落而不是 `Notice`：那个组件要求给一个动作按钮，
+        // 而这里没有可做的动作——为了用它而塞一个假按钮更糟。
+        <p className="field-hint">
+          {status.configuredPort === 0
+            ? "端口由系统自动分配，每次启动都可能不同。要长期给别的客户端用，请在上面填一个固定端口。"
+            : `端口已固定在 ${status.configuredPort}，重启后地址不变。`}
+        </p>
+      )}
 
       <Toolbar>
         <Button

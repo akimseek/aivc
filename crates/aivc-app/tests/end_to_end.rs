@@ -441,10 +441,17 @@ async fn workspace_presets_and_gateway_commands_work_end_to_end() {
     assert_eq!(presets.as_array().expect("数组").len(), 1);
     assert_eq!(presets[0]["name"], "默认工作区");
 
-    // 网关设置往返
+    // 网关设置往返。字段名与界面读的一致（`configuredPort`），
+    // 否则界面拿到的永远是 `undefined`——那一格会一直显示「未启用」。
     let port = call(&app, "gateway:set-port", json!({ "port": 0 })).await;
-    assert_eq!(port["port"], 0);
-    assert_eq!(call(&app, "gateway:get-port", json!({})).await["port"], 0);
+    assert_eq!(port["configuredPort"], 0);
+    // 这个测试的应用不起网关，因此没有监听地址；这正是「已配置但未启动」。
+    assert_eq!(port["baseUrl"], "");
+    assert_eq!(port["activePort"], 0);
+    assert_eq!(
+        call(&app, "gateway:get-port", json!({})).await["configuredPort"],
+        0
+    );
 
     // 用量查询要求显式区间
     let summary = call(

@@ -386,6 +386,41 @@ impl CommandRouter {
         &self.context
     }
 
+    /// 网关**当前监听地址**；没在跑就是空串。
+    ///
+    /// 「没在跑」不是错误：用户可能关掉了网关，界面那时该显示「未启动」而不是报错。
+    async fn gateway_address(&self) -> String {
+        match self.gateway.as_ref() {
+            Some(gateway) => gateway.address().await,
+            None => String::new(),
+        }
+    }
+
+    /// 网关设置那三条命令（读端口 / 写端口 / 开关）。
+    ///
+    /// # 为什么合成一个方法
+    ///
+    /// 三条都要「当前监听地址」，而取地址是异步的。分开写会在 `dispatch` 里
+    /// 各来一段同构的三行（那也正是 `dispatch` 超过 clippy 行数上限的原因）。
+    /// 合起来之后「地址从哪来」只有一处。
+    ///
+    /// # Errors
+    ///
+    /// 参数非法或设置读写失败。
+    async fn dispatch_gateway_settings(
+        &self,
+        ctx: &ProviderContext,
+        command: &str,
+        args: &Value,
+    ) -> Result<Value> {
+        let address = self.gateway_address().await;
+        match command {
+            "gateway:get-port" => GatewaySettingsCommands::get_port(ctx, &address).await,
+            "gateway:set-port" => GatewaySettingsCommands::set_port(ctx, args, &address).await,
+            _ => GatewaySettingsCommands::set_enabled(ctx, args, &address).await,
+        }
+    }
+
     /// 分发一次调用。
     ///
     /// 返回值已经是**线上形状**（`serde_json::Value`），可以直接交给 Tauri 序列化。
@@ -587,9 +622,12 @@ impl CommandRouter {
             "gateway:clear-logs" => to_value(GatewayLogs::clear_logs(ctx, &args).await?),
 
             // --- 网关：设置 ---
-            "gateway:get-port" => GatewaySettingsCommands::get_port(ctx).await,
-            "gateway:set-port" => GatewaySettingsCommands::set_port(ctx, &args).await,
-            "gateway:set-enabled" => GatewaySettingsCommands::set_enabled(ctx, &args).await,
+            //
+            // 这三条都要**当前监听地址**（界面要显示「其他客户端该连哪里」，而端口为 0 时
+            // 真实端口只有网关状态知道），因此一起交给下面那个方法。
+            "gateway:get-port" | "gateway:set-port" | "gateway:set-enabled" => {
+                self.dispatch_gateway_settings(ctx, command, &args).await
+            }
             "gateway:get-external-api-status" => {
                 GatewaySettingsCommands::get_external_api_status(ctx).await
             }
@@ -1221,13 +1259,18 @@ mod tests {
             .dispatch("gateway:set-port", json!({ "port": 0 }))
             .await
             .expect("set port");
-        assert_eq!(saved["port"], 0);
+        assert_eq!(saved["configuredPort"], 0);
+        // 测试用的路由器**没有装网关**（`gateway: None`），因此没有监听地址。
+        // 这正是界面要能区分的「已配置但未启动」。
+        assert_eq!(saved["baseUrl"], "");
+        assert_eq!(saved["activePort"], 0);
 
         let current = router
             .dispatch("gateway:get-port", json!({}))
             .await
             .expect("get port");
-        assert_eq!(current["port"], 0);
+        assert_eq!(current["configuredPort"], 0);
+        assert_eq!(current["baseUrl"], "");
 
         // 外部 API 状态只暴露「有没有令牌」，绝不返回令牌本身。
         let status = router

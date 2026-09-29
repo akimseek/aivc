@@ -2,9 +2,10 @@ import { useCallback, useState } from "react";
 
 import { Button, Card, DescriptionList, EmptyState, LoadingBlock, Toolbar, ToolbarSpacer } from "../components";
 import * as api from "../ipc/commands";
-import type { AiProviderSummary, AiSession, AiTarget, ApiVendor } from "../types";
+import type { AiProviderSummary, AiSession, AiTarget, ApiVendor, GatewayPortStatus } from "../types";
 import { formatTokens, formatWhen } from "./session-display";
 import { formatCost, formatDuration, formatTokenCount, rangeBounds } from "./gateway-range";
+import { gatewayPortLabel, gatewayTone } from "./gateway-address";
 import { useAsyncData } from "../components/use-async-data";
 
 /**
@@ -41,7 +42,8 @@ export function SidebarWorkbench({
   provider: AiProviderSummary | undefined;
   target: AiTarget | null;
   session: AiSession | null;
-  gateway: { enabled: boolean; activePort: number; configuredPort: number } | null;
+  /** 网关状态。用**真实类型**而不是手抄的子集，理由见 `status-bar.tsx` 同一处注释。 */
+  gateway: GatewayPortStatus | null;
   vendors: ApiVendor[];
   /** 最近一次供应商路由变更（来自终端状态）。 */
   lastSwitch?: { vendorId: string; reason: string; at: string };
@@ -120,12 +122,9 @@ export function SidebarWorkbench({
             },
             {
               label: "网关",
-              value: gateway
-                ? gateway.enabled
-                  ? `:${gateway.activePort || gateway.configuredPort}`
-                  : "未启用"
-                : "读取中…",
-              tone: gateway?.enabled ? "ok" : undefined
+              // 与状态栏共用同一个判断：两边各写一遍时，一处算错只有一格显示不对。
+              value: gatewayPortLabel(gateway),
+              tone: gatewayTone(gateway) === "ok" ? "ok" : undefined
             }
           ]}
         />

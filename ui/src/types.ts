@@ -191,11 +191,30 @@ export type SessionMutationRef = {
   filePath?: string;
 };
 
-/** 本地网关端口状态（`gateway:get-port`）。 */
+/**
+ * 本地网关的端口与地址状态（`gateway:get-port` / `set-port` / `set-enabled`）。
+ *
+ * # 三个命令返回的是**同一个形状**
+ *
+ * 这一点曾经不成立：`set-port` 只回 `{port}`、`set-enabled` 只回 `{enabled}`，
+ * 而界面拿它们的返回值直接替换当前状态，于是点一下「启用」就把端口字段抹成了
+ * `undefined`——输入框里显示字符串 `"undefined"`，那一格永远显示「未启动」。
+ *
+ * # 为什么不能自己拼 URL
+ *
+ * `configuredPort == 0` 表示**由操作系统自动分配**（默认值就是 0）。那时真实端口
+ * 只有监听成功之后才知道，而拼出来的 `http://127.0.0.1:0` 永远不会有人监听。
+ * 因此地址由后端给：它读的就是**注入给 CLI 的那个字符串**。
+ */
 export type GatewayPortStatus = {
+  /** 设置里是否开启了常驻网关。**不代表此刻真的在监听**——那看 `baseUrl`。 */
   enabled: boolean;
+  /** 用户配置的端口；`0` 表示自动分配。 */
   configuredPort: number;
+  /** 这次真正在服务的端口；`0` 表示没有在监听。 */
   activePort: number;
+  /** 可直接使用的地址，形如 `http://127.0.0.1:50064`；空串表示没有在监听。 */
+  baseUrl: string;
 };
 
 /* ── 终端 ─────────────────────────────────────────────── */

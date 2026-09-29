@@ -38,7 +38,12 @@ const base = {
     kind: "local" as const,
     available: true
   },
-  gateway: { enabled: true, activePort: 50064, configuredPort: 0 },
+  gateway: {
+    enabled: true,
+    activePort: 50064,
+    configuredPort: 0,
+    baseUrl: "http://127.0.0.1:50064"
+  },
   vendors: [
     {
       id: "v1",
@@ -112,7 +117,11 @@ describe("SidebarWorkbench", () => {
   it("网关未启用时显示「未启用」，不显示端口 0", () => {
     fakeRuntime();
     const view = render(
-      <SidebarWorkbench {...base} gateway={{ enabled: false, activePort: 0, configuredPort: 0 }} session={null} />
+      <SidebarWorkbench
+        {...base}
+        gateway={{ enabled: false, activePort: 0, configuredPort: 0, baseUrl: "" }}
+        session={null}
+      />
     );
     expect(view.container.textContent).toContain("未启用");
   });

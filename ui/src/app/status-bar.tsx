@@ -1,5 +1,6 @@
 import { ToolbarSpacer } from "../components";
-import type { AiSession } from "../types";
+import type { AiSession, GatewayPortStatus } from "../types";
+import { gatewayPortLabel } from "./gateway-address";
 import { formatWhen } from "./session-display";
 import { VendorRoutePicker } from "./vendor-route-picker";
 import type { useTerminals } from "./use-terminals";
@@ -46,8 +47,13 @@ export function StatusBar({
   activeTerminalId?: string;
   terminals: ReturnType<typeof useTerminals>;
   error: string;
-  /** 网关端口信息。还没取到时是 `null`——那时显示「未启用」会撒谎，所以按未取到处理。 */
-  gateway: { enabled: boolean; activePort: number; configuredPort: number } | null;
+  /**
+   * 网关状态。还没取到时是 `null`——那时显示「未启用」会撒谎，所以按未取到处理。
+   *
+   * 用**真实类型**而不是手抄的子集：抄漏字段名的话，「后端发的字段名与界面读的不一致」
+   * 这件事会被类型系统放过去，两边都编译得过，运行时那一格永远是错的。
+   */
+  gateway: GatewayPortStatus | null;
 }) {
   // 优先显示「正在搜索」：它比「处理中」更具体，而且用户刚敲完键盘，正在等这个。
   const state = searching ? "搜索中…" : busy ? "处理中…" : "就绪";
@@ -55,14 +61,14 @@ export function StatusBar({
   /**
    * 网关那一格。
    *
-   * 三态而不是两态：**没取到**与**未启用**是两件事。把前者显示成「未启用」，
-   * 用户会去设置里找一个其实已经开着的网关。
+   * 四态而不是两态：**没取到**、**未启用**、**已启用但没在监听**、**正在监听**。
+   * 把「没取到」显示成「未启用」，用户会去设置里找一个其实已经开着的网关；
+   * 把「开着但没监听」也显示成「未启用」是同一个毛病。
+   *
+   * 判断逻辑在 `gateway-address.ts`，与工作台共用——两边各写一遍的话，
+   * 一处算错只有一格显示不对，很难发现。
    */
-  const gatewayText = gateway
-    ? gateway.enabled
-      ? `:${gateway.activePort || gateway.configuredPort}`
-      : "未启用"
-    : "读取中…";
+  const gatewayText = gatewayPortLabel(gateway);
 
   return (
     <div className="statusbar">

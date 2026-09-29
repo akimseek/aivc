@@ -13,7 +13,7 @@ import {
   Toolbar,
   ToolbarSpacer
 } from "../components";
-import type { AiProviderSummary, AiTarget, ApiVendor } from "../types";
+import type { AiProviderSummary, AiTarget, ApiVendor, GatewayPortStatus } from "../types";
 import { emptySessionMessage } from "./session-display";
 import { QuickGroup, SearchResultRow, SessionRow } from "./session-row";
 import {
@@ -110,7 +110,15 @@ export function Sidebar({
   onMenu: (x: number, y: number, sessionId: string) => void;
   providers: AiProviderSummary[];
   vendors: ApiVendor[];
-  gateway: { enabled: boolean; activePort: number; configuredPort: number } | null;
+  /**
+   * 网关状态。
+   *
+   * 用**真实类型**而不是手抄一个子集：此前这里是
+   * `{ enabled; activePort; configuredPort }`，抄漏了后端实际发的字段名，
+   * 于是「字段名对不上」这件事被类型系统放过去了——两边都编译得过，
+   * 运行时那一格永远显示错的。
+   */
+  gateway: GatewayPortStatus | null;
   /** 最近一次供应商路由变更，来自终端状态。 */
   lastSwitch?: { vendorId: string; reason: string; at: string };
   /** 变化时让工作台重新取数（后端推送请求记录时外层会加一）。 */

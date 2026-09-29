@@ -1840,3 +1840,22 @@ select {
   outline: 1px dashed var(--ui-accent);
   outline-offset: 2px;
 }
+/* ── 平台 Base URL ───────────────────────────────────────
+   外部客户端要抄的就是这一行，因此它要能一眼看清、一键复制。
+   长地址在窄面板里必须能截断，否则会把弹层撑开。 */
+.gateway-address {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2, 8px);
+}
+.gateway-address code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm, 4px);
+  background: var(--ui-surface-sunken, #0f172a);
+}

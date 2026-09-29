@@ -200,6 +200,32 @@ export function useWorkspaceTabs(
     [tabs, terminals.attention, terminals.terminals]
   );
 
+  /**
+   * 这张标签是不是**系统终端**。
+   *
+   * 系统终端与 Codex 终端在数据上是同一种东西（都走 `useTerminals` 的增删与回收），
+   * 但**渲染位置不同**：系统终端在底部停靠面板里，Codex 终端在工作区的标签条上。
+   * 旧平台就是这样（`system-terminal.tsx` 是一块独立的底板），
+   * 好处是「一边看 Codex 一边敲 shell」不需要来回切标签。
+   */
+  const isSystemTab = useCallback(
+    (tab: WorkspaceTab) =>
+      tab.kind === "terminal" &&
+      terminals.terminals.some((item) => item.id === tab.terminalId && item.kind === "system"),
+    [terminals.terminals]
+  );
+
+  const workspaceTabItems: TabItem[] = useMemo(
+    () => tabItems.filter((item) => !isSystemTab(tabs.find((tab) => tab.key === item.key)!)),
+    [tabItems, tabs, isSystemTab]
+  );
+
+  /** 底部停靠面板里要显示的标签。 */
+  const systemTabItems: TabItem[] = useMemo(
+    () => tabItems.filter((item) => isSystemTab(tabs.find((tab) => tab.key === item.key)!)),
+    [tabItems, tabs, isSystemTab]
+  );
+
   const activeTab = tabs.find((tab) => tab.key === activeKey) ?? null;
 
   /** 关得掉的标签（`closable !== false`）。会话标签通常不可关。 */
@@ -240,6 +266,11 @@ export function useWorkspaceTabs(
     activeKey,
     setActiveKey,
     tabItems,
+    /** 工作区标签条要显示的（不含系统终端）。 */
+    workspaceTabItems,
+    /** 底部停靠面板要显示的（只有系统终端）。 */
+    systemTabItems,
+    isSystemTab,
     activeTab,
     addTerminalTab,
     closeTab,

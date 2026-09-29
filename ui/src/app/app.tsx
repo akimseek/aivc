@@ -10,6 +10,7 @@ import { AppOverlays } from "./overlay-layer";
 import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
+import { SystemTerminalDock } from "./system-terminal-dock";
 import { displayTitle } from "./session-display";
 import { Sidebar } from "./sidebar";
 import { StatusBar } from "./status-bar";
@@ -591,8 +592,16 @@ export function App() {
           onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
         />
 
-        <SessionWorkspace
-          tabItems={workspace.tabItems}
+        {/*
+          工作区与底部停靠面板**同一列上下排**。
+          这一层包裹是必须的：`.main` 是「侧栏 | 内容」两列的网格，
+          把停靠面板直接挂到 `.shell` 上会落到状态栏**下面**——
+          而它必须留在侧栏右侧、状态栏之上。
+        */}
+        <div className="workarea">
+          <SessionWorkspace
+          // 工作区标签条**不含系统终端**：那些在下面的停靠面板里。
+          tabItems={workspace.workspaceTabItems}
           activeKey={workspace.activeKey}
           activeTab={workspace.activeTab}
           terminalItems={terminals.terminals}
@@ -657,6 +666,31 @@ export function App() {
             />
           }
         />
+
+          {/*
+            系统终端是**底部一块独立的板**，不是工作区的一张标签。
+            摆进同一排标签意味着同一时刻只能看一个，而真实用法是
+            「一边看 Codex 在跑，一边在下面敲命令」。旧平台也是这个形状。
+          */}
+          <SystemTerminalDock
+            items={workspace.systemTabItems}
+            activeKey={workspace.activeKey}
+            terminals={terminals.terminals}
+            registerSink={terminals.registerSink}
+            unregisterSink={terminals.unregisterSink}
+            onActivate={workspace.setActiveKey}
+            onClose={workspace.closeTab}
+            // 「关闭面板」= 关掉里面每一路终端。只把面板藏起来会让 PTY 留在后台，
+            // 而用户以为已经结束了。
+            onClosePanel={() => {
+              for (const key of workspace.systemTabItems.map((item) => item.key)) {
+                workspace.closeTab(key);
+              }
+            }}
+            onNew={() => void openSystemTerminal()}
+            onError={console.setError}
+          />
+        </div>
       </div>
 
       {exportedTo && (

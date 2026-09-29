@@ -1744,3 +1744,58 @@ select {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* ══ 工作区与底部系统终端 ═══════════════════════════════════
+   .main 是「侧栏 | 内容」的两列网格。内容那一列自己再上下排：
+   上面是工作区（标签 + 终端 + 会话正文），下面是系统终端的停靠面板。
+   没有系统终端时停靠面板不渲染，这一列就只有工作区。 */
+.workarea {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 工作区吃掉除停靠面板之外的全部高度。 */
+.workarea > .workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.system-dock {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* 高度由内联样式给（可拖动）；这是上限兜底，防止布局算出个负数。 */
+  flex: 0 0 auto;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+
+/* 最小化：只留那条标签与按钮。 */
+.system-dock.minimized {
+  height: auto;
+}
+.system-dock.minimized .system-dock-body {
+  display: none;
+}
+
+/* 拖上边缘改高度。命中区比视觉线宽——1px 的线抓不住。 */
+.system-dock-resize {
+  height: 6px;
+  margin-bottom: -3px;
+  cursor: row-resize;
+  background: transparent;
+  flex: 0 0 auto;
+}
+.system-dock-resize:hover {
+  background: var(--ui-accent);
+  opacity: 0.35;
+}
+
+.system-dock-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}

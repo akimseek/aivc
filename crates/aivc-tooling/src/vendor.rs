@@ -112,10 +112,61 @@ pub fn normalize_config_content(provider: ProviderId, target_path: &str, content
     default_config_content(provider, target_path).to_owned()
 }
 
-/// 备份根目录。
+/// 某个平台的**标准配置文件清单**：路径 + 默认内容。
 ///
-/// `vendor-backups/<供应商名>/<时间戳>/`。用时间戳而不是覆盖同名备份：
+/// # 为什么需要它
+///
+/// 「启用供应商」在旧平台的含义是**把它的凭据写进 CLI 的配置文件**（写前备份），
+/// 后端 `enable` 也是这么做的——但它要求供应商至少有一个启用的配置模板
+/// （`请至少启用一个配置文件。`），而在此之前**没有任何地方**告诉调用方
+/// 「这个平台该写哪些文件」：
+///
+/// - [`default_config_content`] 只按**路径后缀**匹配内容，本身不含路径；
+/// - 目录来自各 provider 的 `default_config_dir()`，那是私有的。
+///
+/// 于是界面只能自己编一份路径表——而路径是 Rust 侧的约定，编一份必然漂移。
+/// 这份清单把它变回**一处真值**。
+///
+/// 返回空向量表示这个平台没有标准模板（Qoder：它的配置格式因版本而异，
+/// 猜一个比不猜更糟）。
+#[must_use]
+pub fn default_config_targets(provider: ProviderId) -> Vec<&'static str> {
+    match provider {
+        ProviderId::Codex => vec!["~/.codex/auth.json", "~/.codex/config.toml"],
+        ProviderId::Gemini => vec!["~/.gemini/.env", "~/.gemini/settings.json"],
+        ProviderId::Claude => vec!["~/.claude/settings.json"],
+        ProviderId::Qoder => Vec::new(),
+    }
+}
+
+/// 把平台的默认配置模板组装成 `configs` 的形状（全部启用）。
+///
+/// 调用方是保存供应商那条路径：调用方没给 `configs` 时用这个兜底，
+/// 否则「启用」必然失败，而失败信息（`请至少启用一个配置文件。`）
+/// 对用户来说无从下手——他没有「配置文件」这个概念。
+#[must_use]
+pub fn default_vendor_configs(provider: ProviderId) -> Vec<(String, String)> {
+    default_config_targets(provider)
+        .into_iter()
+        .map(|path| {
+            (
+                path.to_owned(),
+                default_config_content(provider, path).to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// 备份根目录。`base` 是**父目录**——本函数自己拼一层 [`VENDOR_BACKUP_DIR`]。
+///
+/// 结果是 `base/vendor-backups/<供应商名>/<时间戳>/`。用时间戳而不是覆盖同名备份：
 /// 反复启用同一个供应商时，每一次的历史内容都值得保留。
+///
+/// # 调用方注意「父目录」这件事
+///
+/// 传 `data/`，不要传 `AppPaths::vendor_backup_dir()`（那已经是
+/// `data/vendor-backups`）——否则会得到 `data/vendor-backups/vendor-backups/...`。
+/// 实测踩过：备份真的落在那个重复了一层的目录里。
 #[must_use]
 pub fn backup_root(base: &Path, vendor_name: &str, enabled_at: &str) -> PathBuf {
     // 时间戳里的 `:` 与 `.` 在 Windows 上非法，替换掉。
@@ -164,6 +215,7 @@ pub fn write_config_file(
     content: &str,
     backup_root: &Path,
     scope: &str,
+    home: &Path,
 ) -> Result<WriteOutcome, String> {
     if content.trim().is_empty() {
         return Err(format!("配置文件内容为空，已中止写入：{target_path}"));
@@ -171,7 +223,7 @@ pub fn write_config_file(
     // 路径白名单是最后一道关：即使调用方漏判，也不能写到白名单之外。
     aivc_core::shell::assert_allowed_config_path(target_path)
         .map_err(|error| format!("{error}"))?;
-    write_file_with_backup(&expand_home(target_path), content, backup_root, scope)
+    write_file_with_backup(&expand_home(target_path, home), content, backup_root, scope)
 }
 
 /// 写入一个已解析好的目标路径，写入前先备份。
@@ -222,12 +274,22 @@ pub fn write_file_with_backup(
     })
 }
 
-/// 把开头的 `~/` 展开成用户主目录。
+/// 把开头的 `~/` 展开成**给定的**用户主目录。
 ///
-/// 配置路径来自设置里的模板（`~/.codex/auth.json` 这类），必须展开才能落到真实位置。
+/// # 为什么主目录必须显式传进来，而不是在这里读环境变量
+///
+/// 这里原来自己读 `HOME` / `USERPROFILE`（进程级全局状态）。后果实测到了：
+/// 一条 `aivc-ipc` 的测试走到了「启用供应商」的成功路径，而它**真的把用户的
+/// `~/.codex/auth.json` 与 `config.toml` 覆盖成了测试里的假值**
+/// （`sk-test` / `https://api.example.com`）。运行根是临时目录也拦不住——
+/// 这个函数看的是真实 HOME；备份则写进了随 `TempDir` 一起删掉的目录，无法恢复。
+///
+/// 现在主目录由调用方给：生产传用户的 HOME，测试传临时目录。
+/// **测试因此不可能写到临时目录之外**——这是结构上的保证，不是纪律上的。
+///
 /// 取不到主目录时**保持原样**：拼一个猜测的路径比明确失败更糟。
 #[must_use]
-pub fn expand_home(path: &str) -> PathBuf {
+pub fn expand_home(path: &str, home: &Path) -> PathBuf {
     let trimmed = path.trim();
     let rest = trimmed
         .strip_prefix("~/")
@@ -238,10 +300,16 @@ pub fn expand_home(path: &str) -> PathBuf {
     let Some(rest) = rest else {
         return PathBuf::from(trimmed);
     };
-    match std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
-        Some(home) => PathBuf::from(home).join(rest),
-        None => PathBuf::from(trimmed),
-    }
+    home.join(rest)
+}
+
+/// 解析当前用户的 HOME。
+///
+/// **只该由生产入口调用一次**，然后把结果显式传下去。测试不要用这个函数——
+/// 那正是上面那场事故的来源。
+#[must_use]
+pub fn real_home() -> Option<PathBuf> {
+    aivc_infra::config::paths::real_home()
 }
 
 /// 读取一个配置文件的内容。
@@ -260,10 +328,10 @@ pub fn expand_home(path: &str) -> PathBuf {
 /// # Errors
 ///
 /// 仅当路径不在白名单内时返回错误。
-pub fn read_config_file(target_path: &str) -> Result<String, String> {
+pub fn read_config_file(target_path: &str, home: &Path) -> Result<String, String> {
     aivc_core::shell::assert_allowed_config_path(target_path)
         .map_err(|error| format!("{error}"))?;
-    let path = expand_home(target_path);
+    let path = expand_home(target_path, home);
     Ok(std::fs::read_to_string(path).unwrap_or_default())
 }
 #[cfg(test)]
@@ -358,6 +426,60 @@ mod tests {
         );
     }
 
+    /// **两条清单不许漂移**。
+    ///
+    /// [`default_config_targets`] 给路径、[`default_config_content`] 按后缀给内容。
+    /// 它们是分开写的，因此完全可能对不上：给某个平台加一条路径却忘了加模板，
+    /// 或者改模板后缀却忘了改路径。
+    ///
+    /// 对不上的后果很隐蔽——`normalize_config_content` 会返回**空串**，
+    /// 而 `enable` 遇到空内容会中止写入（`配置文件内容为空，已中止写入`）。
+    /// 也就是说用户点「启用」会失败，而错误信息指向一个他没写过的东西。
+    /// 这条测试把那种情况挡在编译期之后、运行之前。
+    #[test]
+    fn every_default_target_has_a_default_template() {
+        for provider in [
+            ProviderId::Codex,
+            ProviderId::Gemini,
+            ProviderId::Claude,
+            ProviderId::Qoder,
+        ] {
+            for path in default_config_targets(provider) {
+                assert!(
+                    !default_config_content(provider, path).trim().is_empty(),
+                    "{provider:?} 的默认目标 {path} 没有对应模板"
+                );
+            }
+        }
+    }
+
+    /// 有默认模板的平台必须给出目标路径——否则「启用」永远失败。
+    #[test]
+    fn platforms_with_templates_all_have_targets() {
+        // Codex / Gemini / Claude 都有模板，因此都必须有路径。
+        for provider in [ProviderId::Codex, ProviderId::Gemini, ProviderId::Claude] {
+            assert!(
+                !default_config_targets(provider).is_empty(),
+                "{provider:?} 有默认模板却没有目标路径"
+            );
+        }
+        // Qoder 两者都没有：不能只补一半。
+        assert!(default_config_targets(ProviderId::Qoder).is_empty());
+    }
+
+    /// 组装出来的 `configs` 形状：路径与内容一一对应，且都是非空的。
+    #[test]
+    fn assembling_default_configs_pairs_paths_with_content() {
+        let configs = default_vendor_configs(ProviderId::Codex);
+        assert_eq!(configs.len(), 2);
+        for (path, content) in &configs {
+            assert!(path.starts_with("~/"), "{path} 应当是可展开的 HOME 路径");
+            assert!(content.contains("{{API_KEY}}") || content.contains("{{BASE_URL}}"));
+        }
+        // 没有模板的平台组装出来是空的——调用方据此知道「这个平台写不了配置」。
+        assert!(default_vendor_configs(ProviderId::Qoder).is_empty());
+    }
+
     #[test]
     fn windows_separators_are_recognized_in_path_matching() {
         // Windows 路径用 `\` 分隔，不统一就会匹配不到默认模板。
@@ -401,8 +523,15 @@ mod tests {
     fn writing_refuses_empty_content() {
         // 空内容会把用户配置**清空**——比写入失败严重得多，因为它看起来是成功的。
         let dir = tempfile::tempdir().expect("tempdir");
-        let error = write_config_file("~/.codex/auth.json", "   \n  ", dir.path(), "local")
-            .expect_err("必须拒绝");
+        // 主目录也给临时目录：这条测试在走到「内容为空」检查之前不该碰任何真实路径。
+        let error = write_config_file(
+            "~/.codex/auth.json",
+            "   \n  ",
+            dir.path(),
+            "local",
+            dir.path(),
+        )
+        .expect_err("必须拒绝");
         assert!(error.contains("内容为空"), "{error}");
     }
 
@@ -410,8 +539,8 @@ mod tests {
     fn writing_refuses_a_path_outside_the_whitelist() {
         // 路径白名单是最后一道关。
         let dir = tempfile::tempdir().expect("tempdir");
-        let error =
-            write_config_file("/etc/passwd", "内容", dir.path(), "local").expect_err("必须拒绝");
+        let error = write_config_file("/etc/passwd", "内容", dir.path(), "local", dir.path())
+            .expect_err("必须拒绝");
         assert!(!error.is_empty());
     }
 
@@ -465,27 +594,44 @@ mod tests {
 
     #[test]
     fn expand_home_handles_both_separators() {
-        // 取不到主目录时保持原样：拼一个猜测的路径比明确失败更糟。
-        let expanded = expand_home("~/.codex/auth.json");
-        let text = expanded.to_string_lossy();
-        assert!(!text.starts_with("~/"), "{text}");
-        assert!(text.ends_with("auth.json"));
-        // 没有 `~` 的路径原样返回。
-        assert_eq!(expand_home("/abs/path"), PathBuf::from("/abs/path"));
+        // 主目录**由调用方给**。测试一律给临时目录，因此不可能写到真实 HOME。
+        let home = Path::new("/tmp/aivc-test-home");
+        let expanded = expand_home("~/.codex/auth.json", home);
+        assert_eq!(expanded, home.join(".codex/auth.json"));
+        // 反斜杠形式同样认。
+        assert_eq!(
+            expand_home("~\\.codex\\auth.json", home),
+            home.join(".codex\\auth.json")
+        );
+        // `$HOME/` 前缀也认——白名单接受它，展开就必须认。
+        assert_eq!(
+            expand_home("$HOME/.codex/auth.json", home),
+            home.join(".codex/auth.json")
+        );
+        // 没有 `~` 的路径原样返回，不受主目录影响。
+        assert_eq!(expand_home("/abs/path", home), PathBuf::from("/abs/path"));
     }
 
     #[test]
     fn reading_a_missing_file_yields_empty_content() {
         // 读取失败返回空串而不是错误：配置预览是辅助信息，不该阻断表单。
-        let content = read_config_file("~/.codex/aivc-does-not-exist.json").expect("应当成功");
+        //
+        // 用一个**空的临时主目录**，这样读的必然是「不存在」而不是用户真实的文件。
+        let home = tempfile::tempdir().expect("tempdir");
+        let content =
+            read_config_file("~/.codex/aivc-does-not-exist.json", home.path()).expect("应当成功");
         assert!(content.is_empty());
     }
 
     #[test]
     fn reading_outside_the_whitelist_is_refused() {
         // 不加限制的话，这个命令就成了「读取任意文件」的入口——配置文件里通常有 API Key。
+        let home = tempfile::tempdir().expect("tempdir");
         for path in ["/etc/passwd", "~/.ssh/id_rsa", "C:/Windows/win.ini"] {
-            assert!(read_config_file(path).is_err(), "{path} 应当被拒绝");
+            assert!(
+                read_config_file(path, home.path()).is_err(),
+                "{path} 应当被拒绝"
+            );
         }
     }
 

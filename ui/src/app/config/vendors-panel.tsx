@@ -188,9 +188,23 @@ export function VendorsPanel({
 
   const toggle = async (vendor: ApiVendor) => {
     try {
-      await api.setVendorEnabled(vendor.id, !vendor.enabled);
+      if (vendor.enabled) {
+        // 停用：只翻启用位，**不动文件**——把用户 CLI 里的配置改回去不是
+        // 「停用」该做的事（那份文件可能有他自己后来加的改动）。
+        await api.setVendorEnabled(vendor.id, false);
+        await load();
+        onNotify?.(`已禁用供应商：${vendor.name}`);
+        return;
+      }
+      // 启用：**先写 CLI 配置（带备份），再翻启用位**。旧平台的含义就是这样——
+      // 供应商被启用的意思是「CLI 的配置指向它」。
+      const result = await api.enableVendor(vendor.id);
       await load();
-      onNotify?.(vendor.enabled ? `已禁用供应商：${vendor.name}` : `已启用供应商：${vendor.name}`);
+      onNotify?.(
+        result.written.length === 0
+          ? `已启用供应商：${vendor.name}（这个平台没有标准配置模板，未写入文件）`
+          : `已启用供应商：${vendor.name}，写入 ${result.written.length} 个配置文件，原文件已备份到 ${result.backupRoot}`
+      );
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     }
@@ -263,7 +277,14 @@ export function VendorsPanel({
       apiKey: "",
       apiBaseUrl: "",
       sort: String(vendors.length),
-      enabled: true,
+      /**
+       * **新建默认不启用**。
+       *
+       * 启用会去**写用户的 CLI 配置文件**（见 `toggle`），那是一个有副作用的动作，
+       * 不该由「点了新增」顺手完成。用户先把地址、密钥、费率填对、确认无误，
+       * 再自己点「启用」。
+       */
+      enabled: false,
       inputPrice: "",
       outputPrice: "",
       balanceQuery: "",

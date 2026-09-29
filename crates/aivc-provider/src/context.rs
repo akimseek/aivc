@@ -78,6 +78,20 @@ pub struct ProviderContext {
     wsl: WslAdapter,
     clock: Arc<dyn Clock>,
     platform: Platform,
+    /// 写 CLI 配置文件时把 `~/` 展开到哪里。
+    ///
+    /// `None` = 真实用户主目录（生产）。测试用 [`Self::with_config_home`] 指到临时目录。
+    ///
+    /// # 为什么要这样一个字段
+    ///
+    /// 这里原来是在展开函数里读 `HOME`／`USERPROFILE`（进程级全局状态）。后果实测到了：
+    /// 一条 `aivc-ipc` 的测试走到了「启用供应商」的成功路径，**真的把用户的
+    /// `~/.codex/auth.json` 与 `config.toml` 覆盖成了测试里的假值**，
+    /// 而备份落在随 `TempDir` 一起删掉的目录里，无法恢复。
+    ///
+    /// 运行根是临时目录**拦不住**它——那条路径看的是 HOME，不是运行根。
+    /// 现在主目录成了上下文的一部分：测试想写到外面都做不到。
+    config_home: Option<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for ProviderContext {
@@ -107,7 +121,48 @@ impl ProviderContext {
             wsl,
             clock: clock.unwrap_or_else(|| Arc::new(SystemClock)),
             platform,
+            config_home: None,
         }
+    }
+
+    /// 指定写 CLI 配置文件时的主目录。
+    #[must_use]
+    pub fn with_config_home(mut self, home: std::path::PathBuf) -> Self {
+        self.config_home = Some(home);
+        self
+    }
+
+    /// **显式选择真实用户主目录**。生产入口专用。
+    ///
+    /// 取不到 HOME 时退回运行根——那种环境本来就无法配置 CLI，而猜一个路径更糟。
+    #[must_use]
+    pub fn with_real_home(self) -> Self {
+        let home = aivc_infra::config::paths::real_home();
+        match home {
+            Some(home) => self.with_config_home(home),
+            None => self,
+        }
+    }
+
+    /// 写 CLI 配置文件时用的主目录。
+    ///
+    /// # 默认值**故意是运行根下的 `home/`**，不是真实 HOME
+    ///
+    /// 这里原来读 `HOME`／`USERPROFILE`（进程级全局状态）。后果实测到了两次：
+    /// 测试走到「启用供应商」的成功路径，把用户的 `~/.codex/auth.json` 与
+    /// `config.toml` 覆盖成了测试里的假值，而备份随临时目录一起被删，无法恢复。
+    ///
+    /// 第一次我改成「测试记得调 [`Self::with_config_home`]」——**不够**：
+    /// 有 9 处构造上下文的代码，漏掉任何一处都会再犯（实测漏了一处，第二次覆盖）。
+    ///
+    /// 因此默认值反过来：**不设就落在运行根里**（测试里就是临时目录），
+    /// 真实 HOME 必须由生产入口用 [`Self::with_real_home`] **显式选择**。
+    /// 于是「忘记设」的后果是写到自己的运行根，而不是破坏用户的环境。
+    #[must_use]
+    pub fn config_home(&self) -> std::path::PathBuf {
+        self.config_home
+            .clone()
+            .unwrap_or_else(|| self.paths.root().join("home"))
     }
 
     /// 仓储集合。
@@ -347,6 +402,10 @@ mod tests {
     use super::*;
     use aivc_core::id::TargetId;
     use aivc_core::target::{ProviderId, TargetKind};
+    use aivc_infra::config::paths::real_home;
+    use aivc_infra::config::{AppPaths, SettingsStore};
+    use aivc_infra::db::Db;
+    use aivc_infra::wsl::{LocalBashLauncher, WslAdapter, WslConfig};
 
     fn target(kind: TargetKind, distro: Option<&str>) -> Target {
         Target {
@@ -358,6 +417,52 @@ mod tests {
             codex_home: None,
             available: true,
             detail: None,
+        }
+    }
+
+    /// **没设 `config_home` 时必须落在运行根里，绝不落到真实 HOME。**
+    ///
+    /// 这条测试钉的是一个出过事故的性质：默认值曾经是真实 HOME，于是测试走到
+    /// 「启用供应商」的成功路径时**覆盖了用户的 `~/.codex/auth.json` 与
+    /// `config.toml`**，备份随临时目录一起被删，无法恢复。
+    ///
+    /// 光靠「测试记得调 `with_config_home`」挡不住——有 9 处构造上下文的代码，
+    /// 实测漏了一处就又覆盖了一次。因此默认值反过来，这条测试保证它不被翻回去。
+    #[tokio::test]
+    async fn config_home_defaults_inside_the_run_root() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let paths = AppPaths::new(directory.path().join("runtime"));
+        for required in paths.required_directories() {
+            std::fs::create_dir_all(&required).expect("dirs");
+        }
+        let db = Db::open(paths.database_path()).await.expect("db");
+        let context = ProviderContext::new(
+            paths.clone(),
+            SettingsStore::new(paths.settings_path()),
+            ProviderRepositories::from_db(db),
+            WslAdapter::new(
+                Arc::new(LocalBashLauncher::new("definitely-not-a-real-bash")),
+                WslConfig::default(),
+            ),
+            None,
+            Platform::current(),
+        );
+
+        let home = context.config_home();
+        assert!(
+            home.starts_with(paths.root()),
+            "默认主目录必须在运行根内，实际是 {}",
+            home.display()
+        );
+        // 明确排除「恰好等于真实 HOME」这种情况——那是要防的那个错误。
+        if let Some(real) = real_home() {
+            assert_ne!(home, real, "默认主目录不能是真实 HOME");
+        }
+
+        // 显式选择真实 HOME 的入口只有一个，且它确实生效。
+        let explicit = context.clone().with_real_home();
+        if let Some(real) = real_home() {
+            assert_eq!(explicit.config_home(), real);
         }
     }
 

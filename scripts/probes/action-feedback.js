@@ -43,6 +43,28 @@
     await p.waitForTargets();
     await p.sleep(1000);
 
+    /*
+      **先自己选平台与目标。**
+      
+      本应用现在**启动后什么都不选**（这是刻意的：此前三处「还原不上就挑第一个」，
+      于是界面替你选好了平台/目标/会话）。因此列表一开始是空的——
+      这个探针原来假设「侧栏本来就有会话行」，那正是被去掉的旧行为。
+      
+      这里走用户真实路径：在下拉里选平台，再选目标，然后才有会话可操作。
+    */
+    const pickers = () => [...document.querySelectorAll(".sidebar .pickers select")];
+    const setSelect = async (element, value) => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(element, value);
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      await p.sleep(1300);
+    };
+    const [providerSelect, targetSelect] = pickers();
+    const codex = [...(providerSelect?.options ?? [])].find((item) => item.value === "codex");
+    if (codex) await setSelect(providerSelect, "codex");
+    const target = [...(targetSelect?.options ?? [])].find((item) => item.value !== "");
+    if (target) await setSelect(targetSelect, target.value);
+    await p.sleep(2000);
+
     // ── 找一个真实会话来操作 ─────────────────────────────
     //
     // 收藏是**最轻**的动作：不改磁盘上的东西（只是元数据），失败了也能复原，

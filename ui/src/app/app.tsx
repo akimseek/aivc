@@ -4,7 +4,6 @@ import { Button, ToolbarSpacer, useToast, type Command } from "../components";
 import * as api from "../ipc/commands";
 import type { AiSession, AiTarget, ApiVendor } from "../types";
 import { AppMenubar } from "./app-menubar";
-import { SessionActions, exportToDirectory } from "./session-actions";
 import type { ConfigTab } from "./config-overlay";
 import { AppOverlays } from "./overlay-layer";
 import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
@@ -192,6 +191,33 @@ export function App() {
   const activeTerminal = terminals.terminals.find(
     (item) => item.id === workspace.activeTab?.terminalId
   );
+
+  /**
+   * **选中会话跟随当前终端。**
+   *
+   * 这是旧平台的规则（`app.tsx` 里那个依赖 `targetId` 的 effect）：
+   *
+   * ```js
+   * const activeSessionForTarget = activeTab?.targetId === targetId ? activeTab.session : null;
+   * setSelectedId(activeSessionForTarget?.id || "");
+   * ```
+   *
+   * 也就是**跟着当前终端那条会话走；终端没开、或它不属于当前目标时就是不选**。
+   * 从来不选「列表第一项」。
+   *
+   * 这条规则是「点历史会话进入终端后还能看到详情/从此处分支」的另一半：
+   * 详情按钮在标签栏上、绑的是当前终端的会话，而选中项也要跟着走，
+   * 否则右侧正文显示的是另一条会话。
+   *
+   * 只在**当前标签确实是终端**时同步。看会话正文（`kind === "session"`）时不动选中项
+   * ——那时用户是在列表里挑，选中项就是他的选择。
+   */
+  useEffect(() => {
+    if (workspace.activeTab?.kind !== "terminal") return;
+    const sessionId = workspace.activeTab.sessionId;
+    if (!sessionId) return;
+    console.setSelectedId(sessionId);
+  }, [workspace.activeTab?.kind, workspace.activeTab?.sessionId, console]);
   /**
    * 最近一次路由变更。
    *
@@ -654,6 +680,18 @@ export function App() {
                 canStartCodex={canStartCodex(selectedTarget)}
                 onNewCodex={beginNewSession}
                 onNewShell={() => void openSystemTerminal()}
+                /*
+                  「详情」要看的会话。
+
+                  **当前终端那条会话优先**——这正是「点历史会话进入终端后还能查看详情」
+                  的关键：那时正文不渲染（原来详情按钮就在正文头部，于是消失了），
+                  而选中项也未必等于这条终端所属的会话。旧平台同理：它绑的是
+                  `activeSession`（活动标签的会话）。
+                */
+                detailSession={
+                  sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession
+                }
+                onOpenDetail={(session) => setDetailSession(session)}
               />
               <ToolbarSpacer />
             </>
@@ -675,25 +713,6 @@ export function App() {
           branchParent={(sessionId) => sessionById(sessionId)}
           branchChildren={(parentSessionId) =>
             api.listSessionChildren(parentSessionId, selectedTarget?.id)
-          }
-          sessionActions={
-            <SessionActions
-              session={console.selectedSession}
-              onOpenDetail={() => setDetailSession(console.selectedSession)}
-              onRename={(title) => void console.renameSession(title)}
-              onDuplicate={() => void console.duplicateCurrent()}
-              onExport={(format, toDirectory) => {
-                if (!toDirectory) {
-                  void runExport(format);
-                  return;
-                }
-                void exportToDirectory(format, console.selectedId, (fmt, path) =>
-                  console.exportCurrentTo(fmt, path)
-                ).then((path) => {
-                  if (path) setExportedTo(path);
-                });
-              }}
-            />
           }
         />
 

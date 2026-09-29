@@ -239,6 +239,33 @@ export const setVendorEnabled = (id: string, enabled: boolean) =>
   invoke<ApiVendor>("vendor:set-enabled", { id, enabled });
 
 /**
+ * **启用**供应商：把它的配置模板写进 CLI 的配置文件（写前备份）。
+ *
+ * # 与 `setVendorEnabled` 的区别就是「写不写文件」
+ *
+ * | 命令 | 做什么 |
+ * | --- | --- |
+ * | `vendor:set-enabled` | **只翻数据库里的启用位** |
+ * | `vendor:enable` | 写文件（带备份）**然后**才翻启用位 |
+ *
+ * 旧平台的「启用」是后者：供应商被启用的含义就是「CLI 的配置指向它」。
+ * 只翻标志位等于界面显示已启用、而 CLI 实际还用着旧配置——那是这类功能里
+ * 最难排查的一种不一致。
+ *
+ * 顺序固定为**先写文件、再改数据库**，中途失败会如实报告已经写了哪些
+ * （返回值里的 `written`），已写入的都有备份。
+ */
+export const enableVendor = (id: string) =>
+  invoke<{
+    vendorId: string;
+    /** 实际写入的配置文件名。 */
+    written: string[];
+    /** 备份根目录（`vendor-backups/<供应商名>/<时间戳>/`）。 */
+    backupRoot: string;
+    lastEnabledAt?: string;
+  }>("vendor:enable", { id });
+
+/**
  * 保存供应商（新建或更新）。
  *
  * 后端把**整个参数对象**反序列化成 `ApiVendorInput`，字段名必须逐个对上：

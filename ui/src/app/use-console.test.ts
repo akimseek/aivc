@@ -26,23 +26,26 @@ describe("target selection", () => {
   });
 
   it("falls back to the current one when the remembered target is gone", () => {
-    // 发行版被移除、目录被删——记住的目标会失效。这时**不能**回到空选中，
-    // 否则界面停在「请选择目标」，用户每次都要重新点一遍。
+    // 记住的目标失效时，**退回当前仍有效的那个**，而不是回到空选中。
+    //
+    // 注意这与上面那条的区别：`preferred` 里有 `"a"`（当前值），
+    // 说明用户**本来就在这个目标上**；而上面那条的 `preferred` 是空的，
+    // 表示从没选过——那种情况才什么都不选。
     const items = [target("a", true), target("b", true)];
     expect(pickTarget(items, ["gone", "a"])).toBe("a");
   });
 
-  it("prefers an available target over an unavailable first one", () => {
-    // 这是实测踩过的形状：本机有 Codex，另有一台进不去的发行版。
-    // 自动选中一个**用不了**的目标，用户会以为「点了却没好」。
+  it("**没有可还原的目标时什么都不选**，也不去挑「第一个可用的」", () => {
+    // 这里原来断言「优先选可用的、全都不可用也要选一个」。那是我自己加的便利，
+    // 旧平台没有——后果是**启动后什么都没点，界面已经替你选好了一个目标**。
+    //
+    // 现在只认还原值。要选就得用户自己选；没选时界面显示「请选择目标」，
+    // 那本来就是旧平台有的状态。
     const items = [target("codex:wsl:broken", false), target("codex:local", true)];
-    expect(pickTarget(items, [])).toBe("codex:local");
-  });
-
-  it("still selects something when nothing is available", () => {
-    // 全都不可用时也要选一个——用户至少能看到它的 `detail` 说明为什么。
-    const items = [target("codex:wsl:broken", false)];
-    expect(pickTarget(items, [])).toBe("codex:wsl:broken");
+    expect(pickTarget(items, [])).toBe("");
+    expect(pickTarget([target("codex:wsl:broken", false)], [])).toBe("");
+    // 还原值仍然优先，而且**优先于可用性**：用户上次选的就是它。
+    expect(pickTarget(items, ["codex:wsl:broken"])).toBe("codex:wsl:broken");
   });
 
   it("returns an empty string for an empty list", () => {

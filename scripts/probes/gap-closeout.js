@@ -42,6 +42,29 @@
 
   await p.waitForTargets();
 
+  /*
+    **先自己选平台与目标。**
+    
+    本应用现在**启动后什么都不选**（刻意如此：此前三处「还原不上就挑第一个」）。
+    环境页、诊断页的能力矩阵与路径检查都依赖「当前平台 / 当前目标」，
+    没有它们这些块渲染不出来——这个探针原来吃的是旧行为的默认选中。
+    
+    这里走用户真实路径：下拉里选平台，再选目标。
+  */
+  {
+    const pickers = [...document.querySelectorAll(".sidebar .pickers select")];
+    const setSelect = async (element, value) => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(element, value);
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      await p.sleep(1300);
+    };
+    const codex = [...(pickers[0]?.options ?? [])].find((item) => item.value === "codex");
+    if (codex) await setSelect(pickers[0], "codex");
+    const target = [...(pickers[1]?.options ?? [])].find((item) => item.value !== "");
+    if (target) await setSelect(pickers[1], target.value);
+    await p.sleep(2000);
+  }
+
   // ── 6.1 CLI 环境页 ──────────────────────────────────────
   out.openedEnvironment = await openTab("环境");
   const envText = clean(".overlay-body");

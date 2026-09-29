@@ -1,10 +1,11 @@
 import { lazy, Suspense, type ReactNode } from "react";
 
-import { Button, EmptyState, Tabs, ToolbarSpacer, type TabItem } from "../components";
+import { Button, EmptyState, Tabs, type TabItem } from "../components";
 import type { AiMessage, AiSession, AiTarget } from "../types";
 import { BranchPanel } from "./branch-panel";
 import { messageCountLabel, formatTokens } from "./session-display";
 import { Message } from "./session-row";
+import { SessionDetailButton } from "./session-actions";
 import type { WorkspaceTab } from "./use-workspace-tabs";
 
 /**
@@ -55,8 +56,7 @@ export function SessionWorkspace({
   onBranch,
   onOpenSession,
   branchChildren,
-  branchParent,
-  sessionActions
+  branchParent
 }: {
   tabItems: TabItem[];
   activeKey: string;
@@ -81,13 +81,6 @@ export function SessionWorkspace({
   onOpenSession: (session: AiSession) => void;
   branchParent: (sessionId: string) => AiSession | undefined;
   branchChildren: (parentSessionId: string) => Promise<AiSession[]>;
-  /**
-   * 会话头右侧的动作（重命名 / 复制 / 导出…）以及重命名时替换标题的输入框。
-   *
-   * 做成插槽而不是在这里实现：那些动作要调 IPC，属于「接线」，
-   * 而本组件只负责**它们显示在哪**。
-   */
-  sessionActions: ReactNode;
 }) {
   return (
     <section className="workspace">
@@ -135,7 +128,6 @@ export function SessionWorkspace({
             onOpenSession={onOpenSession}
             branchParent={branchParent}
             branchChildren={branchChildren}
-            sessionActions={sessionActions}
           />
         )}
       </div>
@@ -159,8 +151,7 @@ function SessionBody({
   onBranch,
   onOpenSession,
   branchParent,
-  branchChildren,
-  sessionActions
+  branchChildren
 }: {
   session: AiSession | null;
   messageTotal: number | null;
@@ -172,7 +163,6 @@ function SessionBody({
   onOpenSession: (session: AiSession) => void;
   branchParent: (sessionId: string) => AiSession | undefined;
   branchChildren: (parentSessionId: string) => Promise<AiSession[]>;
-  sessionActions: ReactNode;
 }) {
   if (!session) {
     return (
@@ -194,8 +184,6 @@ function SessionBody({
         </span>
         {/* 工作台要点：上下文占用、累计 token、模型。全都在会话自带的数据里。 */}
         {session.usage && <UsagePills usage={session.usage} model={session.model} />}
-        <ToolbarSpacer />
-        {sessionActions}
       </div>
 
       {/* 分支关系。放在正文**上方**、会话头下方：
@@ -270,14 +258,26 @@ function UsagePills({ usage, model }: { usage: NonNullable<AiSession["usage"]>; 
 export function WorkspaceTrailing({
   canStartCodex,
   onNewCodex,
-  onNewShell
+  onNewShell,
+  detailSession,
+  onOpenDetail
 }: {
   canStartCodex: boolean;
   onNewCodex: () => void;
   onNewShell: () => void;
+  /**
+   * 「详情」要看的会话：**当前终端那条会话优先**，否则当前选中的会话。
+   *
+   * 旧平台就是这个来源（`activeSession && <button>详情</button>`，而 `activeSession`
+   * 是活动标签的会话）。用「当前选中」会在进入终端后失灵——那时选中项可能不是
+   * 这条终端所属的会话。
+   */
+  detailSession: AiSession | null;
+  onOpenDetail: (session: AiSession) => void;
 }) {
   return (
     <>
+      <SessionDetailButton session={detailSession} onOpenDetail={onOpenDetail} />
       <Button small disabled={!canStartCodex} onClick={onNewCodex} title="在目标里启动 Codex">
         + Codex
       </Button>

@@ -43,12 +43,41 @@
   if (!local) return { ...out, verdict: "SKIP：没有可用的本机 Codex 目标" };
 
   await safe("targetSelect", async () => {
-    const select = await p.waitForTargets();
-    const option = select && [...select.options].find((item) => item.value.endsWith(":local"));
-    if (select && option) {
-      p.selectValue(select, option.value);
-      await p.sleep(2000);
+    /*
+      **先自己选平台，再选目标。**
+      
+      本应用现在**启动后什么都不选**（刻意如此：此前三处「还原不上就挑第一个」，
+      界面会替你选好）。那时目标下拉是空的，会话行也不存在，于是下面
+      「打开详情」那一段找不到任何可点的行——看起来像功能坏了。
+      
+      这里补上用户真实的两步。用**显式设值 + change 事件**，与另外几个探针一致。
+    */
+    const setSelect = async (element, value) => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(element, value);
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      await p.sleep(1400);
+    };
+    const providerSelect = document.querySelector(".sidebar .pickers select");
+    const providerOption = [...(providerSelect?.options ?? [])].find(
+      (item) => item.value === "codex"
+    );
+    if (providerSelect && providerOption) await setSelect(providerSelect, "codex");
+
+    const selects = [...document.querySelectorAll(".sidebar .pickers select")];
+    const targetSelect = selects[1] ?? (await p.waitForTargets());
+    // **用「第一个非空选项」**，不要 `endsWith(":local")`：本机目标的编号形如
+    // `codex:local:C:\Users\akim\.codex`，它不以 `:local` 结尾——原来的过滤器
+    // 一个也匹配不到，于是目标从未被选中，会话行始终为 0，
+    // 表现成「详情功能坏了」。
+    const option =
+      targetSelect && [...targetSelect.options].find((item) => item.value !== "");
+    if (targetSelect && option) await setSelect(targetSelect, option.value);
+
+    // 等会话行真的出现：不等的话下一步点的是空列表，表现成「详情功能坏了」。
+    for (let index = 0; index < 24 && document.querySelectorAll(".sidebar .rows .row").length === 0; index += 1) {
+      await p.sleep(500);
     }
+    out.rowCount = document.querySelectorAll(".sidebar .rows .row").length;
   });
 
   // ── 1. 侧栏一级导航里有「工作台」 ──────────────────────
@@ -138,8 +167,17 @@
   out.sessionHeadPresent = Boolean(document.querySelector(".session-head"));
 
   await safe("detailButton", async () => {
+    // 「详情」现在在**标签栏**上，不在 `.session-head` 里。
+    //
+    // 移动它是为了修一个真实缺陷：原来它随会话正文一起渲染，于是**点历史会话
+    // 进入终端后正文不渲染、详情入口就消失了**，用户到不了「从此处分支」。
+    // 旧平台也是放在标签之上那一行。
     const head = document.querySelector(".session-head");
     if (head) clickText(head, "详情");
+    // 正文头部那条路已经不通了，从整页找——包括标签栏里的那一个。
+    if (!document.querySelector(".session-detail-dialog")) {
+      clickText(document.body, "详情");
+    }
     await p.sleep(2000);
   });
   const detail = document.querySelector(".session-detail-dialog");

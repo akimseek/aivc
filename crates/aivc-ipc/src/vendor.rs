@@ -49,15 +49,44 @@ impl VendorCommands {
 
     /// 保存供应商（新建或更新）。
     ///
+    /// # 调用方没给 `configs` 时补上平台的默认模板
+    ///
+    /// 「启用供应商」在后端的含义是**把它的凭据写进 CLI 的配置文件**
+    /// （见 [`VendorCommands::enable`]），而那条命令要求至少一个启用的配置模板。
+    /// 界面此前从不设 `configs`，于是供应商能保存、**但永远启用不了**：
+    /// 报错是 `请至少启用一个配置文件。`，而用户根本没有「配置文件」这个概念。
+    ///
+    /// 因此这里兜底填上该平台的标准目标（[`aivc_tooling::vendor::default_vendor_configs`]）。
+    /// 调用方**显式给了** `configs` 就一律用它的——包括给空数组表示
+    /// 「这个供应商就是不要写配置」（此时启用会照旧被后端拒绝，那是调用方的选择）。
+    ///
     /// # Errors
     ///
     /// 名称为空、Key/地址缺失、费率非法、重名或排序冲突时返回领域错误。
     pub async fn save(ctx: &ProviderContext, args: &Value) -> Result<ApiVendor> {
-        let input: ApiVendorInput = serde_json::from_value(args.clone()).map_err(|error| {
+        let mut input: ApiVendorInput = serde_json::from_value(args.clone()).map_err(|error| {
             aivc_core::Error::Ipc(aivc_core::error::IpcError::CommandFailed {
                 message: format!("参数无效：api vendor（{error}）"),
             })
         })?;
+        // 只有「调用方压根没提 configs 这个字段」才兜底。显式传了（哪怕是空数组）
+        // 都尊重调用方——空数组是一个有意义的表达。
+        let provided_configs = args.get("configs").is_some();
+        if !provided_configs {
+            input.configs = aivc_tooling::vendor::default_vendor_configs(input.provider_id)
+                .into_iter()
+                .map(
+                    |(target_path, content)| aivc_core::vendor::VendorConfigTemplate {
+                        id: None,
+                        provider_id: input.provider_id,
+                        label: None,
+                        enabled: true,
+                        target_path,
+                        content,
+                    },
+                )
+                .collect();
+        }
         ctx.vendor().save(&input).await
     }
 
@@ -117,8 +146,13 @@ impl VendorCommands {
         }
 
         // 每次启用用一个新的时间戳目录：反复启用时，**每一次的历史内容都值得保留**。
+        //
+        // `backup_root` 接收的是**父目录**（它自己会拼一层 `vendor-backups`），
+        // 因此这里传 `data/` 而不是 `ctx.vendor_backup_root()`——后者本身已经
+        // 是 `data/vendor-backups`，再传进去会得到 `data/vendor-backups/vendor-backups/...`。
+        // 实测就是这样：备份真的落在那个重复了一层的目录里。
         let backup_root =
-            aivc_tooling::vendor::backup_root(&ctx.vendor_backup_root(), &vendor.name, at.as_str());
+            aivc_tooling::vendor::backup_root(&ctx.paths().data_dir(), &vendor.name, at.as_str());
 
         // 先写完全部文件，再改数据库。
         //
@@ -149,6 +183,9 @@ impl VendorCommands {
                 &rendered,
                 &backup_root,
                 "local",
+                // 主目录**由上下文给**：生产是真实 HOME，测试是临时目录。
+                // 此前这里在展开函数里读 HOME，于是测试能改掉用户的真实配置。
+                &ctx.config_home(),
             )
             .map_err(|error| {
                 // 中途失败时**如实报告已经写了哪些**：用户需要知道当前处于什么状态，
@@ -222,7 +259,7 @@ impl VendorCommands {
     /// # Errors
     ///
     /// 路径不在白名单内时返回错误。
-    pub fn read_configs(args: &Value) -> Result<Value> {
+    pub fn read_configs(args: &Value, home: &std::path::Path) -> Result<Value> {
         let paths = args
             .get("paths")
             .and_then(Value::as_array)
@@ -234,7 +271,7 @@ impl VendorCommands {
                 .ok_or_else(|| failed("参数无效：paths".to_owned()))?;
             // 路径白名单在这里同样强制：不加限制的话，这条命令就成了
             // 「读取任意文件」的入口——配置文件里通常有 API Key。
-            let content = aivc_tooling::vendor::read_config_file(path).map_err(failed)?;
+            let content = aivc_tooling::vendor::read_config_file(path, home).map_err(failed)?;
             files.push(json!({ "path": path, "content": content }));
         }
         Ok(json!({ "files": files }))
@@ -400,7 +437,16 @@ mod tests {
             wsl,
             None,
             Platform::current(),
-        );
+        )
+        /*
+          **把写 CLI 配置的主目录钉在临时目录里。**
+          不设这一行的话，`config_home()` 会返回真实 HOME，于是任何走到
+          「启用供应商」成功路径的测试都会去改用户的 `~/.codex/...`。
+          实测发生过一次：用户的 `auth.json` 与 `config.toml` 被覆盖成
+          `vendor_input` 里的假值，备份随 `TempDir` 一起被删，无法恢复。
+          设了之后这是**结构上的保证**：这个上下文里的代码写到临时目录之外都不可能。
+        */
+        .with_config_home(dir.path().join("home"));
         (ctx, dir)
     }
 
@@ -415,6 +461,43 @@ mod tests {
             value["id"] = json!(id);
         }
         value
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn saving_without_configs_fills_the_platform_defaults() {
+        // **这是「启用」能成功的前提。**
+        //
+        // `enable` 要求至少一个启用的配置模板（`请至少启用一个配置文件。`），
+        // 而界面此前从不设 `configs`——于是供应商能保存、**永远启用不了**，
+        // 报错还指向一个用户没有的概念。
+        let (ctx, _dir) = context().await;
+        let saved = VendorCommands::save(&ctx, &vendor_input(None, "默认模板"))
+            .await
+            .expect("save");
+        let paths: Vec<&str> = saved
+            .configs
+            .iter()
+            .map(|config| config.target_path.as_str())
+            .collect();
+        assert_eq!(paths, vec!["~/.codex/auth.json", "~/.codex/config.toml"]);
+        assert!(saved.configs.iter().all(|config| config.enabled));
+        // 模板内容要带上占位符：没有它写进去的就是一份没凭据的配置。
+        assert!(
+            saved
+                .configs
+                .iter()
+                .any(|config| config.content.contains("{{API_KEY}}"))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_explicit_empty_configs_is_respected() {
+        // 显式传空数组表示「这个供应商就是不要写配置」，不能被兜底覆盖。
+        let (ctx, _dir) = context().await;
+        let mut input = vendor_input(None, "不要模板");
+        input["configs"] = json!([]);
+        let saved = VendorCommands::save(&ctx, &input).await.expect("save");
+        assert!(saved.configs.is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -512,12 +595,23 @@ mod tests {
     async fn enabling_without_an_enabled_config_is_rejected() {
         // 启用要写它声明的配置文件；没有配置就没有可写的东西。
         //
-        // **测试不覆盖成功路径**：那会真的写进用户的 `~/.codex/auth.json` 等文件。
-        // 写入机制本身由 `aivc-tooling::vendor` 用临时目录充分覆盖，这里只验证编排。
+        // # 这条测试差点改掉用户的真实 CLI 配置
+        //
+        // `enable` 的成功路径会调 `write_config_file`，而它把 `~/` 展开成**真实的
+        // HOME**——运行根是临时目录也拦不住它。原来这条测试靠「`save` 不填 `configs`」
+        // 走到拒绝分支，因此是安全的。
+        //
+        // 后来 `save` 改成**兜底填平台的默认模板**（否则界面点「启用」必然失败），
+        // 这条测试于是走进了成功路径：实测把用户的 `~/.codex/auth.json` 与
+        // `config.toml` 覆盖成了测试里那两个假值（`sk-test` /
+        // `https://api.example.com`），而备份写进了随 `TempDir` 一起删掉的目录里。
+        //
+        // 现在显式传**空** `configs`，让这条测试重新停在拒绝分支上。
+        // **任何测试都不许走到 `enable` 的成功路径。**
         let (ctx, _dir) = context().await;
-        let saved = VendorCommands::save(&ctx, &vendor_input(None, "V"))
-            .await
-            .expect("save");
+        let mut input = vendor_input(None, "V");
+        input["configs"] = json!([]);
+        let saved = VendorCommands::save(&ctx, &input).await.expect("save");
         let error = VendorCommands::enable(&ctx, &json!({ "id": saved.id.as_str() }))
             .await
             .expect_err("必须拒绝");

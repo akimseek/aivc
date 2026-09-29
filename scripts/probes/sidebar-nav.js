@@ -18,6 +18,29 @@
   out.providers = raw;
   const codex = (raw ?? []).find((item) => item.id === "codex");
   const caps = codex?.capabilities ?? {};
+
+  /*
+    **先自己选平台。**
+    
+    本应用现在**启动后什么都不选**（刻意如此：此前三处「还原不上就挑第一个」，
+    于是界面替你选好了平台/目标/会话）。而二级导航里的「回收站」是按
+    **当前平台的能力**启用/禁用的（`canUseTrash = supportsTrash(providers, providerId)`）
+    ——没选平台时它是禁用的，并提示「请选择支持回收站的平台」。
+    
+    这个探针原来吃的是旧行为的默认选中，因此这里补上用户真实的那一步。
+  */
+  {
+    const providerSelect = document.querySelector(".sidebar .pickers select");
+    const option = [...(providerSelect?.options ?? [])].find((item) => item.value === "codex");
+    if (providerSelect && option) {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        providerSelect,
+        "codex"
+      );
+      providerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      await p.sleep(2500);
+    }
+  }
   out.capabilityKeys = Object.keys(caps).sort();
 
   check(

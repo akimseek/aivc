@@ -50,6 +50,25 @@
 
 use std::path::{Path, PathBuf};
 
+/// 解析当前用户的 HOME。
+///
+/// # 为什么放在这一层，以及为什么必须是显式的
+///
+/// 「写 CLI 配置文件」要把 `~/` 展开成真实主目录，而这个解析读的是
+/// `HOME`／`USERPROFILE`——**进程级全局状态**。后果实测到了：一条测试走到了
+/// 「启用供应商」的成功路径，把用户的 `~/.codex/auth.json` 与 `config.toml`
+/// 覆盖成了测试里的假值，而备份随临时目录一起被删，无法恢复。
+///
+/// 因此这里只提供**解析**：由调用方（生产入口）取一次、显式传下去，测试传自己的
+/// 临时目录。放在 `aivc-infra` 而不是工具层，是为了让需要它的每一层都能用，
+/// 而不必反向依赖。
+#[must_use]
+pub fn real_home() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
 /// 运行根下的路径集合。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppPaths {

@@ -549,7 +549,9 @@ impl CommandRouter {
             | "terminal:stop" => self.dispatch_terminal(command, &args).await,
             // --- 供应商查询 ---
             "vendor:list-models" => Ok(VendorCommands::list_models(ctx, &args).await?),
-            "vendor:read-configs" => Ok(VendorCommands::read_configs(&args)?),
+            // 主目录**显式传进去**：这条命令会读用户 HOME 下的配置文件。
+            // 生产传真实 HOME；测试上下文传的是临时目录（见 `with_config_home`）。
+            "vendor:read-configs" => Ok(VendorCommands::read_configs(&args, &ctx.config_home())?),
             "vendor:refresh-balance" => Ok(VendorCommands::refresh_balance(ctx, &args).await?),
             "vendor:refresh-balances" => Ok(VendorCommands::refresh_balances(ctx).await?),
             // --- CLI 环境与安装 ---
@@ -1218,6 +1220,8 @@ mod tests {
             .await
             .expect("save");
         let id = saved["id"].as_str().expect("编号").to_owned();
+        // `id` 后面会用到（按编号取列表）；这里先确认它非空。
+        assert!(!id.is_empty());
 
         let list = router
             .dispatch("vendor:list", json!({ "providerId": "codex" }))
@@ -1240,9 +1244,26 @@ mod tests {
         assert_eq!(error.to_string(), "参数无效：providerId");
 
         // 启用要求至少一个启用的配置文件（它要写配置文件）。
-        // 这里只验证**校验**生效：成功路径会写真实的用户配置目录，测试里不跑。
+        //
+        // **显式传空 `configs`**：`vendor:save` 现在会在调用方没提这个字段时
+        // 兜底填平台默认模板（否则界面点「启用」必然失败）。不显式传空的话，
+        // 这条测试会走到成功路径去写文件——那是刻意不测的（见 `vendor.rs` 里
+        // 那条同名测试的说明：测试写坏过用户的真实 CLI 配置）。
+        let bare = router
+            .dispatch(
+                "vendor:save",
+                json!({
+                    "providerId": "codex",
+                    "name": "空配置模板",
+                    "apiKey": "sk-test",
+                    "apiBaseUrl": "https://api.example.com",
+                    "configs": []
+                }),
+            )
+            .await
+            .expect("save");
         let error = router
-            .dispatch("vendor:enable", json!({ "id": id }))
+            .dispatch("vendor:enable", json!({ "id": bare["id"] }))
             .await
             .expect_err("必须拒绝");
         assert_eq!(error.to_string(), "请至少启用一个配置文件。");

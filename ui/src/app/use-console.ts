@@ -63,12 +63,29 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** 从候选里挑一个目标：优先还原，其次当前仍有效的，最后第一个可用的。 */
+/**
+ * 从候选里挑一个目标：**只认还原值，否则不选**。
+ *
+ * # 这里原来会退回「第一个可用目标」
+ *
+ * 那是我自己加的便利，旧平台没有这个行为。后果是**启动后什么都没点，
+ * 界面已经替你选好了一个平台、一个目标、一条会话**——用户看到的是别人的选择，
+ * 而他并不知道自己「已经选过了」。
+ *
+ * 旧平台的规则是（`app.tsx` 里那个依赖 `targetId` 的 effect）：
+ *
+ * ```js
+ * const activeSessionForTarget = activeTab?.targetId === targetId ? activeTab.session : null;
+ * setSelectedId(activeSessionForTarget?.id || "");
+ * ```
+ *
+ * 也就是**跟着当前终端走，没有就不选**。因此这里也改为「没得还原就是空」。
+ */
 export function pickTarget(items: AiTarget[], preferred: string[]): string {
   for (const id of preferred) {
     if (id && items.some((target) => target.id === id)) return id;
   }
-  return items.find((target) => target.available)?.id ?? items[0]?.id ?? "";
+  return "";
 }
 
 /** 把会话转成变更操作要的引用。带上 `filePath` 更准——后端会先按它做目录围栏校验。 */
@@ -204,10 +221,20 @@ export function useConsole(options: { notify?: Notify } = {}) {
         const items = await api.listProviders();
         if (cancelled) return;
         setProviders(items);
+        /*
+          平台：**只认还原值，否则不选**。
+          
+          这里原来会退回 `items[0]`（第一个平台）。与目标、会话那两处一样，
+          那是我自己加的便利，旧平台没有——后果是启动后什么都没点，
+          界面已经替你选好了一个平台。
+          
+          没有平台时各面板显示「请选择平台」，那是旧平台本来就有的状态
+          （`请选择平台` / `请选择一个目标` 都在它的文案里）。
+        */
         const wanted =
           restored?.providerId && items.some((p) => p.id === restored.providerId)
             ? restored.providerId
-            : (items[0]?.id ?? "");
+            : "";
         setProviderId(wanted);
       } catch (problem) {
         if (!cancelled) setError(describe(problem));
@@ -296,9 +323,18 @@ export function useConsole(options: { notify?: Notify } = {}) {
             : await api.listSessions(wantedTarget);
         if (seq !== requestSeqRef.current) return;
         setSessions(fresh);
-        setSelectedId((current) =>
-          fresh.some((s) => s.id === current) ? current : (fresh[0]?.id ?? "")
-        );
+        /*
+          会话：列表刷新后**只在原选中还在时保留它**，否则不选。
+          
+          这里原来会退回 `fresh[0]`（列表第一项）。那是错的，而且用户直接看到了后果：
+          「现在默认选中历史会话中的第一项"——右侧那一排动作（详情/重命名/复制/导出）
+          于是全部作用在一条**用户从没选过**的会话上。
+          
+          旧平台的规则是**跟着当前终端那条会话走**（`activeTab.session`）；
+          终端没开或不属于当前目标时就是不选。跟随终端那部分由 `App` 的
+          effect 做（它才拿得到终端），这里只负责「别自作主张选第一条」。
+        */
+        setSelectedId((current) => (fresh.some((s) => s.id === current) ? current : ""));
         setSelectedIds([]);
         setError("");
       } catch (problem) {

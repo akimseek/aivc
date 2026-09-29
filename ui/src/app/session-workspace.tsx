@@ -44,6 +44,7 @@ export function SessionWorkspace({
   onError,
   onActivate,
   onClose,
+  onTabContextMenu,
   trailing,
   session,
   messageTotal,
@@ -67,6 +68,8 @@ export function SessionWorkspace({
   onError: (message: string) => void;
   onActivate: (key: string) => void;
   onClose: (key: string) => void;
+  /** 标签右键菜单（关闭其他 / 关闭全部）。 */
+  onTabContextMenu?: (key: string, x: number, y: number) => void;
   trailing: ReactNode;
   session: AiSession | null;
   messageTotal: number | null;
@@ -93,6 +96,7 @@ export function SessionWorkspace({
         activeKey={activeKey}
         onActivate={onActivate}
         onClose={onClose}
+        onContextMenu={onTabContextMenu}
         trailing={trailing}
       />
 

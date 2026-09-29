@@ -70,6 +70,13 @@ export type TerminalSession = {
    * 因此这里必须把两者区分开，不能只看 `running`。
    */
   exitedCleanly?: boolean;
+  /**
+   * 退出码。
+   *
+   * 与 `exitedCleanly` 不是一回事：后者只回答「要不要收标签」，
+   * 而用户要看的是**这个数字**——`1`（自己报错）与 `137`（被 kill）指向完全不同的原因。
+   */
+  exitCode?: number;
 };
 
 export function useTerminals() {
@@ -193,7 +200,21 @@ export function useTerminals() {
           const clean = (payload.exitCode ?? 0) === 0;
           setTerminals((current) =>
             current.map((item) =>
-              item.id === payload.terminalId ? { ...item, running: false, exitedCleanly: clean } : item
+              item.id === payload.terminalId
+                ? {
+                    ...item,
+                    running: false,
+                    exitedCleanly: clean,
+                    /**
+                     * **退出码要记下来并显示出来。**
+                     *
+                     * 旧平台在终端里写了一行「Codex 已退出，退出码 N」，标签上也有状态。
+                     * 只记「干净/不干净」是不够的：`1` 与 `137`（被 kill）指向完全不同的
+                     * 原因，而用户手上只有这一个数字可查。
+                     */
+                    exitCode: payload.exitCode ?? 0
+                  }
+                : item
             )
           );
           setAttention((current) => {

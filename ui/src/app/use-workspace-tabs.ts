@@ -170,17 +170,28 @@ export function useWorkspaceTabs(
   const tabItems: TabItem[] = useMemo(
     () =>
       tabs.map((tab) => {
-        // 终端进程结束后必须在标签上看得出来。
-        //
-        // 这一条此前**永远不会出现**：`terminal:exit` 只有在我们主动关闭终端时才发得出来
-        // ——ConPTY 下子进程自己退出不会让读取线程收到 EOF——所以 `running` 一直是 true，
-        // 标签也就一直没有任何变化。用户敲了 `exit`，界面看起来跟还在运行一模一样。
-        const exited =
-          tab.kind === "terminal" &&
-          terminals.terminals.some((item) => item.id === tab.terminalId && !item.running);
+        /**
+         * 终端进程结束后必须在标签上看得出来，而且**要带上退出码**。
+         *
+         * 这一条此前**永远不会出现**：`terminal:exit` 只有在我们主动关闭终端时才发得出来
+         * ——ConPTY 下子进程自己退出不会让读取线程收到 EOF——所以 `running` 一直是 true，
+         * 标签也就一直没有任何变化。用户敲了 `exit`，界面看起来跟还在运行一模一样。
+         *
+         * 退出码非有不可：`（已退出）` 说不出是「自己结束」还是「被杀掉」，
+         * 而这两种要查的地方完全不同。干净退出的标签会被自动收掉，
+         * 因此带退出码的那一种恰好就是**需要用户看一眼**的那一种。
+         */
+        const terminal = terminals.terminals.find((item) => item.id === tab.terminalId);
+        const exited = tab.kind === "terminal" && terminal !== undefined && !terminal.running;
+        const suffix =
+          exited && !terminal?.exitedCleanly
+            ? `（退出码 ${terminal?.exitCode ?? "?"}）`
+            : exited
+              ? "（已退出）"
+              : "";
         return {
           key: tab.key,
-          label: exited ? `${tab.title}（已退出）` : tab.title,
+          label: `${tab.title}${suffix}`,
           // 等待确认的终端在标签上打一个点。这正是「关注中心」要解决的问题：
           // 用户切到别的标签后，那一路还在等他，而界面上没有任何提示。
           tone: terminals.attention[tab.key] ? ("attention" as const) : ("normal" as const)
@@ -191,6 +202,39 @@ export function useWorkspaceTabs(
 
   const activeTab = tabs.find((tab) => tab.key === activeKey) ?? null;
 
+  /** 关得掉的标签（`closable !== false`）。会话标签通常不可关。 */
+  const closableKeys = useCallback(
+    () => tabs.filter((tab) => tab.kind === "terminal").map((tab) => tab.key),
+    [tabs]
+  );
+
+  /**
+   * 关掉除这一张之外的全部可关标签。
+   *
+   * 批量关必须**一次算完再逐个调 `closeTerminal`**：逐个 `setTabs` 会在闭包里
+   * 反复读到同一份旧列表，最后只剩下最后一次的结果。这正是「关标签时终端没被
+   * 终止」那个 bug 的同一类问题（见 `closeTab` 的注释）。
+   */
+  const closeOtherTabs = useCallback(
+    (keepKey: string) => {
+      const closing = tabs.filter((tab) => tab.key !== keepKey && tab.kind === "terminal");
+      setTabs((current) => current.filter((tab) => tab.key === keepKey || tab.kind !== "terminal"));
+      for (const tab of closing) {
+        if (tab.terminalId) void terminals.closeTerminal(tab.terminalId);
+      }
+    },
+    [tabs, terminals]
+  );
+
+  /** 关掉全部可关标签。会话标签留着——它跟着选中状态走，不归这里管。 */
+  const closeAllTabs = useCallback(() => {
+    const closing = tabs.filter((tab) => tab.kind === "terminal");
+    setTabs((current) => current.filter((tab) => tab.kind !== "terminal"));
+    for (const tab of closing) {
+      if (tab.terminalId) void terminals.closeTerminal(tab.terminalId);
+    }
+  }, [tabs, terminals]);
+
   return {
     tabs,
     activeKey,
@@ -199,6 +243,9 @@ export function useWorkspaceTabs(
     activeTab,
     addTerminalTab,
     closeTab,
+    closeOtherTabs,
+    closeAllTabs,
+    closableKeys,
     clearDeadTabs
   };
 }

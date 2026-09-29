@@ -20,6 +20,7 @@ import { planResume } from "./resume-session";
 import { SessionContextMenu } from "./session-context-menu";
 import { SessionActions, exportToDirectory } from "./session-actions";
 import { SessionDetailContainer } from "./session-detail-container";
+import { TabContextMenu } from "./tab-context-menu";
 import { displayTitle } from "./session-display";
 import { SessionSettingsDialog } from "./session-settings-dialog";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
@@ -107,6 +108,8 @@ export function App() {
    * 旧平台就是这么分的（`session-detail-modal.tsx`），两者是两种动作而不是二选一。
    */
   const [detailSession, setDetailSession] = useState<AiSession | null>(null);
+  /** 标签右键菜单的位置与目标标签。`null` 表示没打开。 */
+  const [tabMenu, setTabMenu] = useState<{ key: string; x: number; y: number } | null>(null);
 
   /**
    * 新会话对话框的内容；`null` 表示没打开。
@@ -599,6 +602,23 @@ export function App() {
       {/* 退出确认由**后端**发起（它拦得住窗口关闭），这里只负责显示与回答。 */}
       <ExitConfirm onError={console.setError} />
 
+      {/* 标签右键菜单：开了七八路终端之后，一个一个点 ✕ 很难受。 */}
+      {tabMenu && (
+        <TabContextMenu
+          x={tabMenu.x}
+          y={tabMenu.y}
+          tabKey={tabMenu.key}
+          tabLabel={
+            workspace.tabItems.find((item) => item.key === tabMenu.key)?.label ?? "标签"
+          }
+          closableCount={workspace.closableKeys().length}
+          onCloseThis={workspace.closeTab}
+          onCloseOthers={workspace.closeOtherTabs}
+          onCloseAll={workspace.closeAllTabs}
+          onCloseMenu={() => setTabMenu(null)}
+        />
+      )}
+
       {/* 会话详情：把一条会话**停下来看**。分页与取数都在那个容器里，
           这里只持有「要看哪一条」——关掉就回到原来的视图。 */}
       <SessionDetailContainer
@@ -654,6 +674,7 @@ export function App() {
             }
           }}
           onClose={workspace.closeTab}
+          onTabContextMenu={(key, x, y) => setTabMenu({ key, x, y })}
           trailing={
             <>
               <WorkspaceTrailing

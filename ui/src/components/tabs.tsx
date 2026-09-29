@@ -24,12 +24,20 @@ export function Tabs({
   activeKey,
   onActivate,
   onClose,
+  onContextMenu,
   trailing
 }: {
   items: TabItem[];
   activeKey: string;
   onActivate: (key: string) => void;
   onClose?: (key: string) => void;
+  /**
+   * 标签右键菜单。
+   *
+   * 终端标签需要「关闭其他 / 关闭全部」这类批量动作——一个一个点 ✕ 在开了七八路
+   * 终端时很难受。会话标签不需要（它跟着选中状态走）。
+   */
+  onContextMenu?: (key: string, x: number, y: number) => void;
   /** 标签条右端的固定内容，例如「新建终端」。 */
   trailing?: ReactNode;
 }) {
@@ -44,6 +52,14 @@ export function Tabs({
             aria-selected={active}
             className={`tab${active ? " on" : ""}${item.tone === "attention" ? " attention" : ""}`}
             onClick={() => onActivate(item.key)}
+            onContextMenu={
+              onContextMenu
+                ? (event) => {
+                    event.preventDefault();
+                    onContextMenu(item.key, event.clientX, event.clientY);
+                  }
+                : undefined
+            }
             title={item.label}
           >
             {item.tone === "attention" && <span className="tab-dot" aria-label="等待确认" />}

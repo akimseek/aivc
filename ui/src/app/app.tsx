@@ -1,30 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-  Button,
-  CommandPalette,
-  ToolbarSpacer,
-  useToast,
-  type Command
-} from "../components";
+import { Button, ToolbarSpacer, useToast, type Command } from "../components";
 import * as api from "../ipc/commands";
 import type { AiSession, AiTarget, ApiVendor } from "../types";
-import { AboutDialog } from "./about-dialog";
-import { AppMenuBar } from "./app-menu-bar";
-import { AttentionCenter } from "./attention-center";
-import { createAppMenus } from "./app-menus";
-import { ConfigOverlay, type ConfigTab } from "./config-overlay";
-import { ExitConfirm } from "./exit-confirm";
-import { NewSessionDialog } from "./new-session-dialog";
-import { planResume } from "./resume-session";
-import { SessionContextMenu } from "./session-context-menu";
+import { AppMenubar } from "./app-menubar";
 import { SessionActions, exportToDirectory } from "./session-actions";
-import { SessionDetailContainer } from "./session-detail-container";
-import { SessionDuplicateDialog, SessionRenameDialog } from "./session-title-dialogs";
-import { TabContextMenu } from "./tab-context-menu";
-import { displayTitle } from "./session-display";
-import { SessionSettingsDialog } from "./session-settings-dialog";
+import type { ConfigTab } from "./config-overlay";
+import { AppOverlays } from "./overlay-layer";
+import { planResume } from "./resume-session";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
+import { displayTitle } from "./session-display";
 import { Sidebar } from "./sidebar";
 import { StatusBar } from "./status-bar";
 import { useConsole } from "./use-console";
@@ -408,185 +393,130 @@ export function App() {
 
   /* ── 组装 ─────────────────────────────────────────────── */
 
-  const menuSession = menu ? sessionById(menu.sessionId) : null;
   const trash = console.view === "trash";
 
   return (
     <div className="shell">
-      {/*
-        菜单栏。「文件」「帮助」两个按钮**曾经没有 `onClick`**——点了没反应，是死按钮。
-        死按钮比没有按钮更糟：它让用户以为自己点错了。
+      <AppMenubar
+        selectedTarget={selectedTarget}
+        hasActiveSession={workspace.tabs.some((tab) => tab.kind === "session")}
+        attentionEntries={terminals.terminals
+          .filter((item) => terminals.attention[item.id])
+          .map((item) => {
+            const attention = terminals.attention[item.id]!;
+            return {
+              terminalId: item.id,
+              title: item.title,
+              provider: item.providerId,
+              kind: attention.kind,
+              detail: attention.detail,
+              updatedAt: attention.updatedAt
+            };
+          })}
+        onSelectAttention={(terminalId) => {
+          workspace.setActiveKey(terminalId);
+          // 切过去就算看过了，清掉标记——否则铃铛上的数字一直不减。
+          terminals.clearAttention(terminalId);
+        }}
+        onDismissAttention={(terminalId) => terminals.clearAttention(terminalId)}
+        actions={{
+          openCommandPalette: () => setPaletteOpen(true),
+          manageSkills: () => openConfig("skills"),
+          openGatewaySettings: () => openConfig("gateway"),
+          manageVendors: () => openConfig("vendors"),
+          // 「设置会话」：只有 WSL 目标有 `distro` 可写，因此这里也按 WSL 判定。
+          openSessionSettings:
+            selectedTarget?.kind === "wsl" && selectedTarget.distro
+              ? () =>
+                  setSessionSettings({
+                    distro: selectedTarget.distro ?? "",
+                    path: selectedTarget.codexHome ?? ""
+                  })
+              : undefined,
+          installCli: () => openConfig("environment"),
+          exportSession: (format) => void runExport(format),
+          openSystemTerminal: () => void openSystemTerminal(),
+          showAbout: () => {
+            setAboutOpen(true);
+            void api
+              .getAppVersion()
+              .then(setAppVersion)
+              .catch(() => setAppVersion("无法读取"));
+          },
+          // 打开日志目录：后端按运行根算出 `log_dir()` 并在文件管理器里打开它
+          // （`app:command` 的 `openLogDir`）。界面不需要知道路径。
+          openLogDirectory: () => void api.appCommand("openLogDir"),
+          // 清理 Gateway 日志：做完要说一声，否则「静默完成」与「没执行」看起来一样。
+          clearGatewayLogs: () => {
+            void api
+              .clearGatewayLogs()
+              .then((removed) => toast.show(`已清理 ${removed} 条 Gateway 日志。`))
+              .catch((error: unknown) =>
+                console.setError(error instanceof Error ? error.message : String(error))
+              );
+          },
+          // 退出走浏览器窗口关闭，与标题栏的关闭同一条路，避免两套退出语义。
+          quit: () => window.close()
+        }}
+      />
 
-        现在补上真正的分组菜单（结构在 `app-menus.ts`，数据与渲染分开、可单测）。
-        **动作缺失的项一律显示为禁用**（见 `disabledWhenMissing`）：
-        面还没实现的会显示成「这里有个东西、现在还不能用」，而不是点了没反应的死按钮。
-      */}
-      <div className="menubar">
-        <span className="brand">AI 控制台</span>
-        <AppMenuBar
-          menus={createAppMenus(
-            {
-              supportsSkills: Boolean(selectedTarget),
-              // 「设置会话」只对 WSL 目标可用。**按真实字段判定**
-              // （`AiTarget.kind === "wsl"`），而不是写死。
-              isWslTarget: selectedTarget?.kind === "wsl",
-              hasActiveSession: workspace.tabs.some((tab) => tab.kind === "session")
-            },
-            {
-              openCommandPalette: () => setPaletteOpen(true),
-              manageSkills: () => openConfig("skills"),
-              openGatewaySettings: () => openConfig("gateway"),
-              manageVendors: () => openConfig("vendors"),
-              // 「设置会话」：只有 WSL 目标有 `distro` 可写，因此这里也按 WSL 判定。
-              openSessionSettings:
-                selectedTarget?.kind === "wsl" && selectedTarget.distro
-                  ? () =>
-                      setSessionSettings({
-                        distro: selectedTarget.distro ?? "",
-                        path: selectedTarget.codexHome ?? ""
-                      })
-                  : undefined,
-              installCli: () => openConfig("environment"),
-              exportSession: (format) => void runExport(format),
-              openSystemTerminal: () => void openSystemTerminal(),
-              showAbout: () => {
-                setAboutOpen(true);
-                void api
-                  .getAppVersion()
-                  .then(setAppVersion)
-                  .catch(() => setAppVersion("无法读取"));
-              },
-              // 打开日志目录：后端按运行根算出 `log_dir()` 并在文件管理器里打开它
-              // （`app:command` 的 `openLogDir`）。界面不需要知道路径。
-              openLogDirectory: () => void api.appCommand("openLogDir"),
-              // 清理 Gateway 日志：做完要说一声，否则「静默完成」与「没执行」看起来一样。
-              clearGatewayLogs: () => {
-                void api
-                  .clearGatewayLogs()
-                  .then((removed) => toast.show(`已清理 ${removed} 条 Gateway 日志。`))
-                  .catch((error: unknown) =>
-                    console.setError(error instanceof Error ? error.message : String(error))
-                  );
-              },
-              // 退出走浏览器窗口关闭，与标题栏的关闭同一条路，避免两套退出语义。
-              quit: () => window.close()
-            }
-          )}
-        />
-        {/* 「配置」与「命令面板」两个按钮**删掉了**：它们与菜单完全重复。
-            旧平台的顶栏只有 `AppMenuBar` + 提醒铃铛，命令面板靠 Ctrl+K 或菜单打开。
-            重复的入口不只是多余——它们让「功能到底从哪进」变得含糊。 */}
-        {/* 会话提醒：位置与旧平台一致（菜单栏右侧）。没有提醒时它自己不渲染。 */}
-        <AttentionCenter
-          entries={terminals.terminals
-            .filter((item) => terminals.attention[item.id])
-            .map((item) => {
-              const attention = terminals.attention[item.id]!;
-              return {
-                terminalId: item.id,
-                title: item.title,
-                provider: item.providerId,
-                kind: attention.kind,
-                detail: attention.detail,
-                updatedAt: attention.updatedAt
-              };
-            })}
-          onSelect={(terminalId) => {
-            workspace.setActiveKey(terminalId);
-            // 切过去就算看过了，清掉标记——否则铃铛上的数字一直不减。
-            terminals.clearAttention(terminalId);
-          }}
-          onDismiss={(terminalId) => terminals.clearAttention(terminalId)}
-        />
-      </div>
-
-      {paletteOpen && (
-        <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />
-      )}
-
-      {aboutOpen && <AboutDialog version={appVersion} onClose={() => setAboutOpen(false)} />}
-
-      {/* 菜单动作与侧栏提示共用的条幅。与「已导出到…」同一形状：都要能被看见、也都能收掉。 */}
-      {toast.message && (
-        <div className="export-hint" role="status">
-          {toast.message}
-          <Button small onClick={toast.dismiss}>
-            知道了
-          </Button>
-        </div>
-      )}
-
-      {/*
-        「设置会话」：手动指定 WSL 里的 Codex 会话目录。自动探测受发行版、用户、
-        nvm/home 布局影响，探测不到时没有这个入口那台目标就等于用不了。
-      */}
-      {sessionSettings && (
-        <SessionSettingsDialog
-          currentPath={selectedTarget?.codexHome}
-          wslPath={sessionSettings.path}
-          isWsl={selectedTarget?.kind === "wsl"}
-          supportsSessionSettings
-          onChange={(value) =>
-            setSessionSettings((current) => (current ? { ...current, path: value } : current))
-          }
-          onClose={() => setSessionSettings(null)}
-          onRestore={() => {
-            const draft = sessionSettings;
+      <AppOverlays
+        state={{
+          paletteOpen,
+          aboutOpen,
+          appVersion,
+          toastMessage: toast.message,
+          exportedTo,
+          sessionSettings,
+          newSession,
+          menu,
+          tabMenu,
+          titleDialog,
+          detailSession,
+          configOpen,
+          configTab
+        }}
+        actions={{
+          closePalette: () => setPaletteOpen(false),
+          closeAbout: () => setAboutOpen(false),
+          closeToast: toast.dismiss,
+          closeExported: () => setExportedTo(""),
+          openExported: () => void api.openPath(exportedTo),
+          changeSessionSettingsPath: (path) =>
+            setSessionSettings((current) => (current ? { ...current, path } : current)),
+          closeSessionSettings: () => setSessionSettings(null),
+          // 恢复自动探测 = **清掉人工设置**，不是保存空值——这两件事不能合。
+          restoreSessionSettings: (distro) => {
             setSessionSettings(null);
             void api
-              .clearWslCodexHome(draft.distro)
+              .clearWslCodexHome(distro)
               .then(() => console.reloadSessions())
               .catch((error: unknown) =>
                 console.setError(error instanceof Error ? error.message : String(error))
               );
-          }}
-          onSave={() => {
-            const draft = sessionSettings;
+          },
+          saveSessionSettings: (distro, path) => {
             setSessionSettings(null);
             void api
-              .setWslCodexHome(draft.distro, draft.path)
+              .setWslCodexHome(distro, path)
               .then(() => console.reloadSessions())
               .catch((error: unknown) =>
                 console.setError(error instanceof Error ? error.message : String(error))
               );
-          }}
-        />
-      )}
-
-      {/*
-        新会话对话框。旧平台的流程是**先定工作目录 / 标题 / 启动提示词 / CLI 参数，再打开**。
-        此前这里是「点一下直接进终端」——用户报的 H2 说的就是这件事。
-      */}
-      {newSession && (
-        <NewSessionDialog
-          pendingResume={
-            newSession.resume?.missingCwd ? { missingCwd: newSession.resume.missingCwd } : null
-          }
-          supportsCustomCwd
-          cwd={newSession.cwd}
-          title={newSession.title}
-          prompt={newSession.prompt}
-          cliArgs={newSession.cliArgs}
-          onChooseDirectory={() =>
+          },
+          changeNewSession: (patch) =>
+            setNewSession((current) => (current ? { ...current, ...patch } : current)),
+          chooseNewSessionDirectory: () =>
             void api.chooseDirectory().then((picked: string | null) => {
               if (picked) {
                 setNewSession((current) => (current ? { ...current, cwd: picked } : current));
               }
-            })
-          }
-          onTitleChange={(value) =>
-            setNewSession((current) => (current ? { ...current, title: value } : current))
-          }
-          onPromptChange={(value) =>
-            setNewSession((current) => (current ? { ...current, prompt: value } : current))
-          }
-          onCliArgsChange={(value) =>
-            setNewSession((current) => (current ? { ...current, cliArgs: value } : current))
-          }
-          onClose={() => setNewSession(null)}
-          onConfirm={() => {
+            }),
+          closeNewSession: () => setNewSession(null),
+          confirmNewSession: () => {
             const draft = newSession;
             setNewSession(null);
+            if (!draft) return;
             void openTerminal({
               cwd: draft.cwd || undefined,
               cliArgs: draft.cliArgs,
@@ -594,98 +524,51 @@ export function App() {
               // 恢复形态：把会话编号递下去，后端会变成 `--resume <id>`。
               sessionId: draft.resume?.sessionId
             });
-          }}
-        />
-      )}
-
-      {menu && menuSession && (
-        <SessionContextMenu
-          x={menu.x}
-          y={menu.y}
-          session={menuSession}
-          trash={trash}
-          onClose={() => setMenu(null)}
-          onOpenFolder={() => {
-            console.setSelectedId(menuSession.id);
+          },
+          closeMenu: () => setMenu(null),
+          openSessionFolder: (session) => {
+            // 后端的「打开当前会话目录」读的是选中状态，因此先把它选中。
+            console.setSelectedId(session.id);
             void console.openCurrentFolder();
-          }}
-          onToggleFavorite={() => void console.toggleFavorite(menuSession)}
-          onCopyId={() => void api.copyText(menuSession.id)}
-          onCopyPath={() => void api.copyText(menuSession.filePath)}
-          onRemove={() => void console.removeSession(menuSession, trash)}
-          onRename={() => setTitleDialog({ kind: "rename", session: menuSession })}
-          onDuplicate={() => setTitleDialog({ kind: "duplicate", session: menuSession })}
-        />
-      )}
-
-      {/* 右键菜单来的重命名 / 复制。复制**要问名字**：不问的话列表里立刻出现
-          两条一模一样的标题，而用户复制它通常正是为了改出个不同的名字。 */}
-      {titleDialog?.kind === "rename" && (
-        <SessionRenameDialog
-          session={titleDialog.session}
-          onClose={() => setTitleDialog(null)}
-          onConfirm={(title) => {
-            console.setSelectedId(titleDialog.session.id);
+          },
+          toggleFavorite: (session) => void console.toggleFavorite(session),
+          copyText: (text) => void api.copyText(text),
+          removeSession: (session) => void console.removeSession(session, trash),
+          startRename: (session) => setTitleDialog({ kind: "rename", session }),
+          startDuplicate: (session) => setTitleDialog({ kind: "duplicate", session }),
+          closeTitleDialog: () => setTitleDialog(null),
+          confirmRename: (session, title) => {
+            console.setSelectedId(session.id);
             void console.renameSession(title);
             setTitleDialog(null);
-          }}
-        />
-      )}
-      {titleDialog?.kind === "duplicate" && (
-        <SessionDuplicateDialog
-          onClose={() => setTitleDialog(null)}
-          onConfirm={(title) => {
-            console.setSelectedId(titleDialog.session.id);
+          },
+          confirmDuplicate: (session, title) => {
+            console.setSelectedId(session.id);
             void console.duplicateCurrent(title);
             setTitleDialog(null);
-          }}
-        />
-      )}
-
-      {/* 退出确认由**后端**发起（它拦得住窗口关闭），这里只负责显示与回答。 */}
-      <ExitConfirm onError={console.setError} />
-
-      {/* 标签右键菜单：开了七八路终端之后，一个一个点 ✕ 很难受。 */}
-      {tabMenu && (
-        <TabContextMenu
-          x={tabMenu.x}
-          y={tabMenu.y}
-          tabKey={tabMenu.key}
-          tabLabel={
-            workspace.tabItems.find((item) => item.key === tabMenu.key)?.label ?? "标签"
-          }
-          closableCount={workspace.closableKeys().length}
-          onCloseThis={workspace.closeTab}
-          onCloseOthers={workspace.closeOtherTabs}
-          onCloseAll={workspace.closeAllTabs}
-          onCloseMenu={() => setTabMenu(null)}
-        />
-      )}
-
-      {/* 会话详情：把一条会话**停下来看**。分页与取数都在那个容器里，
-          这里只持有「要看哪一条」——关掉就回到原来的视图。 */}
-      <SessionDetailContainer
-        session={detailSession}
-        target={selectedTarget}
-        onClose={() => setDetailSession(null)}
-        resolveParent={(sessionId) => sessionById(sessionId)}
-        onBranch={(sourceLine) => void console.branchFromMessage(sourceLine)}
-        onOpenSession={(session) => {
-          if (selectedTarget) void beginResumeSession(selectedTarget, session);
+          },
+          closeTabMenu: () => setTabMenu(null),
+          closeTabThis: workspace.closeTab,
+          closeTabOthers: workspace.closeOtherTabs,
+          closeTabAll: workspace.closeAllTabs,
+          closeDetail: () => setDetailSession(null),
+          resumeSession: (session) => {
+            if (selectedTarget) void beginResumeSession(selectedTarget, session);
+          },
+          branchFromMessage: (sourceLine) => void console.branchFromMessage(sourceLine),
+          closeConfig: () => setConfigOpen(false),
+          reportError: console.setError
         }}
-        onError={console.setError}
+        commands={commands}
+        providerId={console.providerId}
+        targetId={console.targetId}
+        targets={console.targets}
+        selectedTarget={selectedTarget}
+        trash={trash}
+        resolveSession={sessionById}
+        tabLabel={workspace.tabItems.find((item) => item.key === tabMenu?.key)?.label ?? "标签"}
+        closableTabCount={workspace.closableKeys().length}
       />
-
-      {configOpen && (
-        <ConfigOverlay
-          providerId={console.providerId}
-          targetId={console.targetId}
-          targets={console.targets}
-          initialTab={configTab}
-          onClose={() => setConfigOpen(false)}
-          onError={console.setError}
-        />
-      )}
 
       <div className="main">
         <Sidebar

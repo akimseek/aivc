@@ -1799,3 +1799,44 @@ select {
   flex: 1 1 auto;
   min-height: 0;
 }
+/* ── 自管输入的图片面 ────────────────────────────────────
+   附件里的图片要能一眼认出是图（而不是一条路径），并且点得开。 */
+.composer-attachment.is-image {
+  border-color: var(--ui-accent);
+}
+.composer-attachment-image {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* 预览：舞台撑满可用空间，图片按当前倍数缩放。
+   舞台要 overflow: auto——放大到 4× 之后图比舞台大，得能看别处。 */
+.composer-preview-panel {
+  width: min(880px, 92vw);
+}
+.composer-preview-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--ui-surface-sunken, #0f172a);
+  border-radius: var(--ui-radius-md, 6px);
+}
+.composer-preview-stage img {
+  /* 放大时以中心为原点，不然会往右下角跑。 */
+  transform-origin: center center;
+  max-width: none;
+}
+
+/* 拖动悬停时给一个可见的落点提示。 */
+.composer-actions.dragging {
+  outline: 1px dashed var(--ui-accent);
+  outline-offset: 2px;
+}

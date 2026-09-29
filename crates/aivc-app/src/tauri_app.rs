@@ -89,8 +89,45 @@ pub async fn aivc_invoke(
         .map_err(|error| error.to_string())
 }
 
-/// 需要 Tauri 平台能力的命令。
+/// 文件选择框要挑哪一类。
+#[derive(Clone, Copy)]
+enum PickKind {
+    /// 技能文件：只要 `.md`。技能导入用。
+    Skill,
+    /// 图片。自管输入的「添加图片」用。
+    Image,
+    /// 任何文件。自管输入的「添加文件」用——**不加过滤器**，
+    /// 因为附件最终是作为 `@路径` 交给 CLI 的，CLI 认什么由用户决定。
+    Any,
+}
+
+/// 从参数里读 `kind`；缺失或不认识时按「任何文件」处理。
 ///
+/// **缺省放宽而不是收紧**：这两条命令的调用方都要先挑文件再判断类型，
+/// 而无过滤器的选择框在任何情况下都不会挡住用户。
+fn pick_kind(args: &Value) -> PickKind {
+    match args.get("kind").and_then(Value::as_str).unwrap_or_default() {
+        "skill" => PickKind::Skill,
+        "image" => PickKind::Image,
+        _ => PickKind::Any,
+    }
+}
+
+/// 按种类给选择框加过滤器。`Any` **不加**——加了就会出现「明明是文件却选不中」。
+fn apply_pick_filter<R: tauri::Runtime>(
+    builder: tauri_plugin_dialog::FileDialogBuilder<R>,
+    kind: PickKind,
+) -> tauri_plugin_dialog::FileDialogBuilder<R> {
+    match kind {
+        PickKind::Skill => builder.add_filter("技能文件", &["md"]),
+        PickKind::Image => {
+            builder.add_filter("图片", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"])
+        }
+        PickKind::Any => builder,
+    }
+}
+
+/// 需要 Tauri 平台能力的命令。
 /// 返回 `None` 表示「不归这里管」，交回给命令路由器。
 async fn platform_command(
     app: &tauri::AppHandle,
@@ -115,6 +152,31 @@ async fn platform_command(
                 .map(Value::String)
                 .map_err(|error| error.to_string()),
         ),
+        // 把一张图**按文件路径**放进系统剪贴板。自管输入的预览里「复制」用它。
+        //
+        // 用 `Image::from_path` 而不是自己解码再塞 RGBA：格式判断（png/jpg/…）
+        // 交给 Tauri，我们不需要在命令层再养一份图片解码逻辑。
+        //
+        // 同样要 `spawn_blocking`：剪贴板库在部分平台上会阻塞，占用事件循环会让
+        // 整个窗口卡住。
+        "clipboard:write-image" => {
+            let Some(path) = args.get("path").and_then(Value::as_str) else {
+                return Some(Err("参数无效：path".to_owned()));
+            };
+            let path = path.to_owned();
+            let handle = app.clone();
+            let written = tauri::async_runtime::spawn_blocking(move || {
+                let image = tauri::image::Image::from_path(&path)?;
+                handle.clipboard().write_image(&image)
+            })
+            .await
+            .map_err(|error| format!("复制图片失败：{error}"));
+            Some(match written {
+                Ok(Ok(())) => Ok(Value::Null),
+                Ok(Err(error)) => Err(error.to_string()),
+                Err(error) => Err(error),
+            })
+        }
         "dialog:choose-directory" => {
             let title = args.get("title").and_then(Value::as_str).map(str::to_owned);
             let handle = app.clone();
@@ -140,11 +202,16 @@ async fn platform_command(
             //
             // 存在的理由：技能导入既接受目录（一个技能一个目录），也接受单个
             // `SKILL.md`——后端 `import_from_path` 本来就两种都支持，缺的只是前端入口。
+            //
+            // **`kind` 决定过滤器**。此前过滤器写死是「技能文件 / md」，于是自管输入的
+            // 「添加文件」实际上只挑得到 Markdown，图片一张都选不了——界面上写着
+            // 「添加图片、文件或文件夹」，做的是另一件事。
             let title = args.get("title").and_then(Value::as_str).map(str::to_owned);
+            let kind = pick_kind(args);
             let handle = app.clone();
             let picked = tauri::async_runtime::spawn_blocking(move || {
                 use tauri_plugin_dialog::DialogExt as _;
-                let mut builder = handle.dialog().file().add_filter("技能文件", &["md"]);
+                let mut builder = apply_pick_filter(handle.dialog().file(), kind);
                 if let Some(title) = title {
                     builder = builder.set_title(title);
                 }
@@ -155,6 +222,34 @@ async fn platform_command(
             Some(match picked {
                 // 用户取消时返回 `null`，**不是错误**——取消是正常操作。
                 Ok(path) => Ok(path.map_or(Value::Null, |value| Value::String(value.to_string()))),
+                Err(error) => Err(error),
+            })
+        }
+        // 多选版。与单文件版分开而不是加一个 `multiple` 开关：**返回类型不同**
+        // （这里是数组），而单文件版已经被技能导入用着。
+        "dialog:choose-files" => {
+            let title = args.get("title").and_then(Value::as_str).map(str::to_owned);
+            let kind = pick_kind(args);
+            let handle = app.clone();
+            let picked = tauri::async_runtime::spawn_blocking(move || {
+                use tauri_plugin_dialog::DialogExt as _;
+                let mut builder = apply_pick_filter(handle.dialog().file(), kind);
+                if let Some(title) = title {
+                    builder = builder.set_title(title);
+                }
+                builder.blocking_pick_files()
+            })
+            .await
+            .map_err(|error| format!("选择文件失败：{error}"));
+            Some(match picked {
+                // 取消 → 空数组，同样是正常操作。
+                Ok(paths) => Ok(Value::Array(
+                    paths
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|value| Value::String(value.to_string()))
+                        .collect(),
+                )),
                 Err(error) => Err(error),
             })
         }

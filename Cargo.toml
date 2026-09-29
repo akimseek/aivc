@@ -65,7 +65,10 @@ http-body-util = "0.1.5"
 # --- Tauri ---------------------------------------------------------------
 # 只用于命令面的 IPC 胶水。窗口与打包留到后续。
 tauri-build = { version = "2", default-features = false }
-tauri = { version = "2.11.6", default-features = false, features = ["wry", "common-controls-v6", "tray-icon"] }
+# `image-png`：自管输入的「复制图片」要用 `Image::from_path` 把一张图放进剪贴板，
+# 那个构造函数在这个 feature 之后。不加的话只能自己解码 PNG，
+# 而解码逻辑不该出现在命令层。
+tauri = { version = "2.11.6", default-features = false, features = ["wry", "common-controls-v6", "tray-icon", "image-png"] }
 
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 bytes = "1.12.1"

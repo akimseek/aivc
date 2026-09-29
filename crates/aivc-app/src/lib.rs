@@ -299,6 +299,8 @@ impl App {
             }),
             // 版本号由这里给出：ivc-ipc 不依赖构建脚本生成的常量。
             env!("CARGO_PKG_VERSION"),
+            // 粘贴图片的暂存目录：放在运行根下，与「应用绝不写入系统用户目录」一致。
+            paths.cache_dir().join("composer"),
         )
         // 装入网关状态：路由切换命令需要它。
         .with_gateway(Arc::clone(&gateway_state));

@@ -25,6 +25,8 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+# 读图片预览与粘贴图片落盘：往界面递的是 data URL，编解码都在这一层。
+base64 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

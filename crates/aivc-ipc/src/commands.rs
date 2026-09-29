@@ -1,4 +1,4 @@
-﻿//! IPC 命令名注册表。
+//! IPC 命令名注册表。
 //!
 //! # 为什么把命令名做成显式表
 //!
@@ -78,7 +78,7 @@ impl CommandDomain {
 /// 现网的会话命令统一挂在 `codex:` 前缀下，但它们**服务全部四个平台**——平台由
 /// `targetId` 区分（如 `claude:local`）。这是历史命名，改名会破坏前端与既有文档，
 /// 因此保留并在此说明。
-pub const COMMANDS: [(&str, CommandDomain); 86] = [
+pub const COMMANDS: [(&str, CommandDomain); 90] = [
     ("app:command", CommandDomain::App),
     ("app:exit-choice", CommandDomain::App),
     ("app:get-version", CommandDomain::App),
@@ -86,6 +86,9 @@ pub const COMMANDS: [(&str, CommandDomain); 86] = [
     ("ai:list-providers", CommandDomain::Ai),
     ("clipboard:copy-text", CommandDomain::Clipboard),
     ("clipboard:read-text", CommandDomain::Clipboard),
+    // 只写不读：粘贴图片走的是 DOM 的 `paste` 事件（webview 直接给出 `Blob`），
+    // 不需要绕一圈从剪贴板读。少一条命令就少一个能读系统剪贴板的入口。
+    ("clipboard:write-image", CommandDomain::Clipboard),
     // 平台环境检测与安装（P6，未实现）。
     ("cli:check-environment", CommandDomain::Cli),
     ("cli:install", CommandDomain::Cli),
@@ -116,6 +119,9 @@ pub const COMMANDS: [(&str, CommandDomain); 86] = [
     ("dialog:choose-directory", CommandDomain::Dialog),
     // 单个文件版：技能既可以是目录，也可以是单个 SKILL.md。
     ("dialog:choose-file", CommandDomain::Dialog),
+    // 多选版：自管输入的附件一次可以挑好几个。与单文件版分开而不是加个 `multiple`
+    // 开关，是因为**返回类型不同**（这里是数组），而单文件版已经被技能导入用着。
+    ("dialog:choose-files", CommandDomain::Dialog),
     ("gateway:clear-logs", CommandDomain::Gateway),
     ("gateway:delete-failover-rule", CommandDomain::Gateway),
     ("gateway:delete-log-entries", CommandDomain::Gateway),
@@ -140,6 +146,10 @@ pub const COMMANDS: [(&str, CommandDomain); 86] = [
     ("shell:open-path", CommandDomain::Shell),
     ("shell:open-session-folder", CommandDomain::Shell),
     ("shell:path-exists", CommandDomain::Shell),
+    // 图片预览与粘贴图片落盘。**不走平台层**：只用到标准库与 base64，
+    // 因此留在命令层就能被测到（平台层那几条要真实 Tauri 才跑得起来）。
+    ("shell:read-image", CommandDomain::Shell),
+    ("shell:save-image", CommandDomain::Shell),
     ("skill:delete", CommandDomain::Skill),
     ("skill:import", CommandDomain::Skill),
     ("skill:list", CommandDomain::Skill),
@@ -231,8 +241,8 @@ mod tests {
     #[test]
     fn the_command_count_is_stable() {
         // 前端契约的一部分：漏接或多接一条都会在这里暴露。
-        assert_eq!(COMMAND_COUNT, 86);
-        assert_eq!(command_names().len(), 86);
+        assert_eq!(COMMAND_COUNT, 90);
+        assert_eq!(command_names().len(), 90);
     }
 
     #[test]
@@ -278,12 +288,12 @@ mod tests {
         assert_eq!(commands_of(CommandDomain::App).len(), 3);
         assert_eq!(commands_of(CommandDomain::Ai).len(), 1);
         assert_eq!(commands_of(CommandDomain::Cli).len(), 2);
-        assert_eq!(commands_of(CommandDomain::Clipboard).len(), 2);
-        assert_eq!(commands_of(CommandDomain::Dialog).len(), 2);
+        assert_eq!(commands_of(CommandDomain::Clipboard).len(), 3);
+        assert_eq!(commands_of(CommandDomain::Dialog).len(), 3);
         assert_eq!(commands_of(CommandDomain::Gateway).len(), 19);
         assert_eq!(commands_of(CommandDomain::Models).len(), 1);
         assert_eq!(commands_of(CommandDomain::Performance).len(), 1);
-        assert_eq!(commands_of(CommandDomain::Shell).len(), 3);
+        assert_eq!(commands_of(CommandDomain::Shell).len(), 5);
         assert_eq!(commands_of(CommandDomain::Skill).len(), 8);
         assert_eq!(commands_of(CommandDomain::Terminal).len(), 6);
         assert_eq!(commands_of(CommandDomain::Vendor).len(), 11);

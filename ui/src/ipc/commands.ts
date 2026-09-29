@@ -29,7 +29,7 @@ import type {
 
 // 事件订阅与命令调用同属 IPC 面，调用方从这一层统一取，
 // 不必知道「命令在 commands、事件在 client」这种内部分工。
-export { listen, IpcError } from "./client";
+export { listen, onDragDrop, IpcError } from "./client";
 
 /**
  * 命令面（**只列已接线、且主流程要用的**）。
@@ -525,8 +525,46 @@ export const chooseDirectory = (title?: string) =>
  * 技能既可以是目录，也可以是单个 `SKILL.md` —— 后端的 `import_from_path` 按
  * `path.is_dir()` 自动判断，两种都支持。取消同样返回 `null`。
  */
-export const chooseFile = (title?: string) =>
-  invoke<string | null>("dialog:choose-file", title ? { title } : {});
+/**
+ * 弹出原生**文件**选择框。
+ *
+ * `kind` 决定过滤器：`"image"` 只列图片，`"skill"` 只列 `.md`，其余不加过滤器。
+ * **此前过滤器写死是 `.md`**，于是自管输入的「添加文件」实际上只挑得到 Markdown。
+ */
+export const chooseFile = (title?: string, kind?: "skill" | "image" | "any") =>
+  invoke<string | null>("dialog:choose-file", {
+    ...(title ? { title } : {}),
+    ...(kind ? { kind } : {})
+  });
+
+/** 弹出可**多选**的文件选择框。取消时返回空数组（不是错误）。 */
+export const chooseFiles = (title?: string, kind?: "image" | "any") =>
+  invoke<string[]>("dialog:choose-files", {
+    ...(title ? { title } : {}),
+    ...(kind ? { kind } : {})
+  });
+
+/**
+ * 读一张本地图片，返回可直接放进 `<img src>` 的 data URL。
+ *
+ * 界面上预览本地图片不能直接写 `file://`（webview 拦掉），也不该为此开放
+ * asset 协议（那等于把「读任意文件」给整个页面）。这条命令只读白名单后缀、
+ * 只读 10 MB 以内。
+ */
+export const readImage = (path: string) =>
+  invoke<{ dataUrl: string; name: string; size: number }>("shell:read-image", { path });
+
+/**
+ * 把一段 `data:image/png;base64,…` 落盘，返回路径。
+ *
+ * 从剪贴板粘进来的图片在 webview 里只是一个 `Blob`、**没有路径**，而附件交给 CLI
+ * 靠的是 `@<路径>`，所以必须先落盘。前端负责编码（canvas 本来就会），后端只负责写。
+ */
+export const saveImage = (dataUrl: string) =>
+  invoke<{ path: string; name: string; size: number }>("shell:save-image", { dataUrl });
+
+/** 把一张图**按文件路径**放进系统剪贴板。预览里的「复制」用它。 */
+export const copyImage = (path: string) => invoke<null>("clipboard:write-image", { path });
 
 /** 发一条系统通知。权限缺失或系统静音时静默失败。 */
 export const notify = (title: string, detail?: string) =>

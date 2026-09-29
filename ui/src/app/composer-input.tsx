@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../components";
 import * as api from "../ipc/commands";
+import { appendAttachments, attachmentFromPath, type ComposerAttachment } from "./composer-attachments";
+import { ComposerImagePreview } from "./composer-image-preview";
 import {
   composeSubmission,
   insertAtCursor,
@@ -52,18 +54,88 @@ export function ComposerInput({
   onError: (message: string) => void;
 }) {
   const [text, setText] = useState("");
-  const [attachments, setAttachments] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [blocks, setBlocks] = useState<PastedBlock[]>([]);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [sending, setSending] = useState(false);
+  /** 正在预览的图片。`null` 表示没开。 */
+  const [preview, setPreview] = useState<ComposerAttachment | null>(null);
+  /** 正在拖东西进来。用来给整块输入区加一个可见的落点提示。 */
+  const [dragging, setDragging] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 附件编号的自增源，只用来做 key。 */
+  const nextIdRef = useRef(0);
+
+  const addPaths = useCallback((paths: string[]) => {
+    if (paths.length === 0) return;
+    setAttachments((current) =>
+      appendAttachments(
+        current,
+        paths.map((path) => attachmentFromPath(path, `a${(nextIdRef.current += 1)}`))
+      )
+    );
+  }, []);
+
+  /**
+   * 拖进来的文件。
+   *
+   * # 为什么听 Tauri 的事件，而不是 HTML5 的 `drop`
+   *
+   * Electron 会把真实路径挂在 `File` 对象上（`file.path`），旧平台就是这么拿的。
+   * **Tauri 的 webview 没有这个属性**——HTML5 的 `dataTransfer.files` 里那些
+   * `File` 拿不到路径，而附件交给 CLI 靠的正是路径。
+   *
+   * Tauri 会把原生拖放转成 `tauri://drag-drop` 事件，载荷里是真实路径。
+   * 窗口创建时没有禁用这个处理器（见 `tauri_app.rs` 的 `WebviewWindowBuilder`）。
+   */
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void api
+      .onDragDrop((paths) => {
+        addPaths(paths);
+        setDragging(false);
+      })
+      .then((stop) => {
+        if (cancelled) stop();
+        else unlisten = stop;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [addPaths]);
 
   /** 换终端时把草稿清掉：草稿属于那一路终端，跟着走会写错地方。 */
   useEffect(() => {
     setText("");
     setAttachments([]);
     setBlocks([]);
+    setPreview(null);
   }, [terminalId]);
+
+  /**
+   * 粘贴图片。
+   *
+   * webview 在 `paste` 事件里直接给出 `Blob`——**没有路径**。附件最终要以
+   * `@路径` 交给 CLI，所以先用 canvas 编成 PNG，再让后端落盘换一个路径回来。
+   *
+   * 编码放在前端是因为 webview 本来就会（`canvas.toDataURL`），
+   * 后端就不必为此引入一个 PNG 编码器。
+   */
+  const pasteImage = useCallback(
+    async (file: File) => {
+      try {
+        const dataUrl = await blobToPngDataUrl(file);
+        const saved = await api.saveImage(dataUrl);
+        addPaths([saved.path]);
+      } catch (problem) {
+        onError(problem instanceof Error ? problem.message : String(problem));
+      }
+    },
+    [addPaths, onError]
+  );
 
   /**
    * 粘贴。
@@ -74,12 +146,22 @@ export function ComposerInput({
    */
   const onPaste = useCallback(
     (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      // 图片优先：截图粘贴时 `getData("text")` 也可能是空的，
+      // 先判文本会把它当「没有内容」放过去，然后图片被丢掉。
+      const image = [...event.clipboardData.files].find((item) =>
+        item.type.startsWith("image/")
+      );
+      if (image) {
+        event.preventDefault();
+        void pasteImage(image);
+        return;
+      }
       const pasted = event.clipboardData.getData("text");
       if (!pasted) return;
       // 路径也当成附件处理：从文件管理器复制的路径直接变成 `@路径`。
       if (/^[A-Za-z]:\\|^\/|^~/.test(pasted.trim()) && !pasted.includes("\n")) {
         event.preventDefault();
-        setAttachments((current) => [...current, pasted.trim()]);
+        addPaths([pasted.trim()]);
         return;
       }
       if (!shouldCompact(pasted)) return;
@@ -103,12 +185,16 @@ export function ComposerInput({
         area.setSelectionRange(cursor, cursor);
       });
     },
-    [blocks.length, text]
+    [blocks.length, text, addPaths, pasteImage]
   );
 
   /** 提交。`null` 表示没有可提交的内容——那时**什么都不做**。 */
   const send = useCallback(async () => {
-    const payload = composeSubmission(text, blocks, attachments);
+    const payload = composeSubmission(
+      text,
+      blocks,
+      attachments.map((item) => item.path)
+    );
     if (!payload) return;
     setSending(true);
     try {
@@ -172,14 +258,30 @@ export function ComposerInput({
 
       {attachments.length > 0 && (
         <div className="composer-attachments">
-          {attachments.map((path, index) => (
-            <span className="composer-attachment" key={`${path}:${index}`} title={path}>
-              <span className="composer-attachment-file">@ {path}</span>
+          {attachments.map((item) => (
+            <span
+              className={`composer-attachment${item.kind === "image" ? " is-image" : ""}`}
+              key={item.id}
+              title={item.path}
+            >
+              {item.kind === "image" ? (
+                // 图片给一个可见的入口（点开预览）；文件只是一条路径。
+                <button
+                  type="button"
+                  className="composer-attachment-image"
+                  onClick={() => setPreview(item)}
+                  title={`预览 ${item.path}`}
+                >
+                  🖼 {item.name}
+                </button>
+              ) : (
+                <span className="composer-attachment-file">@ {item.path}</span>
+              )}
               <button
                 type="button"
-                aria-label="移除附件"
+                aria-label={`移除附件 ${item.name}`}
                 onClick={() =>
-                  setAttachments((current) => current.filter((_, at) => at !== index))
+                  setAttachments((current) => current.filter((at) => at.id !== item.id))
                 }
               >
                 ✕
@@ -194,38 +296,107 @@ export function ComposerInput({
         className="composer-text"
         style={{ height }}
         value={text}
-        placeholder="在这里写完整的提示词，Enter 发送、Shift+Enter 换行。粘贴长内容会自动收成标记。"
+        placeholder="在这里写完整的提示词，Enter 发送、Shift+Enter 换行。粘贴长内容会自动收成标记，截图可以直接粘进来。"
         onChange={(event) => setText(event.target.value)}
         onPaste={onPaste}
         onKeyDown={onKeyDown}
+        // 拖到输入框上方时给一个可见的落点提示。用 `dragover` 而不是 Tauri 的
+        // 拖入事件：后者是窗口级的，写在这里会让整块面板一起高亮。
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
       />
 
-      <div className="composer-actions">
+      <div className={`composer-actions${dragging ? " dragging" : ""}`}>
+        {/*
+          「添加图片」与「添加文件」分开：此前只有一个按钮，而它背后的选择框
+          **过滤器写死是 `.md`** —— 图片根本选不中，界面却写着「添加文件」。
+        */}
         <Button
           small
           onClick={() =>
-            void api.chooseFile("添加文件或文件夹").then((picked: string | null) => {
-              if (picked) setAttachments((current) => [...current, picked]);
-            })
+            void api
+              .chooseFiles("添加图片（可多选）", "image")
+              .then((picked) => addPaths(picked))
+              .catch((problem: unknown) =>
+                onError(problem instanceof Error ? problem.message : String(problem))
+              )
+          }
+          title="添加图片：会以 @路径 的形式附加，并在提示词里带上图片"
+        >
+          添加图片
+        </Button>
+        <Button
+          small
+          onClick={() =>
+            void api
+              .chooseFiles("添加文件（可多选）", "any")
+              .then((picked) => addPaths(picked))
+              .catch((problem: unknown) =>
+                onError(problem instanceof Error ? problem.message : String(problem))
+              )
           }
           title="添加文件或文件夹：会以 @路径 的形式附加"
         >
           添加文件
         </Button>
         <span className="row-meta">
-          {blocks.length > 0 && `已收起 ${blocks.length} 段长内容`}
+          {dragging ? "松手即添加" : blocks.length > 0 ? `已收起 ${blocks.length} 段长内容` : ""}
         </span>
         <span className="spacer" />
         <Button
           small
           variant="primary"
-          disabled={sending || composeSubmission(text, blocks, attachments) === null}
+          disabled={
+            sending ||
+            composeSubmission(
+              text,
+              blocks,
+              attachments.map((item) => item.path)
+            ) === null
+          }
           onClick={() => void send()}
           title="发送 (Enter)"
         >
           {sending ? "发送中…" : "发送"}
         </Button>
       </div>
+
+      {preview && (
+        <ComposerImagePreview
+          attachment={preview}
+          onClose={() => setPreview(null)}
+          onError={onError}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * 把一张图片 `Blob` 编成 PNG 的 data URL。
+ *
+ * # 为什么过一遍 canvas
+ *
+ * 剪贴板里的图片可能是 BMP / TIFF 之类，而**后端只接受 PNG**（落盘的扩展名必须与
+ * 内容一致）。canvas 会把任意可以解码的图重新编成 PNG，正好完成这次转换。
+ *
+ * 只用 width/height 画一遍而不裁剪：这里不改变图的内容，只是换一个容器。
+ */
+async function blobToPngDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法创建画布上下文。");
+    context.drawImage(bitmap, 0, 0);
+    return canvas.toDataURL("image/png");
+  } finally {
+    // 位图占的是显存/内存，不释放的话连续粘贴几十张会一直涨。
+    bitmap.close();
+  }
 }

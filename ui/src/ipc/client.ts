@@ -60,6 +60,34 @@ export async function listen<T>(
   return unlisten;
 }
 
+/**
+ * 订阅「文件被拖进窗口」。
+ *
+ * # 为什么必须走 Tauri 的事件
+ *
+ * Electron 会把真实路径挂在 `File` 对象上（`file.path`），旧平台就是这么拿的。
+ * **Tauri 的 webview 没有这个属性**：HTML5 `drop` 事件里那些 `File` 拿不到路径，
+ * 而自管输入的附件交给 CLI 靠的正是「路径」。
+ *
+ * Tauri 会把原生拖放转成 `tauri://drag-drop`，载荷里是真实路径。窗口创建时没有
+ * 禁用这个处理器（见 `tauri_app.rs` 的 `WebviewWindowBuilder`），因此不需要改 Rust。
+ *
+ * 返回取消订阅函数——**必须调用**，否则组件卸载后仍会收到拖放。
+ */
+export async function onDragDrop(
+  handler: (paths: string[]) => void
+): Promise<() => void> {
+  const event = window.__TAURI__?.event;
+  if (typeof event?.listen !== "function") return () => undefined;
+  return event.listen("tauri://drag-drop", (message) => {
+    const payload = message.payload as { paths?: unknown } | null;
+    const paths = Array.isArray(payload?.paths)
+      ? payload.paths.filter((item): item is string => typeof item === "string" && item !== "")
+      : [];
+    if (paths.length > 0) handler(paths);
+  });
+}
+
 /** 后端返回的业务错误。 */
 export class IpcError extends Error {
   constructor(

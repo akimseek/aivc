@@ -45,13 +45,15 @@ use crate::vendor::VendorCommands;
 ///
 /// `every_implemented_command_is_actually_routed` 拿这张清单区分「故意不在这一层」
 /// 与「漏接了」。界面层新增这类命令时必须同步加到这里。
-pub const HANDLED_BY_PLATFORM: [&str; 7] = [
+pub const HANDLED_BY_PLATFORM: [&str; 9] = [
     "app:command",
     "app:exit-choice",
     "clipboard:copy-text",
     "clipboard:read-text",
+    "clipboard:write-image",
     "dialog:choose-directory",
     "dialog:choose-file",
+    "dialog:choose-files",
     "terminal:attention-notification",
 ];
 
@@ -88,11 +90,16 @@ pub struct CommandRouter {
 
 impl CommandRouter {
     /// 构造。
+    /// 构造。
+    ///
+    /// `scratch_dir` 是**粘贴图片的落盘目录**（运行根下）。由调用方给：命令层不知道
+    /// 运行根在哪，而「应用绝不写入系统用户目录」这条约束要求落点由上层决定。
     pub fn new(
         context: ProviderContext,
         registry: Arc<aivc_provider::ProviderRegistry>,
         targets: Arc<dyn TargetLookup>,
         app_version: impl Into<String>,
+        scratch_dir: std::path::PathBuf,
     ) -> Self {
         Self {
             context,
@@ -103,7 +110,10 @@ impl CommandRouter {
             skills: crate::skills::SkillCommands::new(Arc::clone(&targets)),
             targets,
             cli: crate::cli::CliCommands::new(),
-            shell: crate::shell::ShellCommands::new(Arc::new(crate::shell::SystemOpener)),
+            shell: crate::shell::ShellCommands::new(
+                Arc::new(crate::shell::SystemOpener),
+                scratch_dir,
+            ),
             gateway: None,
             terminal: crate::terminal::TerminalCommands::new(
                 Arc::new(aivc_terminal::session::SessionRegistry::new()),
@@ -446,6 +456,8 @@ impl CommandRouter {
             // --- Shell ---
             // 打开动作走系统默认程序；不存在的路径在调用它之前就被拒绝。
             "shell:path-exists" => self.shell.path_exists(&args),
+            "shell:read-image" => self.shell.read_image(&args),
+            "shell:save-image" => self.shell.save_image(&args),
             "shell:open-path" => self.shell.open_path(&args),
             // `open-session-folder` 先查出目录再交给系统打开：目录由各 Provider 决定，
             // 命令层不猜路径。
@@ -683,6 +695,7 @@ mod tests {
             Arc::new(build_registry()),
             Arc::new(NoTargets),
             "0.0.0-test",
+            dir.path().join("scratch"),
         );
         (router, dir)
     }

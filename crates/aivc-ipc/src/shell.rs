@@ -80,13 +80,37 @@ impl Opener for SystemOpener {
 /// Shell 命令处理器。
 pub struct ShellCommands {
     opener: std::sync::Arc<dyn Opener>,
+    /// 粘贴图片的落盘目录。
+    ///
+    /// **注入而不是自己取 `std::env::temp_dir()`**：本工程有一条硬约束
+    /// 「应用绝不写入系统用户目录」，所有产物都在运行根下。
+    /// 自己取临时目录会让这条约束在这里静默失效，而且测试也没法把产物收干净。
+    scratch_dir: PathBuf,
 }
+
+/// 允许通过 `shell:read-image` 读取的图片类型。
+///
+/// # 为什么要有白名单
+///
+/// 这条命令**把文件内容读出来交给界面**。没有白名单它就是一个通用的文件读取接口
+/// ——前端能拿到任意路径的内容，而界面并不需要这个能力。限定后缀之后，
+/// 它只做「预览一张图」这一件事。
+const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"];
+
+/// 单张图片的大小上限。
+///
+/// 与旧平台一致（`composer-input.tsx` 的 `MAX_IMAGE_SIZE`）。超过就不读：
+/// 继续读只会在 IPC 上搬一个几十兆的 base64 串，界面照样显示不出来。
+const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 
 impl ShellCommands {
     /// 构造。
     #[must_use]
-    pub fn new(opener: std::sync::Arc<dyn Opener>) -> Self {
-        Self { opener }
+    pub fn new(opener: std::sync::Arc<dyn Opener>, scratch_dir: PathBuf) -> Self {
+        Self {
+            opener,
+            scratch_dir,
+        }
     }
 
     /// 路径是否存在。
@@ -117,6 +141,133 @@ impl ShellCommands {
         self.opener.open(&path).map_err(failed)?;
         Ok(Value::Null)
     }
+
+    /// 读一张本地图片，返回可直接放进 `<img src>` 的 data URL。
+    ///
+    /// # 为什么不是「让 webview 直接读文件路径」
+    ///
+    /// 界面上预览本地图片只有两条路：
+    ///
+    /// 1. 开 Tauri 的 asset 协议并给它一个范围（`**` 才够用）。那等于把「读任意文件」
+    ///    开放给整个页面，而页面并不需要；
+    /// 2. **本命令**：只读白名单里的图片后缀、只读 10 MB 以内、只返回一个 data URL。
+    ///
+    /// 选 2。同一条链路里能做的事越少，将来出问题时能解释的范围就越小。
+    ///
+    /// # Errors
+    ///
+    /// 路径为空、不存在、不是文件、后缀不在白名单、超过上限、或读失败时报错。
+    pub fn read_image(&self, args: &Value) -> Result<Value> {
+        let path = require_path(args)?;
+        let file = Path::new(&path);
+        if !file.is_file() {
+            return Err(failed(format!("不是文件：{path}")));
+        }
+        let Some(extension) = extension_of(&path) else {
+            return Err(failed(format!(
+                "不支持的类型：{path}（只支持 {}）",
+                IMAGE_EXTENSIONS.join(" / ")
+            )));
+        };
+        if !IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+            return Err(failed(format!(
+                "不支持的类型：.{extension}（只支持 {}）",
+                IMAGE_EXTENSIONS.join(" / ")
+            )));
+        }
+        // 取不到元数据（权限、竞态删除）时按 0 处理：后面读盘失败会报出真正的原因，
+        // 而这里提前报「读不到大小」只会掩盖它。
+        let size = file.metadata().map_or(0, |meta| meta.len());
+        if size > MAX_IMAGE_BYTES {
+            return Err(failed(format!(
+                "图片过大：{size} 字节，上限 {MAX_IMAGE_BYTES} 字节"
+            )));
+        }
+        let bytes = std::fs::read(file).map_err(|error| failed(format!("读取失败：{error}")))?;
+        Ok(json!({
+            "dataUrl": format!("data:{};base64,{}", mime_of(&extension), base64_encode(&bytes)),
+            "name": file.file_name().map_or_else(String::new, |value| value.to_string_lossy().into_owned()),
+            "size": size,
+        }))
+    }
+
+    /// 把一段 base64 图片写进运行根下的暂存目录，返回路径。
+    ///
+    /// # 它解决什么问题
+    ///
+    /// 从剪贴板粘进来的图片在 webview 里只是一个 `Blob`，**没有路径**。
+    /// 而自管输入要把附件交给 CLI，靠的是 `@<路径>`——所以必须先在磁盘上有个文件。
+    ///
+    /// 前端负责编码（`canvas.toDataURL("image/png")`，webview 本来就会），
+    /// 后端只负责落盘。这样这里不需要引入 PNG 编码器。
+    ///
+    /// # Errors
+    ///
+    /// base64 非法、内容不是 PNG、或写盘失败时报错。
+    pub fn save_image(&self, args: &Value) -> Result<Value> {
+        let encoded = args
+            .get("dataUrl")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| invalid("dataUrl"))?;
+        // 只接受 PNG：落盘的扩展名与内容必须一致，否则拿到路径的人（CLI、预览）
+        // 会按 `.png` 去解一段别的字节。
+        let payload = encoded
+            .strip_prefix("data:image/png;base64,")
+            .ok_or_else(|| failed("只接受 data:image/png;base64, 开头的内容。".to_owned()))?;
+        let bytes = base64_decode(payload)
+            .map_err(|error| failed(format!("内容不是合法 base64：{error}")))?;
+        if !bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+            return Err(failed("内容不是 PNG。".to_owned()));
+        }
+        std::fs::create_dir_all(&self.scratch_dir)
+            .map_err(|error| failed(format!("创建暂存目录失败：{error}")))?;
+        // 文件名带上时间戳与一个随机数：同一秒里粘两张不能互相覆盖。
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |value| value.as_millis());
+        let path = self
+            .scratch_dir
+            .join(format!("pasted-{stamp}-{}.png", std::process::id()));
+        std::fs::write(&path, &bytes).map_err(|error| failed(format!("写盘失败：{error}")))?;
+        Ok(json!({
+            "path": path.to_string_lossy(),
+            "name": path.file_name().map_or_else(String::new, |value| value.to_string_lossy().into_owned()),
+            "size": bytes.len(),
+        }))
+    }
+}
+
+/// 取小写后缀。
+fn extension_of(path: &str) -> Option<String> {
+    Path::new(path)
+        .extension()
+        .map(|value| value.to_string_lossy().to_ascii_lowercase())
+}
+
+/// 后缀对应的 MIME。data URL 里必须写对，否则浏览器可能拒绝渲染。
+fn mime_of(extension: &str) -> &'static str {
+    match extension {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        _ => "image/svg+xml",
+    }
+}
+
+/// 标准 base64 编码。
+fn base64_encode(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+/// 标准 base64 解码。
+fn base64_decode(text: &str) -> std::result::Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.decode(text)
 }
 
 /// 取 `path` 参数。
@@ -204,8 +355,12 @@ mod tests {
         }
     }
 
+    /// 构造一个用临时目录当暂存区的处理器。
+    ///
+    /// 图片那两条命令要落盘，暂存区必须是**每个测试自己的**：用同一目录会让
+    /// 「前一个测试留下的文件」参与后一个测试的判断。
     fn commands(opener: std::sync::Arc<dyn Opener>) -> ShellCommands {
-        ShellCommands::new(opener)
+        ShellCommands::new(opener, tempfile::tempdir().expect("tempdir").keep())
     }
 
     #[test]
@@ -327,5 +482,186 @@ mod tests {
     fn path_normalization_is_identity_for_local_paths() {
         // 本机路径原样使用；这个函数存在的意义是让「WSL 需要转换」这个差异可见。
         assert_eq!(normalize_open_path("/tmp/x"), PathBuf::from("/tmp/x"));
+    }
+
+    /* ── 图片预览与粘贴图片落盘 ─────────────────────────── */
+
+    /// 造一个最小的合法 PNG（1×1）。
+    const TINY_PNG: [u8; 67] = [
+        0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+        0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+
+    /// 造一个用临时目录的处理器，并把那个目录也返回出来。
+    fn commands_with_dir() -> (ShellCommands, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        (
+            ShellCommands::new(std::sync::Arc::new(NullOpener), dir.path().to_path_buf()),
+            dir,
+        )
+    }
+
+    #[test]
+    fn reading_an_image_returns_a_data_url() {
+        let (commands, dir) = commands_with_dir();
+        let file = dir.path().join("a.png");
+        std::fs::write(&file, TINY_PNG).expect("写文件");
+        let value = commands
+            .read_image(&json!({ "path": file.to_string_lossy() }))
+            .expect("读取");
+        let url = value["dataUrl"].as_str().expect("有 dataUrl");
+        assert!(url.starts_with("data:image/png;base64,"), "{url}");
+        assert_eq!(value["name"], json!("a.png"));
+        assert_eq!(value["size"], json!(TINY_PNG.len()));
+    }
+
+    #[test]
+    fn the_mime_type_follows_the_extension() {
+        // 后缀写错会让浏览器拒绝渲染：data URL 里的类型必须与实际后缀对应。
+        let (commands, dir) = commands_with_dir();
+        for (name, mime) in [
+            ("a.jpeg", "image/jpeg"),
+            ("a.jpg", "image/jpeg"),
+            ("a.gif", "image/gif"),
+            ("a.webp", "image/webp"),
+            ("a.bmp", "image/bmp"),
+            ("a.svg", "image/svg+xml"),
+        ] {
+            let file = dir.path().join(name);
+            std::fs::write(&file, b"x").expect("写文件");
+            let value = commands
+                .read_image(&json!({ "path": file.to_string_lossy() }))
+                .expect("读取");
+            assert!(
+                value["dataUrl"]
+                    .as_str()
+                    .expect("有 dataUrl")
+                    .starts_with(&format!("data:{mime};base64,")),
+                "{name} 的 MIME 不对"
+            );
+        }
+    }
+
+    #[test]
+    fn reading_a_non_image_is_refused() {
+        // 没有这条限制，`shell:read-image` 就是一个通用文件读取接口。
+        let (commands, dir) = commands_with_dir();
+        let file = dir.path().join("secret.txt");
+        std::fs::write(&file, b"top secret").expect("写文件");
+        let error = commands
+            .read_image(&json!({ "path": file.to_string_lossy() }))
+            .expect_err("必须拒绝");
+        assert!(error.to_string().contains("不支持的类型"), "{error}");
+        assert!(
+            !error.to_string().contains("top secret"),
+            "错误里不该带内容"
+        );
+    }
+
+    #[test]
+    fn reading_a_file_without_extension_is_refused() {
+        let (commands, dir) = commands_with_dir();
+        let file = dir.path().join("noext");
+        std::fs::write(&file, b"x").expect("写文件");
+        let error = commands
+            .read_image(&json!({ "path": file.to_string_lossy() }))
+            .expect_err("必须拒绝");
+        assert!(error.to_string().contains("不支持的类型"), "{error}");
+    }
+
+    #[test]
+    fn reading_a_missing_image_is_refused() {
+        let (commands, _dir) = commands_with_dir();
+        let error = commands
+            .read_image(&json!({ "path": "/aivc-missing-xyz.png" }))
+            .expect_err("必须拒绝");
+        assert!(error.to_string().contains("不是文件"), "{error}");
+    }
+
+    #[test]
+    fn reading_an_image_without_a_path_is_refused_by_name() {
+        let (commands, _dir) = commands_with_dir();
+        let error = commands.read_image(&json!({})).expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "参数无效：path");
+    }
+
+    #[test]
+    fn saving_a_png_writes_it_and_returns_the_path() {
+        use base64::Engine as _;
+        let (commands, dir) = commands_with_dir();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(TINY_PNG);
+        let value = commands
+            .save_image(&json!({ "dataUrl": format!("data:image/png;base64,{encoded}") }))
+            .expect("保存");
+        let path = value["path"].as_str().expect("有路径");
+        // 后缀由我们生成，因此这里用大小写不敏感的比法读起来安全
+        // （clippy 会把 `ends_with(".png")` 当成可能在比扩展名而报错）。
+        assert!(path.to_ascii_lowercase().ends_with(".png"), "{path}");
+        // **文件真的写出去了**，而且内容一致——只看返回值不能说明落盘成功。
+        assert_eq!(std::fs::read(path).expect("读回"), TINY_PNG.to_vec());
+        // 落点在注入的暂存目录下，不是系统临时目录。
+        assert!(Path::new(path).starts_with(dir.path()), "{path}");
+    }
+
+    #[test]
+    fn saving_a_non_png_payload_is_refused() {
+        use base64::Engine as _;
+        let (commands, _dir) = commands_with_dir();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(b"not a png at all");
+        let error = commands
+            .save_image(&json!({ "dataUrl": format!("data:image/png;base64,{encoded}") }))
+            .expect_err("必须拒绝");
+        assert!(error.to_string().contains("不是 PNG"), "{error}");
+    }
+
+    #[test]
+    fn saving_refuses_other_data_url_types() {
+        // 只接受 PNG：落盘的扩展名与内容必须一致，否则拿到路径的一方会按 .png 去解别的字节。
+        let (commands, _dir) = commands_with_dir();
+        let error = commands
+            .save_image(&json!({ "dataUrl": "data:image/jpeg;base64,AAAA" }))
+            .expect_err("必须拒绝");
+        assert!(error.to_string().contains("只接受"), "{error}");
+    }
+
+    #[test]
+    fn saving_refuses_broken_base64() {
+        let (commands, _dir) = commands_with_dir();
+        let error = commands
+            .save_image(&json!({ "dataUrl": "data:image/png;base64,!!!not-base64!!!" }))
+            .expect_err("必须拒绝");
+        assert!(error.to_string().contains("base64"), "{error}");
+    }
+
+    #[test]
+    fn saving_without_a_data_url_is_refused_by_name() {
+        let (commands, _dir) = commands_with_dir();
+        let error = commands.save_image(&json!({})).expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "参数无效：dataUrl");
+    }
+
+    #[test]
+    fn two_saves_in_the_same_millisecond_do_not_overwrite_each_other() {
+        // 同一秒里粘两张图不能互相覆盖——文件名里带了进程号与毫秒。
+        use base64::Engine as _;
+        let (commands, _dir) = commands_with_dir();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(TINY_PNG);
+        let url = format!("data:image/png;base64,{encoded}");
+        let first = commands
+            .save_image(&json!({ "dataUrl": url }))
+            .expect("第一次")
+            .get("path")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .expect("路径");
+        let second = commands
+            .save_image(&json!({ "dataUrl": url }))
+            .expect("第二次")
+            .get("path")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .expect("路径");
+        assert_ne!(first, second, "两次落盘不能是同一个文件");
     }
 }

@@ -277,6 +277,21 @@ export type SessionQuickAccess = {
 /* ── 供应商 ───────────────────────────────────────────── */
 
 /** 一个 API 供应商（`vendor:list`）。 */
+/**
+ * 一个供应商（`vendor:list` / `vendor:save`）。
+ *
+ * # 只声明界面**会读**的字段，但把该读的读全
+ *
+ * 后端 `ApiVendor` 一共十几个字段（`crates/aivc-core/src/vendor.rs`）。此前这里
+ * 只声明了六个，正好把 `pricing` / `balanceQuery` / `modelQuery` / `configs` 裁掉了
+ * ——于是「费率」「高级查询配置」这些**后端早就在发**的东西在界面上不存在。
+ *
+ * 手抄一个子集比不写类型更糟：两边都能编译，缺的东西只在运行时表现为「那一格是空的」。
+ * 这一整轮里同类错已经是第四次（网关端口、能力矩阵键名、CLI 环境、现在这个）。
+ *
+ * **刻意不声明的只有一个：`apiKey`。** 后端把明文密钥发过来了（它自己要用），
+ * 但界面**任何地方都不该显示它**——不写进类型，就不会有人顺手用它渲染出来。
+ */
 export type ApiVendor = {
   id: string;
   providerId: AiProviderId;
@@ -285,6 +300,23 @@ export type ApiVendor = {
   /** 候选池排序。 */
   sort: number;
   enabled: boolean;
+  /** 费率（每百万 Token）。两个字段都可选；未设置与 0 是两回事。 */
+  pricing?: { inputPerMillionUsd?: number; outputPerMillionUsd?: number };
+  /**
+   * 余额查询配置。
+   *
+   * 形状由后端 `BalanceQueryConfig` 定义（十几个字段、带枚举），
+   * 这里**按 `Record<string, unknown>` 收**：界面只把它当 JSON 原样回填与提交，
+   * 逐字段声明一遍只会多出一份需要同步的镜像。
+   */
+  balanceQuery?: Record<string, unknown>;
+  /** 模型查询配置，同 `balanceQuery`。 */
+  modelQuery?: Record<string, unknown>;
+  /** 写进 CLI 的配置模板。界面目前只读不改（见 A4）。 */
+  configs?: unknown[];
+  createdAt?: string;
+  updatedAt?: string;
+  lastEnabledAt?: string;
 };
 
 /* ── 技能 ─────────────────────────────────────────────── */

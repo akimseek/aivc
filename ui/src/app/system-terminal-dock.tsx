@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button, Tabs, Toolbar, type TabItem } from "../components";
+import { Button, Select, Tabs, Toolbar, type TabItem } from "../components";
 import { TerminalPane } from "./terminal-pane";
+import {
+  defaultTerminalKind,
+  detectWindows,
+  ensureSelectableKind,
+  terminalKindOptions,
+  type TerminalKind
+} from "./terminal-kinds";
 import type { TerminalSession, TerminalSink } from "./use-terminals";
 
 /**
@@ -69,7 +76,9 @@ export function SystemTerminalDock({
   onClose,
   onClosePanel,
   onNew,
-  onError
+  onError,
+  /** 当前目标是不是 WSL——决定下拉里有没有「当前 WSL」。 */
+  isWslTarget = false
 }: {
   /** 只有系统终端的标签。空数组时整块不渲染。 */
   items: TabItem[];
@@ -82,14 +91,35 @@ export function SystemTerminalDock({
   onClose: (key: string) => void;
   /** 收起整个面板（等同于「关闭面板」）。 */
   onClosePanel: () => void;
-  /** 再开一路系统终端。 */
-  onNew: () => void;
+  /** 再开一路系统终端，类型由调用方决定的一栏选。 */
+  onNew: (kind: TerminalKind) => void;
   onError: (message: string) => void;
+  isWslTarget?: boolean;
 }) {
   const [minimized, setMinimized] = useState(false);
   const [height, setHeight] = useState(readStoredHeight);
+  /**
+   * 「新建」时用哪种 shell。
+   *
+   * 旧平台的形状：一个类型下拉 + 一个「新建」按钮。此前这里只有「新建」，
+   * 于是**用户拿不到默认之外任何一种 shell**——而 `openSystemTerminal` 一直都收这个参数。
+   */
+  const [kind, setKind] = useState<TerminalKind>(() => defaultTerminalKind(isWslTarget));
   const panelRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<{ y: number; height: number } | null>(null);
+
+  const kindOptions = useMemo(
+    () => terminalKindOptions({ isWindows: detectWindows(), isWslTarget }),
+    [isWslTarget]
+  );
+
+  /**
+   * 换目标之后原来选的那个类型可能已经不在选项里了（例如从 WSL 目标切到本机，
+   * 「当前 WSL」就没了）。那时**退回默认**，而不是带着一个后端会拒绝的值去点新建。
+   */
+  useEffect(() => {
+    setKind((current) => ensureSelectableKind(current, kindOptions));
+  }, [kindOptions]);
 
   // 窗口变小之后原来的高度可能超出上界，重新夹一次。
   useEffect(() => {
@@ -157,7 +187,25 @@ export function SystemTerminalDock({
           onClose={onClose}
         />
         <span className="spacer" />
-        <Button small onClick={onNew} title="再开一路系统终端">
+        {/*
+          类型下拉。旧平台放在「新建」左边，选完再点新建——
+          而不是让新开的那一路自己去弹一个选择框（那会把「开终端」变成两步）。
+        */}
+        <label className="system-dock-kind">
+          <span className="row-meta">类型</span>
+          <Select
+            value={kind}
+            aria-label="系统终端类型"
+            onChange={(event) => setKind(event.target.value as TerminalKind)}
+          >
+            {kindOptions.map((option) => (
+              <option key={option.kind} value={option.kind}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <Button small onClick={() => onNew(kind)} title="按上面选的类型再开一路">
           新建
         </Button>
         <Button small onClick={() => setMinimized((value) => !value)}>

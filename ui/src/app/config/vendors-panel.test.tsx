@@ -2,7 +2,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { VendorsPanel } from "./vendors-panel";
+import { VendorsPanel, parseAdvancedJson, parsePrice } from "./vendors-panel";
 import type { AiProviderId } from "../../types";
 
 /**
@@ -265,5 +265,180 @@ describe("VendorsPanel：跨平台列表", () => {
       expect(call?.args.providerId).toBe("qoder");
       expect(call?.args.id).toBe("v1");
     });
+  });
+});
+
+/* ── A3 费率 / A5 高级 JSON ─────────────────────────────
+ *
+ * 解析层单独测：它是「填错会静默算出错数字」的那一层。
+ * 后端 `VendorPricing` 两个字段都可选，`BalanceQueryConfig` / `ModelQueryConfig`
+ * 是结构化对象——JSON 文本框是旧平台的做法，照做。
+ */
+
+describe("parsePrice：费率", () => {
+  it("空串 = 未设置（**不是 0**）", () => {
+    expect(parsePrice("", "输入费率")).toEqual({ ok: true, value: undefined });
+    expect(parsePrice("   ", "输入费率")).toEqual({ ok: true, value: undefined });
+  });
+
+  it("「0」是免费，与未设置是两回事", () => {
+    expect(parsePrice("0", "输入费率")).toEqual({ ok: true, value: 0 });
+  });
+
+  it("正常小数", () => {
+    expect(parsePrice("0.55", "输入费率")).toEqual({ ok: true, value: 0.55 });
+  });
+
+  it("**0.55 与 2.2 必须被接受**——二进制不精确，精确比较会把它们判成三位小数", () => {
+    // 后端原来就是精确比较，实测把 0.55 拒了。这条与后端那条测试成对。
+    for (const price of ["0.55", "2.2", "0.29", "1.15", "3.75"]) {
+      const result = parsePrice(price, "输入费率");
+      expect(result.ok, price).toBe(true);
+    }
+  });
+
+  it("真的三位小数要拒（容差不是放开）", () => {
+    for (const price of ["1.234", "0.555", "9.999"]) {
+      const result = parsePrice(price, "输入费率");
+      expect(result.ok, price).toBe(false);
+      expect(result.ok === false && result.message, price).toContain("2 位小数");
+    }
+  });
+
+  it("**非数字要报错，不能悄悄变成 0**", () => {
+    // 悄悄归零会让成本估算凭空变成 0，而且用户完全看不出来。
+    const result = parsePrice("abc", "输入费率");
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.message).toContain("输入费率");
+  });
+
+  it("负数要报错", () => {
+    expect(parsePrice("-1", "输出费率").ok).toBe(false);
+  });
+});
+
+describe("parseAdvancedJson：高级 JSON", () => {
+  it("空串 = 不设置", () => {
+    expect(parseAdvancedJson("", "余额查询配置")).toEqual({ ok: true, value: undefined });
+  });
+
+  it("对象可用", () => {
+    expect(parseAdvancedJson('{"endpoint":"/x"}', "余额查询配置")).toEqual({
+      ok: true,
+      value: { endpoint: "/x" }
+    });
+  });
+
+  it("**格式错时文案是「JSON 格式无效」**（旧平台的原话）", () => {
+    const result = parseAdvancedJson("{oops", "余额查询配置");
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.message).toContain("JSON 格式无效");
+  });
+
+  it("**数组与字面量要报「必须是 JSON 对象」**——后端要的是对象", () => {
+    for (const text of ["[]", "[1,2]", "null", "42", '"x"']) {
+      const result = parseAdvancedJson(text, "模型查询配置");
+      expect(result.ok, text).toBe(false);
+      expect(result.ok === false && result.message, text).toContain("必须是 JSON 对象");
+    }
+  });
+
+  it("文案里带上是哪一项，两个框分得清", () => {
+    const result = parseAdvancedJson("{", "模型查询配置");
+    expect(result.ok === false && result.message.startsWith("模型查询配置")).toBe(true);
+  });
+});
+
+describe("VendorsPanel：费率与高级 JSON 接线", () => {
+  it("**两条费率会按 pricing 结构提交**（后端字段名是 inputPerMillionUsd）", async () => {
+    const { byText, runtime, inputsByPlaceholder, typeInto } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await typeInto(inputsByPlaceholder("官方")!, "带费率的");
+    await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await typeInto(inputsByPlaceholder("0.55")!, "0.55");
+    await typeInto(inputsByPlaceholder("2.2")!, "2.2");
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    await waitFor(() => {
+      const call = runtime.calls.find((item) => item.command === "vendor:save");
+      expect(call?.args.pricing).toEqual({
+        inputPerMillionUsd: 0.55,
+        outputPerMillionUsd: 2.2
+      });
+    });
+  });
+
+  it("**两个费率都留空时整个 pricing 不传**（空对象是「设置了但什么都没有」）", async () => {
+    const { byText, runtime, inputsByPlaceholder, typeInto } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await typeInto(inputsByPlaceholder("官方")!, "无费率");
+    await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    await waitFor(() => {
+      const call = runtime.calls.find((item) => item.command === "vendor:save");
+      expect(call?.args).not.toHaveProperty("pricing");
+    });
+  });
+
+  it("JSON 填错时**整体不提交**，并给出是哪一项", async () => {
+    const { byText, view, runtime, onError, inputsByPlaceholder, typeInto } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await typeInto(inputsByPlaceholder("官方")!, "JSON 错");
+    await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    // **在本次渲染的容器里找**，不要在 `document` 里找：那个范围包含别的测试
+    // 留下的节点，写进去的值不会进当前组件的 state——测试会以「没报错」的形式失败，
+    // 看起来像产品缺陷，其实是测试读错了元素。
+    const area = [...view.container.querySelectorAll("textarea")].find((item) =>
+      (item.placeholder ?? "").includes("endpoint")
+    )!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value"
+      )!.set!;
+      setter.call(area, "{oops");
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("JSON 格式无效"));
+    // **没有发出去**：提交一半再报错，用户不知道哪一项存进去了。
+    expect(runtime.calls.some((item) => item.command === "vendor:save")).toBe(false);
+  });
+
+  it("编辑时回填费率与高级 JSON（不回填就会被「保存修改」清掉）", async () => {
+    const { byText, view, inputsByPlaceholder } = setup({
+      existing: [
+        {
+          id: "v1",
+          providerId: "codex",
+          name: "官方",
+          apiBaseUrl: "https://a/v1",
+          sort: 0,
+          enabled: true,
+          pricing: { inputPerMillionUsd: 1.5 },
+          balanceQuery: { endpoint: "/balance" }
+        }
+      ]
+    });
+    await waitFor(() => expect(byText("编辑")).toBeTruthy());
+    await act(async () => {
+      byText("编辑")!.click();
+    });
+    expect((inputsByPlaceholder("0.55") as HTMLInputElement).value).toBe("1.5");
+    const area = [...view.container.querySelectorAll("textarea")].find((item) =>
+      (item.placeholder ?? "").includes("endpoint")
+    ) as HTMLTextAreaElement;
+    expect(area.value).toContain("/balance");
   });
 });

@@ -246,6 +246,13 @@ export const setVendorEnabled = (id: string, enabled: boolean) =>
  *
  * `apiKey` **留空表示沿用旧值**（领域层的归一化语义），因此编辑时不必重新输入密钥。
  */
+/**
+ * 新建或更新一个供应商。
+ *
+ * 字段名与后端 `ApiVendorInput`（camelCase）逐字对应。`pricing` / `balanceQuery` /
+ * `modelQuery` 都是**可选**的：不传表示不设置，传空对象则是「设置了但什么都没有」，
+ * 两者不是一回事。
+ */
 export const saveVendor = (request: {
   id?: string;
   providerId: string;
@@ -254,6 +261,12 @@ export const saveVendor = (request: {
   apiBaseUrl: string;
   sort?: number;
   enabled?: boolean;
+  /** 费率（每百万 Token，美元）。 */
+  pricing?: { inputPerMillionUsd?: number; outputPerMillionUsd?: number };
+  /** 余额查询配置（后端 `BalanceQueryConfig` 的结构化对象）。 */
+  balanceQuery?: unknown;
+  /** 模型查询配置（后端 `ModelQueryConfig` 的结构化对象）。 */
+  modelQuery?: unknown;
 }) => invoke<ApiVendor>("vendor:save", request);
 
 /** 删除供应商。 */

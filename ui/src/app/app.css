@@ -1859,3 +1859,30 @@ select {
   border-radius: var(--ui-radius-sm, 4px);
   background: var(--ui-surface-sunken, #0f172a);
 }
+/* ── 系统终端类型下拉 ────────────────────────────────────
+   与「新建」并排：先选类型再点新建，而不是让新开那一路自己去弹选择框。 */
+.system-dock-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.system-dock-kind select {
+  min-width: 110px;
+}
+
+/* ── 供应商的高级配置 ────────────────────────────────────
+   默认收起：十几个字段的高级配置摊开后，常用的「名称/地址/Key」反而不好找。 */
+.vendor-advanced {
+  margin-top: var(--ui-space-2, 8px);
+}
+.vendor-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ui-text-muted, #8b949e);
+}
+.vendor-advanced textarea {
+  width: 100%;
+  resize: vertical;
+  font-size: 12px;
+  white-space: pre;
+}

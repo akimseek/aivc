@@ -577,18 +577,34 @@ fn normalize_pricing(pricing: Option<&VendorPricing>) -> Result<Option<VendorPri
 
 /// 单个费率归一化。
 ///
-/// 这里刻意使用精确浮点比较：判断的是「乘以 100 后是否还是整数」，
-/// 即「小数位是否超过 2 位」。用误差范围比较会让 1.234 被误判为合法。
+/// # 为什么用**带容差**的比较，而不是精确浮点相等
+///
+/// 这里判断的是「乘以 100 之后是不是整数」，也就是「小数位是否超过 2 位」。
+/// 但 `0.55 * 100.0` 在 IEEE 754 里是 `55.00000000000001`——精确相等会把它判成
+/// 「超过 2 位小数」，而 **0.55 恰恰是最常见的那种价格**；`2.2` 同理
+/// （`220.00000000000003`）。实测就是被这条拒掉的。
+///
+/// 容差取 `1e-9`：它比浮点乘法的舍入误差（这个量级约 `1e-14`）大好几个数量级，
+/// 又比「真的多了一位小数」小得多——`1.234 * 100.0 = 123.4`，与最近整数的距离是
+/// `0.4`。因此 `1.234` 照样被拒。
+///
+/// 原先那句注释担心「用误差范围比较会让 1.234 被误判为合法」——按上面的量级，
+/// 那个担心不成立，而它付出的代价是拒绝 `0.55`。
 #[allow(clippy::float_cmp)]
 fn normalize_rate(value: Option<f64>, label: &'static str) -> Result<Option<f64>> {
+    /// 判定「乘以 100 后是不是整数」的容差。
+    const SCALE_TOLERANCE: f64 = 1e-9;
     let Some(value) = value else {
         return Ok(None);
     };
-    // `Math.round(value * 100) !== value * 100` 等价于「小数位超过 2 位」。
-    let scaled = value * 100.0;
-    if !value.is_finite() || value < 0.0 || scaled.round() != scaled {
+    if !value.is_finite() || value < 0.0 {
         return Err(VendorError::PricingInvalid { label }.into());
     }
+    let scaled = value * 100.0;
+    if (scaled - scaled.round()).abs() > SCALE_TOLERANCE {
+        return Err(VendorError::PricingInvalid { label }.into());
+    }
+    // 取整后再除，落库的是干净的两小数位值。
     Ok(Some(scaled.round() / 100.0))
 }
 
@@ -848,6 +864,56 @@ mod tests {
         assert_eq!(pricing.input_per_million_usd, Some(1.25));
         // 0 是有效费率，不能被当成「未设置」。
         assert_eq!(pricing.output_per_million_usd, Some(0.0));
+    }
+
+    /// **常见价格必须被接受**——包括那些二进制表示不精确的。
+    ///
+    /// # 这条测试是怎么来的
+    ///
+    /// 上一条测试用的是 `1.25`，而 `1.25` 恰好能被二进制精确表示
+    /// （`1.25 * 100.0 == 125.0` 精确成立），于是它**在缺陷存在时也是绿的**。
+    ///
+    /// 而 `0.55 * 100.0` 是 `55.00000000000001`。原先的判断是
+    /// `scaled.round() != scaled`（精确相等），因此 **`0.55` 和 `2.2` 这类最常见
+    /// 的价格会被拒**，报的还是「必须是非负数，且最多保留 2 位小数」——
+    /// 用户看着 0.55 完全不知道哪里错了。
+    ///
+    /// 探针写了一条 `pricing.inputPerMillionUsd = 0.55` 的供应商才把它撞出来。
+    #[test]
+    fn pricing_accepts_ordinary_prices_that_are_not_binary_exact() {
+        for price in [0.55, 2.2, 0.29, 1.15, 3.75, 0.01, 15.0] {
+            let mut raw = input("n");
+            raw.pricing = Some(VendorPricing {
+                input_per_million_usd: Some(price),
+                output_per_million_usd: None,
+            });
+            let pricing = raw
+                .normalize(false)
+                .unwrap_or_else(|error| panic!("{price} 必须被接受，实际报错：{error}"))
+                .pricing
+                .expect("pricing");
+            assert_eq!(
+                pricing.input_per_million_usd,
+                Some(price),
+                "{price} 归一化后不该变"
+            );
+        }
+    }
+
+    /// 容差是 `1e-9`，比它大得多的偏差仍然要拒——**放开 0.55 不等于放开 1.234**。
+    #[test]
+    fn the_tolerance_still_rejects_a_real_third_decimal() {
+        for bad in [1.234, 0.555, 9.999, 0.001] {
+            let mut raw = input("n");
+            raw.pricing = Some(VendorPricing {
+                input_per_million_usd: Some(bad),
+                output_per_million_usd: None,
+            });
+            assert!(
+                raw.normalize(false).is_err(),
+                "{bad} 有真实的三位小数，必须拒绝"
+            );
+        }
     }
 
     #[test]

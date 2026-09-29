@@ -11,6 +11,7 @@ import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
 import { SystemTerminalDock } from "./system-terminal-dock";
+import type { TerminalKind } from "./terminal-kinds";
 import { displayTitle } from "./session-display";
 import { Sidebar } from "./sidebar";
 import { StatusBar } from "./status-bar";
@@ -282,15 +283,29 @@ export function App() {
     });
   }, [console.selectedSession?.cwd]);
 
-  const openSystemTerminal = useCallback(async () => {
-    try {
-      // 系统终端不依赖目标：没选目标时也能开一个本机 shell。
-      const id = await terminals.openSystemTerminal(selectedTarget, console.selectedSession?.cwd);
-      workspace.addTerminalTab(id, "系统终端");
-    } catch (error) {
-      console.setError(error instanceof Error ? error.message : String(error));
-    }
-  }, [terminals, selectedTarget, console, workspace]);
+  /**
+   * 开一路系统终端。
+   *
+   * `kind` 由调用方给：底部的类型下拉选的就是它。此前这里**从来不传**，
+   * 于是用户只能拿到平台默认的那个 shell——而后端一直支持指定类型。
+   * 不传时后端按平台决定（`auto`），这与旧平台的默认项一致。
+   */
+  const openSystemTerminal = useCallback(
+    async (kind?: TerminalKind) => {
+      try {
+        // 系统终端不依赖目标：没选目标时也能开一个本机 shell。
+        const id = await terminals.openSystemTerminal(
+          selectedTarget,
+          console.selectedSession?.cwd,
+          kind
+        );
+        workspace.addTerminalTab(id, "系统终端");
+      } catch (error) {
+        console.setError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [terminals, selectedTarget, console, workspace]
+  );
 
   /**
    * 点历史会话：**恢复那次会话并进入终端**（旧平台 `openResumeWithDirectory`）。
@@ -687,7 +702,8 @@ export function App() {
                 workspace.closeTab(key);
               }
             }}
-            onNew={() => void openSystemTerminal()}
+            onNew={(kind) => void openSystemTerminal(kind)}
+            isWslTarget={selectedTarget?.kind === "wsl"}
             onError={console.setError}
           />
         </div>

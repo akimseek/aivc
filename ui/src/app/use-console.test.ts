@@ -20,19 +20,18 @@ const session = (id: string): AiSession => ({
 });
 
 describe("target selection", () => {
-  it("restores the remembered target when it still exists", () => {
+  it("列表刷新时**保住当前选中的那个**（用户已经选过，不能丢）", () => {
+    // `preferred` 现在只传「当前值」。这条与「还原上次选择」是两件事：
+    // 前者是「别把用户刚选的弄丢」，后者是「替他选一个」——后者已删除。
     const items = [target("a", true), target("b", true)];
-    expect(pickTarget(items, ["b", "a"])).toBe("b");
+    expect(pickTarget(items, ["b"])).toBe("b");
   });
 
-  it("falls back to the current one when the remembered target is gone", () => {
-    // 记住的目标失效时，**退回当前仍有效的那个**，而不是回到空选中。
-    //
-    // 注意这与上面那条的区别：`preferred` 里有 `"a"`（当前值），
-    // 说明用户**本来就在这个目标上**；而上面那条的 `preferred` 是空的，
-    // 表示从没选过——那种情况才什么都不选。
+  it("当前选中的目标失效时，**不退回任何别的目标**", () => {
+    // 发行版被移除、目录被删——原来这里会退回「第一个可用的」，
+    // 那等于替用户换了一个目标，而他并不知道。现在是空。
     const items = [target("a", true), target("b", true)];
-    expect(pickTarget(items, ["gone", "a"])).toBe("a");
+    expect(pickTarget(items, ["gone"])).toBe("");
   });
 
   it("**没有可还原的目标时什么都不选**，也不去挑「第一个可用的」", () => {

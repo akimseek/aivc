@@ -21,11 +21,9 @@ import { scopeTargets } from "./search-scope";
  *
  * # 为什么单独一个文件
  *
- * 界面只负责画，取数顺序（缓存先行 → 探测刷新 → 自动选中）与几处**异步竞态**的处理
+ * 界面只负责画，取数顺序（缓存先行 → 探测刷新）与几处**异步竞态**的处理
  * 是这块最容易写错的地方，值得单独放、单独读。
  */
-
-const LAST_SELECTION_KEY = "aivc.ui.lastSelection";
 
 /** 一次取多少条消息。会话通常很长，所以先给结尾，再按需往前翻。 */
 const MESSAGE_PAGE_SIZE = 80;
@@ -33,38 +31,25 @@ const MESSAGE_PAGE_SIZE = 80;
 /** 搜索防抖：每次按键都去读文件太贵（后端第二段会**扫全文**）。 */
 const SEARCH_DEBOUNCE_MS = 250;
 
-type LastSelection = { providerId: AiProviderId; targetId: string };
-
-function readLastSelection(): LastSelection | null {
-  try {
-    const raw = window.localStorage.getItem(LAST_SELECTION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<LastSelection> | null;
-    if (typeof parsed?.providerId !== "string" || !parsed.providerId) return null;
-    return {
-      providerId: parsed.providerId,
-      targetId: typeof parsed.targetId === "string" ? parsed.targetId : ""
-    };
-  } catch {
-    // 隐私模式、数据被改坏：按「没记住」处理即可，不该让应用起不来。
-    return null;
-  }
-}
-
-function writeLastSelection(value: LastSelection) {
-  try {
-    window.localStorage.setItem(LAST_SELECTION_KEY, JSON.stringify(value));
-  } catch {
-    /* 记不住而已，不是错误。 */
-  }
-}
+/*
+  **这里原来有一段「记住上次的平台 / 目标」并从 localStorage 还原的逻辑，已删除。**
+  
+  用户明确要求：**应用打开时平台显示「请选择平台」，不选任何东西**。
+  而我实测确认过它造成的就是「打开就选中 Codex / 本机 Codex」——
+  因为 localStorage 里存着上一次的 `{providerId:"codex", targetId:"codex:local:…"}`。
+  
+  它也是**我自己加的**：旧平台全仓只有一处 localStorage，存的是**终端面板高度**
+  （`system-terminal.tsx` 的 `STORAGE_HEIGHT_KEY`），没有「记住上次选择」。
+  
+  于是启动时的四个「替你选好」全部去掉了：平台、目标、会话，以及这里的还原。
+*/
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * 从候选里挑一个目标：**只认还原值，否则不选**。
+ * 从候选里挑一个目标：**只认「当前值」，否则不选**。
  *
  * # 这里原来会退回「第一个可用目标」
  *
@@ -79,7 +64,12 @@ function describe(error: unknown): string {
  * setSelectedId(activeSessionForTarget?.id || "");
  * ```
  *
- * 也就是**跟着当前终端走，没有就不选**。因此这里也改为「没得还原就是空」。
+ * 也就是**跟着当前终端走，没有就不选**。
+ *
+ * `preferred` 现在只传**当前值**（列表刷新时别把用户已经选的那个丢掉），
+ * 不再有「从 localStorage 还原上次选择」那一项——那同样是我加的，
+ * 而且它正是「打开就选中 Codex / 本机 Codex」的原因。旧平台全仓唯一的
+ * localStorage 用途是终端面板高度。
  */
 export function pickTarget(items: AiTarget[], preferred: string[]): string {
   for (const id of preferred) {
@@ -210,7 +200,6 @@ export function useConsole(options: { notify?: Notify } = {}) {
   const [globalSearching, setGlobalSearching] = useState(false);
   const globalSeqRef = useRef(0);
 
-  const [restored] = useState(readLastSelection);
   const startedRef = useRef(false);
 
   /* ── 平台 ── */
@@ -222,20 +211,20 @@ export function useConsole(options: { notify?: Notify } = {}) {
         if (cancelled) return;
         setProviders(items);
         /*
-          平台：**只认还原值，否则不选**。
+          **平台不选：一律留空，等用户自己挑。**
           
-          这里原来会退回 `items[0]`（第一个平台）。与目标、会话那两处一样，
-          那是我自己加的便利，旧平台没有——后果是启动后什么都没点，
-          界面已经替你选好了一个平台。
+          这里踩过两次，都是「替你选好」：
           
-          没有平台时各面板显示「请选择平台」，那是旧平台本来就有的状态
-          （`请选择平台` / `请选择一个目标` 都在它的文案里）。
+          1. 曾经退回 `items[0]`（第一个平台）；
+          2. 改成只认 localStorage 里的上次选择之后，**用户打开仍然看到选中了
+             Codex**——因为那个键里就存着他上次用的
+             `{providerId:"codex", targetId:"codex:local:…"}`。
+             「还原」和「挑第一个」在他眼里是同一件事：不是我选的。
+          
+          现在一律留空。没选平台时各面板显示「请选择平台」，
+          那是旧平台本来就有的状态（`请选择平台` / `请选择一个目标` 都在它的文案里）。
         */
-        const wanted =
-          restored?.providerId && items.some((p) => p.id === restored.providerId)
-            ? restored.providerId
-            : "";
-        setProviderId(wanted);
+        setProviderId("");
       } catch (problem) {
         if (!cancelled) setError(describe(problem));
       }
@@ -243,7 +232,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [restored]);
+  }, []);
 
   /* ── 网关端口：状态栏要显示 ── */
   useEffect(() => {
@@ -275,11 +264,13 @@ export function useConsole(options: { notify?: Notify } = {}) {
         const cached = await api.listCachedTargets(wantedProvider);
         if (cached.length > 0) {
           setTargets(cached);
-          setTargetId((current) => pickTarget(cached, [current, restored?.targetId ?? ""]));
+          // `preferred` 只传**当前值**：列表刷新时别把用户已经选的那个丢掉。
+          // 不再传「上次记住的目标」——那会让打开应用就选中一个目标。
+          setTargetId((current) => pickTarget(cached, [current]));
         }
         const fresh = await api.listTargets(wantedProvider);
         setTargets(fresh);
-        setTargetId((current) => pickTarget(fresh, [current, restored?.targetId ?? ""]));
+        setTargetId((current) => pickTarget(fresh, [current]));
         setError("");
       } catch (problem) {
         setError(describe(problem));
@@ -287,7 +278,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setBusy(false);
       }
     },
-    [restored]
+    []
   );
 
   useEffect(() => {
@@ -397,10 +388,16 @@ export function useConsole(options: { notify?: Notify } = {}) {
     }
   }, [targetId, selectedId, messageStart, loadingMore]);
 
-  /* ── 选择变化就记下来（供下次启动还原） ── */
-  useEffect(() => {
-    if (providerId && targetId) writeLastSelection({ providerId, targetId });
-  }, [providerId, targetId]);
+  /*
+    **这里曾经有一段「选择变化就记下来，供下次启动还原」的 effect，已删除。**
+    
+    它写的是 `aivc.ui.lastSelection`。用户报「打开还是选中 Codex / 本机 Codex」，
+    实测就是它在起作用：那个键里存着上一次的
+    `{providerId:"codex", targetId:"codex:local:…"}`。
+    
+    写和读一起删掉——只删读取的话，那个键会变成没人用的死数据，
+    以后有人看到它又会去「修好」这条还原。
+  */
 
   useEffect(() => {
     if (startedRef.current) return;

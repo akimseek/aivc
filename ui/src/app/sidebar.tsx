@@ -197,6 +197,17 @@ export function Sidebar({
             value={state.providerId}
             onChange={(event) => state.selectProvider(event.target.value as never)}
           >
+            {/*
+              **占位项：没有选中时显示「请选择平台」。**
+              
+              少了它，`value=""` 而 option 里没有空值时浏览器会**视觉上高亮第一项**
+              ——于是「没选平台」看起来像「选了 Codex」。用户报的正是这个：
+              应用状态其实已经是空的（目标没被拉取、侧栏写着「暂无可用目标」），
+              但下拉框里显示着 Codex。
+              
+              文案与旧平台一致（它有 `请选择平台` / `请选择一个目标`）。
+            */}
+            <option value="">请选择平台</option>
             {state.providers.length === 0 && <option value="">加载中…</option>}
             {state.providers.map((provider) => (
               <option key={provider.id} value={provider.id}>

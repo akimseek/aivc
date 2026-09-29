@@ -484,18 +484,28 @@ export function useConsole() {
     [targetId, selectedId, view, query, loadSessions]
   );
 
-  const duplicateCurrent = useCallback(async () => {
-    if (!targetId || !selectedId) return;
-    try {
-      const copy = await api.duplicateSession(targetId, selectedId);
-      await loadSessions(targetId, view, query);
-      // 复制完直接选中副本——否则用户要在列表里找哪一条才是新的。
-      setSelectedId(copy.id);
-      setError("");
-    } catch (problem) {
-      setError(`复制失败：${describe(problem)}`);
-    }
-  }, [targetId, selectedId, view, query, loadSessions]);
+  /**
+   * 复制当前选中的会话。
+   *
+   * `title` 可选：右键菜单那条路径会**问名字**（旧平台的复制对话框有个
+   * 「会话名称（可选）」字段）。不问的话列表里立刻出现两条一模一样的标题，
+   * 而用户复制它通常正是为了改出个不同的名字。
+   */
+  const duplicateCurrent = useCallback(
+    async (title?: string) => {
+      if (!targetId || !selectedId) return;
+      try {
+        const copy = await api.duplicateSession(targetId, selectedId, title);
+        await loadSessions(targetId, view, query);
+        // 复制完直接选中副本——否则用户要在列表里找哪一条才是新的。
+        setSelectedId(copy.id);
+        setError("");
+      } catch (problem) {
+        setError(`复制失败：${describe(problem)}`);
+      }
+    },
+    [targetId, selectedId, view, query, loadSessions]
+  );
 
   const exportCurrent = useCallback(
     async (format: ExportFormat) => {

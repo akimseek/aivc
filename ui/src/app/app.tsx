@@ -20,6 +20,7 @@ import { planResume } from "./resume-session";
 import { SessionContextMenu } from "./session-context-menu";
 import { SessionActions, exportToDirectory } from "./session-actions";
 import { SessionDetailContainer } from "./session-detail-container";
+import { SessionDuplicateDialog, SessionRenameDialog } from "./session-title-dialogs";
 import { TabContextMenu } from "./tab-context-menu";
 import { displayTitle } from "./session-display";
 import { SessionSettingsDialog } from "./session-settings-dialog";
@@ -110,6 +111,15 @@ export function App() {
   const [detailSession, setDetailSession] = useState<AiSession | null>(null);
   /** 标签右键菜单的位置与目标标签。`null` 表示没打开。 */
   const [tabMenu, setTabMenu] = useState<{ key: string; x: number; y: number } | null>(null);
+  /**
+   * 从右键菜单打开的重命名 / 复制对话框。
+   *
+   * 与主区那条内联输入框**并存**：那一处是「我正在看的这条」，这一处是
+   * 「列表里的某一条」——两种上下文，因此两个入口。
+   */
+  const [titleDialog, setTitleDialog] = useState<
+    { kind: "rename" | "duplicate"; session: AiSession } | null
+  >(null);
 
   /**
    * 新会话对话框的内容；`null` 表示没打开。
@@ -596,6 +606,32 @@ export function App() {
           onCopyId={() => void api.copyText(menuSession.id)}
           onCopyPath={() => void api.copyText(menuSession.filePath)}
           onRemove={() => void console.removeSession(menuSession, trash)}
+          onRename={() => setTitleDialog({ kind: "rename", session: menuSession })}
+          onDuplicate={() => setTitleDialog({ kind: "duplicate", session: menuSession })}
+        />
+      )}
+
+      {/* 右键菜单来的重命名 / 复制。复制**要问名字**：不问的话列表里立刻出现
+          两条一模一样的标题，而用户复制它通常正是为了改出个不同的名字。 */}
+      {titleDialog?.kind === "rename" && (
+        <SessionRenameDialog
+          session={titleDialog.session}
+          onClose={() => setTitleDialog(null)}
+          onConfirm={(title) => {
+            console.setSelectedId(titleDialog.session.id);
+            void console.renameSession(title);
+            setTitleDialog(null);
+          }}
+        />
+      )}
+      {titleDialog?.kind === "duplicate" && (
+        <SessionDuplicateDialog
+          onClose={() => setTitleDialog(null)}
+          onConfirm={(title) => {
+            console.setSelectedId(titleDialog.session.id);
+            void console.duplicateCurrent(title);
+            setTitleDialog(null);
+          }}
         />
       )}
 

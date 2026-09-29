@@ -54,6 +54,10 @@ export type SessionContextMenuProps = {
   supportsTrash?: boolean;
   onClose: () => void;
   onOpenFolder: () => void;
+  /** 重命名。会话头也有这个按钮，但右键是**就着这条会话**改名的自然位置。 */
+  onRename: () => void;
+  /** 复制出一条新会话。 */
+  onDuplicate: () => void;
   onToggleFavorite: () => void;
   onCopyId: () => void;
   onCopyPath: () => void;
@@ -77,6 +81,8 @@ export function SessionContextMenu({
   supportsTrash = true,
   onClose,
   onOpenFolder,
+  onRename,
+  onDuplicate,
   onToggleFavorite,
   onCopyId,
   onCopyPath,
@@ -115,6 +121,14 @@ export function SessionContextMenu({
       >
         <button type="button" role="menuitem" onClick={run(onOpenFolder)}>
           打开所在目录
+        </button>
+        {/* 重命名与复制放在这里：会话头上虽然也有，但那要**先选中它**才点得到；
+            在列表里右键直接改名/复制才是用户手上的动作。 */}
+        <button type="button" role="menuitem" onClick={run(onRename)}>
+          重命名
+        </button>
+        <button type="button" role="menuitem" onClick={run(onDuplicate)}>
+          复制会话
         </button>
         <button type="button" role="menuitem" onClick={run(onToggleFavorite)}>
           {session.metadata?.favorite ? "取消收藏" : "收藏"}

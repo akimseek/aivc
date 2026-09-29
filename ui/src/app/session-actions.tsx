@@ -25,12 +25,15 @@ export function SessionActions({
   session,
   onRename,
   onDuplicate,
-  onExport
+  onExport,
+  onOpenDetail
 }: {
   session: AiSession | null;
   onRename: (title: string) => void;
   onDuplicate: () => void;
   onExport: (format: "markdown" | "json" | "html", toDirectory?: boolean) => void;
+  /** 打开详情弹层（旧平台在会话头右侧有「详情」按钮）。 */
+  onOpenDetail: () => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const disabled = !session;
@@ -56,6 +59,9 @@ export function SessionActions({
 
   return (
     <>
+      <Button small disabled={disabled} onClick={onOpenDetail} title="打开会话详情">
+        详情
+      </Button>
       <Button
         small
         disabled={disabled}

@@ -977,6 +977,58 @@ select {
   font-size: var(--ui-text-xs);
 }
 
+/* ── 会话详情弹层 ────────────────────────────────────── */
+
+/*
+ * 比普通对话框宽得多：它是**读会话**用的，560px 一行放不下几句中文。
+ */
+.session-detail-dialog {
+  min-width: min(920px, 92vw);
+  max-width: min(920px, 92vw);
+  max-height: 86vh;
+}
+
+.session-detail-dialog .dialog-header,
+.session-detail-dialog .dialog-footer,
+.session-detail-dialog .detail-meta,
+.session-detail-dialog .pagination {
+  flex: 0 0 auto;
+}
+
+.detail-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.detail-meta strong {
+  overflow: hidden;
+  color: var(--ui-text);
+  font-size: var(--ui-text-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 消息区自己滚。**不滚整个面板**：滚动整块会把分页控件一起滚走，
+ * 而用户翻页时恰恰要按它。
+ */
+.detail-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+  border-top: 1px solid var(--ui-divider);
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+
 /*
  * CLI 配置文件的只读视图。
  *

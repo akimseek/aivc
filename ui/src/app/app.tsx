@@ -19,6 +19,7 @@ import { NewSessionDialog } from "./new-session-dialog";
 import { planResume } from "./resume-session";
 import { SessionContextMenu } from "./session-context-menu";
 import { SessionActions, exportToDirectory } from "./session-actions";
+import { SessionDetailContainer } from "./session-detail-container";
 import { displayTitle } from "./session-display";
 import { SessionSettingsDialog } from "./session-settings-dialog";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
@@ -98,6 +99,14 @@ export function App() {
 
   /** 最近一次导出的实际落点，显示出来让用户知道东西去哪了。 */
   const [exportedTo, setExportedTo] = useState("");
+
+  /**
+   * 会话详情弹层。
+   *
+   * 与主区那条线程**并存**：那条是「随列表走的浏览」，这条是「停下来研究一条」。
+   * 旧平台就是这么分的（`session-detail-modal.tsx`），两者是两种动作而不是二选一。
+   */
+  const [detailSession, setDetailSession] = useState<AiSession | null>(null);
 
   /**
    * 新会话对话框的内容；`null` 表示没打开。
@@ -590,6 +599,20 @@ export function App() {
       {/* 退出确认由**后端**发起（它拦得住窗口关闭），这里只负责显示与回答。 */}
       <ExitConfirm onError={console.setError} />
 
+      {/* 会话详情：把一条会话**停下来看**。分页与取数都在那个容器里，
+          这里只持有「要看哪一条」——关掉就回到原来的视图。 */}
+      <SessionDetailContainer
+        session={detailSession}
+        target={selectedTarget}
+        onClose={() => setDetailSession(null)}
+        resolveParent={(sessionId) => sessionById(sessionId)}
+        onBranch={(sourceLine) => void console.branchFromMessage(sourceLine)}
+        onOpenSession={(session) => {
+          if (selectedTarget) void beginResumeSession(selectedTarget, session);
+        }}
+        onError={console.setError}
+      />
+
       {configOpen && (
         <ConfigOverlay
           providerId={console.providerId}
@@ -662,6 +685,7 @@ export function App() {
           sessionActions={
             <SessionActions
               session={console.selectedSession}
+              onOpenDetail={() => setDetailSession(console.selectedSession)}
               onRename={(title) => void console.renameSession(title)}
               onDuplicate={() => void console.duplicateCurrent()}
               onExport={(format, toDirectory) => {

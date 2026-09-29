@@ -116,6 +116,8 @@ export function AppOverlays({
   targets,
   selectedTarget,
   trash,
+  canDuplicate,
+  canBranch,
   resolveSession,
   tabLabel,
   closableTabCount
@@ -132,6 +134,14 @@ export function AppOverlays({
   selectedTarget: AiTarget | null;
   /** 在回收站视图里时，删除项变成「彻底删除」。 */
   trash: boolean;
+  /**
+   * 当前平台的能力。
+   *
+   * 由调用方算好传进来，不在这里查：`AppOverlays` 拿不到 `providers` 与当前平台的
+   * 对应关系之外的东西，而且**能力判定只该有一处**（`provider-capabilities.ts`）。
+   */
+  canDuplicate: boolean;
+  canBranch: boolean;
   /** 按编号找会话——右键菜单要它的文件路径。 */
   resolveSession: (sessionId: string) => AiSession | undefined;
   /** 标签菜单显示的那张标签的标题。 */
@@ -221,6 +231,7 @@ export function AppOverlays({
           y={state.menu.y}
           session={menuSession}
           trash={trash}
+          canDuplicate={canDuplicate}
           onClose={actions.closeMenu}
           onOpenFolder={() => actions.openSessionFolder(menuSession)}
           onToggleFavorite={() => actions.toggleFavorite(menuSession)}
@@ -276,6 +287,7 @@ export function AppOverlays({
         onClose={actions.closeDetail}
         resolveParent={resolveSession}
         onBranch={actions.branchFromMessage}
+        canBranch={canBranch}
         onOpenSession={actions.resumeSession}
         onError={actions.reportError}
       />

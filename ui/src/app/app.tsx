@@ -7,6 +7,7 @@ import { AppMenubar } from "./app-menubar";
 import { SessionActions, exportToDirectory } from "./session-actions";
 import type { ConfigTab } from "./config-overlay";
 import { AppOverlays } from "./overlay-layer";
+import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
 import { displayTitle } from "./session-display";
@@ -371,10 +372,10 @@ export function App() {
    */
   const commands = useMemo<Command[]>(
     () => [
-      { id: "pane.sessions", group: "视图", label: "显示会话列表", run: () => console.setPane("sessions") },
-      { id: "pane.quick", group: "视图", label: "显示快捷访问", run: () => console.setPane("quick") },
+      { id: "pane.sessions", group: "视图", label: "显示会话列表", run: () => { console.setPane("sessions"); console.setView("active"); } },
+      { id: "pane.favorites", group: "视图", label: "显示收藏夹", run: () => console.setPane("favorites") },
       { id: "pane.search", group: "视图", label: "显示全局搜索", run: () => console.setPane("search") },
-      { id: "view.active", group: "视图", label: "切换到活跃会话", run: () => { console.setPane("sessions"); console.setView("active"); } },
+      { id: "view.active", group: "视图", label: "切换到当前会话", run: () => { console.setPane("sessions"); console.setView("active"); } },
       { id: "view.trash", group: "视图", label: "切换到回收站", run: () => { console.setPane("sessions"); console.setView("trash"); } },
       { id: "term.codex", group: "终端", label: "新建 Codex 终端", run: beginNewSession },
       { id: "term.shell", group: "终端", label: "新建系统终端", run: () => void openSystemTerminal() },
@@ -567,6 +568,9 @@ export function App() {
         targets={console.targets}
         selectedTarget={selectedTarget}
         trash={trash}
+        // 能力判定只在这里算一次：`provider-capabilities.ts` 是唯一的判据来源。
+        canDuplicate={supportsDuplicate(console.providers, console.providerId)}
+        canBranch={supportsBranch(console.providers, console.providerId)}
         resolveSession={sessionById}
         tabLabel={workspace.tabItems.find((item) => item.key === tabMenu?.key)?.label ?? "标签"}
         closableTabCount={workspace.closableKeys().length}

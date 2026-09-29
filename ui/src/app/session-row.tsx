@@ -24,6 +24,8 @@ export function SessionRow({
   session,
   active,
   checked,
+  /** 平台支不支持批量操作。不支持时**不渲染勾选框**——一个勾不出结果的框是误导。 */
+  selectable = true,
   onOpen,
   onToggle,
   onFavorite,
@@ -32,6 +34,7 @@ export function SessionRow({
   session: AiSession;
   active: boolean;
   checked: boolean;
+  selectable?: boolean;
   onOpen: () => void;
   onToggle: () => void;
   onFavorite: () => void;
@@ -52,14 +55,16 @@ export function SessionRow({
         onMenu(event.clientX, event.clientY);
       }}
       leading={
-        <input
-          type="checkbox"
-          checked={checked}
-          aria-label="选择会话"
-          // 勾选不该顺带把会话也打开——那是两件事。
-          onClick={(event) => event.stopPropagation()}
-          onChange={onToggle}
-        />
+        selectable ? (
+          <input
+            type="checkbox"
+            checked={checked}
+            aria-label="选择会话"
+            // 勾选不该顺带把会话也打开——那是两件事。
+            onClick={(event) => event.stopPropagation()}
+            onChange={onToggle}
+          />
+        ) : undefined
       }
       title={title}
       trailing={

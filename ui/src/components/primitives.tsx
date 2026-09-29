@@ -40,13 +40,28 @@ export function Button({
 
 /* ── 分段切换（活跃/回收站、视图切换…）─────────────────── */
 
+export type ChipOption = {
+  value: string;
+  label: string;
+  /**
+   * 不可用。
+   *
+   * 有些项在当前平台上没有意义（例如 Qoder 上的「回收站」）。
+   * **禁用而不是隐藏**：隐藏会让那一行在不同平台上长度不一样，
+   * 用户会以为功能被删了；禁用配上 `title` 才说得出「为什么不能点」。
+   */
+  disabled?: boolean;
+  /** 鼠标悬停时的说明。禁用时通常写清原因。 */
+  title?: string;
+};
+
 export function ChipGroup({
   value,
   options,
   onChange
 }: {
   value: string;
-  options: { value: string; label: string }[];
+  options: ChipOption[];
   onChange: (value: string) => void;
 }) {
   return (
@@ -57,6 +72,8 @@ export function ChipGroup({
           type="button"
           className={`chip${option.value === value ? " on" : ""}`}
           aria-pressed={option.value === value}
+          disabled={option.disabled}
+          title={option.title}
           onClick={() => onChange(option.value)}
         >
           {option.label}

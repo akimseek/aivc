@@ -16,8 +16,16 @@ import {
 import type { AiProviderSummary, AiTarget, ApiVendor } from "../types";
 import { emptySessionMessage } from "./session-display";
 import { QuickGroup, SearchResultRow, SessionRow } from "./session-row";
+import {
+  paneForViewNav,
+  showsSessionSearchRow,
+  showsViewNav,
+  supportsBatchActions,
+  supportsTrash,
+  viewNavKey,
+  type ViewNavKey
+} from "./sidebar-nav";
 import { SidebarWorkbench } from "./sidebar-workbench";
-import type { SidebarPane } from "./use-console";
 import type { useConsole } from "./use-console";
 
 /** 侧栏需要的那部分 console 状态与动作。用具名类型而不是 `any`，字段改名时会编译报错。 */
@@ -116,6 +124,15 @@ export function Sidebar({
   const quickCount = state.quickAccess.favorites.length + state.quickAccess.recent.length;
   const workbenchOpen = state.pane === "workbench";
   const provider = providers.find((item) => item.id === state.providerId);
+  /**
+   * 当前平台支不支持回收站与批量操作。
+   *
+   * 这两个判断**必须走能力矩阵**，不能写死：Qoder 不支持回收站
+   * （`ProviderCapabilities::trash == false`），写死的话它的用户会看到一个
+   * 点下去必然报错的「回收站」。
+   */
+  const canUseTrash = supportsTrash(providers, state.providerId);
+  const canBatch = supportsBatchActions(providers, state.providerId);
 
   /**
    * 折起来时**只保留那个按钮**。
@@ -218,18 +235,26 @@ export function Sidebar({
       <div className="list-head">
         <Toolbar>
           {/* 一级导航。**包一层**是为了在 CSS 里和二级拉开轻重——两级用的是同一个
-              `ChipGroup`，不区分的话看上去完全一样，用户分不出哪层是哪层。 */}
+              `ChipGroup`，不区分的话看上去完全一样，用户分不出哪层是哪层。
+
+              一级只有两个：**工作台 / 会话**。收藏夹与全局搜索此前是这里的一级项，
+              但旧平台把它们放在下一层（收藏夹是二级筛选、「全部会话」是搜索行里的按钮），
+              摆成一级会让人以为它们是另外两处地方。 */}
           <div className="pane-nav">
             <ChipGroup
-              value={state.pane}
-              onChange={(value) => state.setPane(value as SidebarPane)}
+              value={state.pane === "workbench" ? "workbench" : "sessions"}
+              onChange={(value) => {
+                if (value === "workbench") {
+                  state.setPane("workbench");
+                  return;
+                }
+                // 点「会话」回到当前会话列表：从收藏夹/回收站回来时这是最可能想去的地方。
+                state.setPane("sessions");
+                state.setView("active");
+              }}
               options={[
-                /* 一级导航的顺序与旧平台一致：**工作台在最前**。
-                   它是「现在怎么样」的概览，而会话列表是「我要打开哪一条」。 */
                 { value: "workbench", label: "工作台" },
-                { value: "sessions", label: "会话" },
-                { value: "quick", label: "快捷" },
-                { value: "search", label: "搜索" }
+                { value: "sessions", label: "会话" }
               ]}
             />
           </div>
@@ -239,35 +264,53 @@ export function Sidebar({
               ? "概览"
               : state.pane === "sessions"
                 ? `${state.sessions.length} 条`
-                : state.pane === "quick"
+                : state.pane === "favorites"
                   ? `${quickCount} 条`
                   : `${state.globalResults.length} 条`}
           </span>
         </Toolbar>
 
-        {state.pane === "sessions" && (
+        {showsViewNav(state.pane) && (
           <Toolbar>
             {/* 二级视图。比一级轻一档：它是**同一批内容的筛选**，不是另一处地方。 */}
             <div className="view-nav">
               <ChipGroup
-                value={state.view}
-                onChange={(value) => state.setView(value === "trash" ? "trash" : "active")}
+                value={viewNavKey(state.pane, state.view)}
+                onChange={(value) => {
+                  const next = paneForViewNav(value as ViewNavKey);
+                  state.setPane(next.pane);
+                  state.setView(next.view);
+                }}
                 options={[
-                  { value: "active", label: "活跃" },
-                  { value: "trash", label: "回收站" }
+                  { value: "active", label: "当前会话" },
+                  { value: "favorites", label: "收藏夹" },
+                  {
+                    value: "trash",
+                    label: "回收站",
+                    // 平台不支持回收站时**禁用并说明原因**，而不是给一个点了会报错的项。
+                    disabled: !canUseTrash,
+                    title: canUseTrash ? "查看回收站" : "请选择支持回收站的平台"
+                  }
                 ]}
               />
             </div>
           </Toolbar>
         )}
 
-        {state.pane === "sessions" && (
-          <SearchInput
-            value={state.query}
-            onChange={state.setQuery}
-            placeholder="搜索标题、编号、正文…"
-            busy={state.searching}
-          />
+        {showsSessionSearchRow(state.pane) && (
+          <div className="session-search-row">
+            <SearchInput
+              value={state.query}
+              onChange={state.setQuery}
+              placeholder="搜索当前平台会话"
+              busy={state.searching}
+            />
+            {/* 全局搜索是**一个按钮**，不是一级导航里的一处地方：
+                它是「在当前这个列表里找不到，去别处找」这个动作。 */}
+            <Button small onClick={() => state.setPane("search")}>
+              全部会话
+            </Button>
+          </div>
         )}
 
         {state.pane === "search" && (
@@ -297,7 +340,10 @@ export function Sidebar({
         )}
       </div>
 
-      {state.pane === "sessions" && selectedCount > 0 && (
+      {/* 批量条只在**平台支持批量操作**且有勾选时出现。
+          不支持批量操作的平台（例如 Qoder）上，勾选框本身也不渲染——
+          那条规则在会话行那边，由 `selectable` 控制。 */}
+      {state.pane === "sessions" && canBatch && selectedCount > 0 && (
         <div className="batchbar">
           <span>已选 {selectedCount} 项</span>
           <ToolbarSpacer />
@@ -372,6 +418,7 @@ export function Sidebar({
               session={session}
               active={session.id === state.selectedId}
               checked={state.selectedIds.includes(session.id)}
+              selectable={canBatch}
               onOpen={() => {
                 if (selectedTarget) onResume(selectedTarget, session.id);
               }}
@@ -381,7 +428,7 @@ export function Sidebar({
             />
           ))}
 
-        {state.pane === "quick" && (
+        {state.pane === "favorites" && (
           <>
             <QuickGroup
               title="收藏"

@@ -1725,3 +1725,22 @@ select {
   font-size: 12px;
   white-space: pre;
 }
+/* ── 会话搜索行（输入框 + 「全部会话」按钮）──────────────
+   旧平台的形状：搜索当前平台的会话，旁边一个按钮跳到全局搜索。
+   两者必须挨着——它们是「在当前这个列表里找不到，去别处找」的同一件事。 */
+.session-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.session-search-row .search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 禁用的分段项：要能看出不能点，但仍要看得见——
+   隐藏会让那一行在不同平台上长度不一样，用户会以为功能被删了。 */
+.chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

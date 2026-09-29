@@ -46,6 +46,13 @@ export type SessionContextMenuProps = {
    * 而右键正是「就着这一条做事」的位置。旧平台的回收站菜单里就有「恢复」。
    */
   onRestore: () => void;
+  /**
+   * 平台支不支持复制会话。
+   *
+   * Qoder 不支持（`ProviderCapabilities::duplicate == false`）。不门控的话
+   * 它的用户会看到一个**点下去必然报错**的项——旧平台用 `canDuplicate` 挡过这一条。
+   */
+  canDuplicate?: boolean;
 };
 
 /*
@@ -63,6 +70,7 @@ export function SessionContextMenu({
   session,
   trash,
   supportsTrash = true,
+  canDuplicate = true,
   onClose,
   onOpenFolder,
   onRename,
@@ -112,9 +120,11 @@ export function SessionContextMenu({
         <button type="button" role="menuitem" onClick={run(onRename)}>
           重命名
         </button>
-        <button type="button" role="menuitem" onClick={run(onDuplicate)}>
-          复制会话
-        </button>
+        {canDuplicate && (
+          <button type="button" role="menuitem" onClick={run(onDuplicate)}>
+            复制会话
+          </button>
+        )}
         <button type="button" role="menuitem" onClick={run(onToggleFavorite)}>
           {session.metadata?.favorite ? "取消收藏" : "收藏"}
         </button>

@@ -30,6 +30,7 @@ export function SessionDetailContainer({
   onOpenSession,
   resolveParent,
   onBranch,
+  canBranch = true,
   onError
 }: {
   /** 要看的会话；`null` 表示不打开。 */
@@ -41,6 +42,8 @@ export function SessionDetailContainer({
   /** 从已加载列表里找父会话。 */
   resolveParent: (sessionId: string) => AiSession | undefined;
   onBranch: (sourceLine: number) => void;
+  /** 平台支不支持分支。原样往下传，见 `SessionDetailDialog`。 */
+  canBranch?: boolean;
   onError?: (message: string) => void;
 }) {
   const [pageSize, setPageSize] = useState(50);
@@ -72,6 +75,7 @@ export function SessionDetailContainer({
           onBranch(sourceLine);
           onClose();
         }}
+        canBranch={canBranch}
         onClose={onClose}
         branchPanel={
           <BranchPanel

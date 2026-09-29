@@ -34,6 +34,7 @@ export function SessionDetailDialog({
   onPageSizeChange,
   onReload,
   onBranch,
+  canBranch = true,
   onClose,
   branchPanel
 }: {
@@ -50,6 +51,13 @@ export function SessionDetailDialog({
   onPageSizeChange: (size: number) => void;
   onReload: () => void;
   onBranch: (sourceLine: number) => void;
+  /**
+   * 平台支不支持「从此处分支」。
+   *
+   * Qoder 不支持（`ProviderCapabilities::branch == false`）。不门控的话每条带
+   * 行号的消息下面都挂一个点下去必然报错的按钮。
+   */
+  canBranch?: boolean;
   onClose: () => void;
   /** 分支关系面板（由调用方注入，它要拉子会话）。 */
   branchPanel?: ReactNode;
@@ -149,8 +157,11 @@ export function SessionDetailDialog({
               key={`${message.sourceLine ?? index}`}
               message={message}
               onBranch={
-                // 只有带原始行号的消息才能分支——后端要靠行号定位原始记录。
-                message.sourceLine === undefined ? undefined : () => onBranch(message.sourceLine!)
+                // 两个条件都要：平台支持分支，且这条消息有原始行号
+                // （后端要靠行号定位原始记录）。
+                !canBranch || message.sourceLine === undefined
+                  ? undefined
+                  : () => onBranch(message.sourceLine!)
               }
             />
           ))

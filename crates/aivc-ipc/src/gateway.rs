@@ -103,6 +103,83 @@ impl GatewayRules {
         ctx.failover_rule().save(&input).await
     }
 
+    /// 试一条**还没保存**的规则会不会命中。
+    ///
+    /// # 为什么这条命令值得存在
+    ///
+    /// 故障规则的匹配是「不区分大小写的包含匹配 + 状态码精确匹配」的**或**关系。
+    /// 用户配完最想知道的是「我这条规则到底会不会命中」——而这件事
+    /// **只有规则引擎自己说了算**。
+    ///
+    /// 若让界面自己实现一遍匹配，两份逻辑迟早分叉，表现是
+    /// 「测试说会命中、实际没切换」——那是最难查的一类偏差。
+    /// 因此这里直接调用 core 里那份 `match_rule`，与转发路径**同源**。
+    ///
+    /// # 参数
+    ///
+    /// - `rule`：规则本体（与 `gateway:save-failover-rule` 同形状，`id` 可省）；
+    /// - `statusCode`：模拟的上游状态码，可省；
+    /// - `message`：模拟的上游错误文本，可省。
+    ///
+    /// 三者至少要给出一个「可命中的条件」，否则必然不命中——那是用户的配置问题，
+    /// 不是错误，照常返回 `matched: false`。
+    ///
+    /// # Errors
+    ///
+    /// 规则参数非法（作用域/匹配条件/自定义响应那几条校验与保存时一致）。
+    pub fn test_failover_rule(args: &Value) -> Result<Value> {
+        let input: FailoverRuleInput = serde_json::from_value(
+            args.get("rule").cloned().unwrap_or(Value::Null),
+        )
+        .map_err(|error| {
+            aivc_core::Error::Ipc(aivc_core::error::IpcError::CommandFailed {
+                message: format!("参数无效：gateway failover rule（{error}）"),
+            })
+        })?;
+        // **走同一套归一化与校验**：测试时被拒的规则，保存时也会被拒。
+        // 反过来也一样——否则测试会给出保存不了的「通过」。
+        let normalized = input.normalize()?;
+
+        let status_code = match args.get("statusCode") {
+            None | Some(Value::Null) => None,
+            Some(value) => Some(
+                u16::try_from(value.as_u64().ok_or_else(|| {
+                    aivc_core::Error::Ipc(aivc_core::error::IpcError::InvalidParameter {
+                        name: "statusCode".to_owned(),
+                    })
+                })?)
+                .map_err(|_| {
+                    aivc_core::Error::Ipc(aivc_core::error::IpcError::InvalidParameter {
+                        name: "statusCode".to_owned(),
+                    })
+                })?,
+            ),
+        };
+        // 空串按「没给」处理：界面上的输入框空着时传的就是空串。
+        let message = args
+            .get("message")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        let hit = aivc_core::gateway::match_rule(
+            &normalized.pattern,
+            Some(normalized.status_codes.as_slice()),
+            status_code,
+            message,
+        );
+        Ok(serde_json::json!({
+            "matched": hit.is_some(),
+            // `matchedBy` 让界面能说清是**被哪一项**命中的——只回布尔值时，
+            // 用户看到「没命中」不知道该改状态码还是改文本。
+            "matchedBy": match hit {
+                Some(aivc_core::gateway::RuleHit::Status) => "status",
+                Some(aivc_core::gateway::RuleHit::Pattern) => "pattern",
+                None => "none",
+            },
+        }))
+    }
+
     /// 删除规则。
     ///
     /// # Errors

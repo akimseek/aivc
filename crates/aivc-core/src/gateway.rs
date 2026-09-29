@@ -330,21 +330,60 @@ impl FailoverRule {
     /// 导致的请求路径异常）。
     #[must_use]
     pub fn matches(&self, status_code: Option<u16>, message: Option<&str>) -> bool {
-        if let (Some(code), Some(codes)) = (status_code, self.status_codes.as_ref())
-            && codes.contains(&code)
-        {
-            return true;
-        }
-        if self.pattern.is_empty() {
-            return false;
-        }
-        let Some(message) = message else {
-            return false;
-        };
-        message
-            .to_lowercase()
-            .contains(&self.pattern.to_lowercase())
+        match_rule(
+            &self.pattern,
+            self.status_codes.as_deref(),
+            status_code,
+            message,
+        )
+        .is_some()
     }
+}
+
+/// 规则命中的**是哪一条**。
+///
+/// 「测试规则」这个功能需要它：只回一个布尔值，用户看到「没命中」仍然不知道
+/// 是自己状态码写错了还是错误文本写错了。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RuleHit {
+    /// 被状态码命中。
+    Status,
+    /// 被错误文本命中（不区分大小写的包含匹配）。
+    Pattern,
+}
+
+/// 判一条规则是否命中，以及**被哪一项命中**。
+///
+/// # 为什么抽成自由函数
+///
+/// `FailoverRule::matches`（转发路径用）与「测试规则」命令必须用**同一份**判断，
+/// 否则会出现「测试说会命中、实际没切换」这种最难查的偏差。
+///
+/// # 顺序与语义
+///
+/// 状态码先判：它是**精确**匹配，而文本是包含匹配——两者都命中时报状态码更有用。
+/// 任一命中即为命中（旧平台也是「或」的关系）。
+#[must_use]
+pub fn match_rule(
+    pattern: &str,
+    status_codes: Option<&[u16]>,
+    status_code: Option<u16>,
+    message: Option<&str>,
+) -> Option<RuleHit> {
+    if let (Some(code), Some(codes)) = (status_code, status_codes)
+        && codes.contains(&code)
+    {
+        return Some(RuleHit::Status);
+    }
+    if pattern.is_empty() {
+        return None;
+    }
+    let message = message?;
+    message
+        .to_lowercase()
+        .contains(&pattern.to_lowercase())
+        .then_some(RuleHit::Pattern)
 }
 
 // ---------------------------------------------------------------------------
@@ -844,6 +883,76 @@ mod tests {
         rule.status_codes = Some(vec![500]);
         assert!(rule.matches(Some(500), Some("anything")));
         assert!(!rule.matches(Some(200), Some("anything")));
+    }
+
+    /// 命中时**要能说出是被哪一项命中的**。
+    ///
+    /// 「测试规则」功能靠它：只回布尔值时，用户看到「没命中」不知道该改状态码还是改文本。
+    #[test]
+    fn match_rule_reports_which_condition_hit() {
+        let codes = [400u16, 429];
+        // 状态码精确命中。
+        assert_eq!(
+            match_rule("boom", Some(&codes), Some(429), None),
+            Some(RuleHit::Status)
+        );
+        // 文本包含命中（不区分大小写）。
+        assert_eq!(
+            match_rule(
+                "rate limit",
+                None,
+                None,
+                Some("Upstream RATE LIMIT exceeded")
+            ),
+            Some(RuleHit::Pattern)
+        );
+        // 两者都不会命中。
+        assert_eq!(
+            match_rule("boom", Some(&codes), Some(200), Some("all good")),
+            None
+        );
+        // **两者都命中时报状态码**：它是精确匹配，对用户更有用。
+        assert_eq!(
+            match_rule("boom", Some(&codes), Some(400), Some("boom happened")),
+            Some(RuleHit::Status)
+        );
+    }
+
+    /// 空模式只按状态码判；没有消息时文本这一项不得命中。
+    #[test]
+    fn match_rule_edge_cases() {
+        assert_eq!(match_rule("", None, Some(500), Some("x")), None);
+        assert_eq!(match_rule("x", None, None, None), None);
+        assert_eq!(match_rule("x", None, Some(500), None), None);
+        // 状态码列表为空等价于「不按状态码判」。
+        assert_eq!(match_rule("x", Some(&[]), Some(500), None), None);
+    }
+
+    /// **`FailoverRule::matches` 与 `match_rule` 必须同源**。
+    ///
+    /// 这条是这一组里最要紧的：转发路径用前者、「测试规则」用后者。两份判断一旦
+    /// 分叉，就会出现「测试说会命中、实际没切换」——那是最难查的一类偏差。
+    #[test]
+    fn the_forwarding_path_and_the_test_command_agree() {
+        let mut rule = stored_rule(FailoverRuleScope::Global, "Rate Limit");
+        rule.status_codes = Some(vec![429]);
+        let cases: [(Option<u16>, Option<&str>); 6] = [
+            (Some(429), None),
+            (Some(429), Some("anything")),
+            (Some(500), Some("rate limit hit")),
+            (Some(500), Some("all good")),
+            (None, Some("RATE LIMIT")),
+            (None, None),
+        ];
+        for (status, message) in cases {
+            let via_rule = rule.matches(status, message);
+            let via_function =
+                match_rule(&rule.pattern, rule.status_codes.as_deref(), status, message).is_some();
+            assert_eq!(
+                via_rule, via_function,
+                "status={status:?} message={message:?}"
+            );
+        }
     }
 
     #[test]

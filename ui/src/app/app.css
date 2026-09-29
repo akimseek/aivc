@@ -1886,3 +1886,13 @@ select {
   font-size: 12px;
   white-space: pre;
 }
+/* ── 故障规则的「试规则」区 ──────────────────────────────
+   与规则本体分开：试的输入**不是规则的一部分**，视觉上就不该混在一起。 */
+.rule-test {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--ui-border, #30363d);
+}
+.rule-test .tag {
+  margin-left: 8px;
+}

@@ -78,7 +78,7 @@ impl CommandDomain {
 /// 现网的会话命令统一挂在 `codex:` 前缀下，但它们**服务全部四个平台**——平台由
 /// `targetId` 区分（如 `claude:local`）。这是历史命名，改名会破坏前端与既有文档，
 /// 因此保留并在此说明。
-pub const COMMANDS: [(&str, CommandDomain); 90] = [
+pub const COMMANDS: [(&str, CommandDomain); 91] = [
     ("app:command", CommandDomain::App),
     ("app:exit-choice", CommandDomain::App),
     ("app:get-version", CommandDomain::App),
@@ -141,6 +141,11 @@ pub const COMMANDS: [(&str, CommandDomain); 90] = [
     ("gateway:set-external-api-enabled", CommandDomain::Gateway),
     ("gateway:set-failover-rule-enabled", CommandDomain::Gateway),
     ("gateway:set-port", CommandDomain::Gateway),
+    // 试一条**还没保存**的规则会不会命中。
+    //
+    // 有它才不必在前端重写一份匹配逻辑——规则引擎只有 Rust 那一份，
+    // 两份一旦分叉就会出现「测试说会命中、实际没切换」。
+    ("gateway:test-failover-rule", CommandDomain::Gateway),
     ("models:list", CommandDomain::Models),
     ("performance:log", CommandDomain::Performance),
     ("shell:open-path", CommandDomain::Shell),
@@ -241,8 +246,8 @@ mod tests {
     #[test]
     fn the_command_count_is_stable() {
         // 前端契约的一部分：漏接或多接一条都会在这里暴露。
-        assert_eq!(COMMAND_COUNT, 90);
-        assert_eq!(command_names().len(), 90);
+        assert_eq!(COMMAND_COUNT, 91);
+        assert_eq!(command_names().len(), 91);
     }
 
     #[test]
@@ -290,7 +295,7 @@ mod tests {
         assert_eq!(commands_of(CommandDomain::Cli).len(), 2);
         assert_eq!(commands_of(CommandDomain::Clipboard).len(), 3);
         assert_eq!(commands_of(CommandDomain::Dialog).len(), 3);
-        assert_eq!(commands_of(CommandDomain::Gateway).len(), 19);
+        assert_eq!(commands_of(CommandDomain::Gateway).len(), 20);
         assert_eq!(commands_of(CommandDomain::Models).len(), 1);
         assert_eq!(commands_of(CommandDomain::Performance).len(), 1);
         assert_eq!(commands_of(CommandDomain::Shell).len(), 5);

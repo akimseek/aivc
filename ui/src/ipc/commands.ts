@@ -454,6 +454,43 @@ export const saveFailoverRule = (request: {
   enabled?: boolean;
 }) => invoke<FailoverRule>("gateway:save-failover-rule", request);
 
+/**
+ * 试一条**还没保存**的规则会不会命中。
+ *
+ * # 为什么必须有这条命令
+ *
+ * 匹配规则是「状态码精确匹配 **或** 错误文本包含匹配」。这件事**只有规则引擎自己
+ * 说了算**——界面自己实现一遍的话，两份逻辑迟早分叉，表现是「测试说会命中、
+ * 实际没切换」，而那是最难查的一类偏差。
+ *
+ * 返回 `matchedBy` 而不是只回布尔值：用户看到「没命中」需要知道该改状态码
+ * 还是该改文本。
+ *
+ * 与保存**走同一套校验**，因此测试被拒的规则，保存时也会被拒。
+ */
+export const testFailoverRule = (request: {
+  /** 规则本体，与 `saveFailoverRule` 同形状（`id` 可省）。 */
+  rule: {
+    id?: string;
+    scope: FailoverRuleScope;
+    providerId?: string;
+    vendorId?: string;
+    pattern: string;
+    statusCodes?: number[];
+    customResponseStatus?: number;
+    customResponseBody?: string;
+    enabled?: boolean;
+  };
+  /** 模拟的上游状态码。 */
+  statusCode?: number;
+  /** 模拟的上游错误文本。 */
+  message?: string;
+}) =>
+  invoke<{ matched: boolean; matchedBy: "status" | "pattern" | "none" }>(
+    "gateway:test-failover-rule",
+    request
+  );
+
 /** 删除规则。 */
 export const deleteFailoverRule = (id: string) =>
   invoke<boolean>("gateway:delete-failover-rule", { id });

@@ -421,6 +421,34 @@ impl CommandRouter {
         }
     }
 
+    /// 故障规则的四个同构转发分支。
+    ///
+    /// 抽出来只为让 `dispatch` 待在 clippy 的行数上限内（这些分支的形状完全一样），
+    /// 没有别的语义。
+    ///
+    /// # Errors
+    ///
+    /// 参数非法或数据库读写失败。
+    async fn dispatch_failover_rules(
+        &self,
+        ctx: &ProviderContext,
+        command: &str,
+        args: &Value,
+    ) -> Result<Value> {
+        match command {
+            "gateway:list-failover-rules" => {
+                to_value(GatewayRules::list_failover_rules(ctx).await?)
+            }
+            "gateway:save-failover-rule" => {
+                to_value(GatewayRules::save_failover_rule(ctx, args).await?)
+            }
+            "gateway:delete-failover-rule" => {
+                to_value(GatewayRules::delete_failover_rule(ctx, args).await?)
+            }
+            _ => to_value(GatewayRules::set_failover_rule_enabled(ctx, args).await?),
+        }
+    }
+
     /// 分发一次调用。
     ///
     /// 返回值已经是**线上形状**（`serde_json::Value`），可以直接交给 Tauri 序列化。
@@ -591,18 +619,18 @@ impl CommandRouter {
             "gateway:reset-vendor-health" => self.reset_vendor_health(ctx, &args).await,
 
             // --- 网关：故障规则 ---
-            "gateway:list-failover-rules" => {
-                to_value(GatewayRules::list_failover_rules(ctx).await?)
+            //
+            // 四条走 [`Self::dispatch_failover_rules`]。抽出去是因为 `dispatch` 本身
+            // 被 clippy 盯着行数上限（150），而这些分支只是形状相同的转发。
+            "gateway:list-failover-rules"
+            | "gateway:save-failover-rule"
+            | "gateway:delete-failover-rule"
+            | "gateway:set-failover-rule-enabled" => {
+                // 不加 `?`：match 的各个分支本身就是 `Result<Value>`（这就是返回表达式）。
+                self.dispatch_failover_rules(ctx, command, &args).await
             }
-            "gateway:save-failover-rule" => {
-                to_value(GatewayRules::save_failover_rule(ctx, &args).await?)
-            }
-            "gateway:delete-failover-rule" => {
-                to_value(GatewayRules::delete_failover_rule(ctx, &args).await?)
-            }
-            "gateway:set-failover-rule-enabled" => {
-                to_value(GatewayRules::set_failover_rule_enabled(ctx, &args).await?)
-            }
+            // 纯计算：**不落库**，因此直接返回（不用 `to_value` 包一层 Result）。
+            "gateway:test-failover-rule" => GatewayRules::test_failover_rule(&args),
 
             // --- 网关：用量与日志 ---
             "gateway:get-usage-summary" => {
@@ -1040,6 +1068,7 @@ mod tests {
         assert!(is_implemented("workspace:save-preset"));
         assert!(is_implemented("gateway:get-port"));
         assert!(is_implemented("gateway:save-failover-rule"));
+        assert!(is_implemented("gateway:test-failover-rule"));
         assert!(is_implemented("gateway:rotate-external-api-token"));
         assert!(is_implemented("vendor:list"));
         assert!(is_implemented("codex:set-wsl-codex-home"));
@@ -1295,6 +1324,40 @@ mod tests {
             .await
             .expect("rules");
         assert!(rules.as_array().expect("数组").is_empty());
+
+        // 试规则：**不落库**，因此列表仍然是空的；返回值要说清被哪一项命中。
+        let hit = router
+            .dispatch(
+                "gateway:test-failover-rule",
+                json!({
+                    "rule": { "scope": "global", "pattern": "rate limit", "statusCodes": [429] },
+                    "statusCode": 429
+                }),
+            )
+            .await
+            .expect("test");
+        assert_eq!(hit["matched"], json!(true));
+        assert_eq!(hit["matchedBy"], json!("status"));
+        assert!(
+            router
+                .dispatch("gateway:list-failover-rules", json!({}))
+                .await
+                .expect("rules")
+                .as_array()
+                .expect("数组")
+                .is_empty(),
+            "试规则不得写库"
+        );
+
+        // 试一条**非法**规则：与保存走同一套校验，因此这里也要被拒。
+        let error = router
+            .dispatch(
+                "gateway:test-failover-rule",
+                json!({ "rule": { "scope": "global", "pattern": "" } }),
+            )
+            .await
+            .expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "请至少配置错误文本或 HTTP 状态码。");
 
         // 用量查询要求显式区间——缺省会让聚合扫全表。
         let error = router

@@ -178,6 +178,15 @@ export function FailoverRulesSection({
 }) {
   const [rules, setRules] = useState<FailoverRule[]>([]);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
+  const [testing, setTesting] = useState(false);
+  /**
+   * 上一次试规则的结果。
+   *
+   * `null` = 还没试过（与「试了没命中」是两件事，因此不能用一个布尔量表达）。
+   */
+  const [testResult, setTestResult] = useState<
+    { matched: boolean; matchedBy: "status" | "pattern" | "none" } | null
+  >(null);
 
   const load = useCallback(async () => {
     try {
@@ -193,6 +202,13 @@ export function FailoverRulesSection({
 
   const save = async () => {
     if (!draft || !draft.pattern.trim()) return;
+    // 自定义返回先解析：任何一处不合法就整体不提交——提交一半再报错，
+    // 用户不知道哪一项存进去了。
+    const custom = parseCustomResponse(draft.customStatus, draft.customBody);
+    if (!custom.ok) {
+      onError(custom.message);
+      return;
+    }
     try {
       await api.saveFailoverRule({
         ...(draft.id ? { id: draft.id } : {}),
@@ -208,6 +224,8 @@ export function FailoverRulesSection({
                 .filter((value) => Number.isInteger(value) && value > 0)
             }
           : {}),
+        ...(custom.status === undefined ? {} : { customResponseStatus: custom.status }),
+        ...(custom.body === undefined ? {} : { customResponseBody: custom.body }),
         enabled: draft.enabled
       });
       setDraft(null);
@@ -215,6 +233,44 @@ export function FailoverRulesSection({
       onNotify?.(draft.id ? "故障规则已保存。" : "已新增故障规则。");
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  /** 试当前这条草稿会不会命中。**不落库**，后端也只做纯计算。 */
+  const test = async () => {
+    if (!draft) return;
+    const custom = parseCustomResponse(draft.customStatus, draft.customBody);
+    if (!custom.ok) {
+      onError(custom.message);
+      return;
+    }
+    setTesting(true);
+    try {
+      const result = await api.testFailoverRule({
+        rule: {
+          scope: draft.scope,
+          pattern: draft.pattern.trim(),
+          ...(draft.statusCodes.trim()
+            ? {
+                statusCodes: draft.statusCodes
+                  .split(",")
+                  .map((part) => Number.parseInt(part.trim(), 10))
+                  .filter((value) => Number.isInteger(value) && value > 0)
+              }
+            : {}),
+          ...(custom.status === undefined ? {} : { customResponseStatus: custom.status }),
+          ...(custom.body === undefined ? {} : { customResponseBody: custom.body })
+        },
+        ...(draft.testStatus.trim()
+          ? { statusCode: Number.parseInt(draft.testStatus.trim(), 10) }
+          : {}),
+        ...(draft.testMessage.trim() ? { message: draft.testMessage.trim() } : {})
+      });
+      setTestResult(result);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -228,7 +284,21 @@ export function FailoverRulesSection({
         <ToolbarSpacer />
         <Button
           small
-          onClick={() => setDraft({ id: "", scope: "global", pattern: "", statusCodes: "", enabled: true })}
+          onClick={() =>
+            setDraft({
+              id: "",
+              scope: "global",
+              pattern: "",
+              statusCodes: "",
+              enabled: true,
+              customStatus: "",
+              customBody: "",
+              // 试规则的输入给一个**能立刻命中**的默认值：用户点「试一下」就想看到
+              // 反馈，默认空着会一律得到「没命中」，看起来像功能坏了。
+              testStatus: "429",
+              testMessage: ""
+            })
+          }
         >
           新增规则
         </Button>
@@ -266,7 +336,72 @@ export function FailoverRulesSection({
                 onChange={(event) => setDraft({ ...draft, statusCodes: event.target.value })}
               />
             </Field>
+            {/*
+              自定义返回：命中时**由网关自己应答**，而不是把上游的错误原样透传给客户端。
+              两项必须同时配置（后端校验），因此中间画一条线，让它们看起来是一组。
+            */}
+            <Field
+              label="自定义返回状态码"
+              hint="命中时返回给客户端的状态码，100–599。留空表示透传上游。"
+            >
+              <TextInput
+                value={draft.customStatus}
+                inputMode="numeric"
+                placeholder="例如 503"
+                onChange={(event) => setDraft({ ...draft, customStatus: event.target.value })}
+              />
+            </Field>
+            <Field label="自定义返回内容（JSON）" hint="与状态码必须同时填；不超过 32 KB。">
+              <TextInput
+                value={draft.customBody}
+                placeholder='例如 {"error":"上游不可用，请稍后重试"}'
+                onChange={(event) => setDraft({ ...draft, customBody: event.target.value })}
+              />
+            </Field>
           </div>
+
+          {/*
+            试规则。
+            
+            匹配是「状态码 **或** 错误文本」，只有规则引擎说了算——因此这件事**必须**
+            问后端（`gateway:test-failover-rule`），不能在前端重写一遍匹配逻辑。
+          */}
+          <div className="rule-test">
+            <div className="field-grid">
+              <Field label="试：上游状态码" hint="模拟上游返回的状态码，可留空。">
+                <TextInput
+                  value={draft.testStatus}
+                  inputMode="numeric"
+                  placeholder="例如 429"
+                  onChange={(event) => setDraft({ ...draft, testStatus: event.target.value })}
+                />
+              </Field>
+              <Field label="试：上游错误文本" hint="粘贴供应商返回的错误信息，可留空。">
+                <TextInput
+                  value={draft.testMessage}
+                  placeholder="例如 credit insufficient balance"
+                  onChange={(event) => setDraft({ ...draft, testMessage: event.target.value })}
+                />
+              </Field>
+            </div>
+            <Toolbar>
+              <Button small disabled={testing} onClick={() => void test()}>
+                {testing ? "测试中…" : "试一下"}
+              </Button>
+              {testResult && (
+                // **说清是被哪一项命中的**：只说「命中」时用户不知道是哪一条生效了，
+                // 而两条都写错时会以为都对。
+                <span className={testResult.matched ? "tag ok" : "tag off"}>
+                  {testResult.matchedBy === "status"
+                    ? "会命中：状态码匹配"
+                    : testResult.matchedBy === "pattern"
+                      ? "会命中：错误文本包含"
+                      : "不会命中"}
+                </span>
+              )}
+            </Toolbar>
+          </div>
+
           <Toolbar>
             <Button
               small
@@ -317,7 +452,16 @@ export function FailoverRulesSection({
                         scope: rule.scope,
                         pattern: rule.pattern,
                         statusCodes: rule.statusCodes?.join(",") ?? "",
-                        enabled: rule.enabled
+                        enabled: rule.enabled,
+                        // **必须回填**：不回填的话，点一次「保存修改」就会把用户配好的
+                        // 自定义返回当成「没填」而清掉（供应商那三项踩过同一个坑）。
+                        customStatus:
+                          rule.customResponseStatus === undefined
+                            ? ""
+                            : String(rule.customResponseStatus),
+                        customBody: rule.customResponseBody ?? "",
+                        testStatus: (rule.statusCodes?.[0] ?? 429).toString(),
+                        testMessage: ""
                       })
                     }
                   >
@@ -375,7 +519,57 @@ type RuleDraft = {
   pattern: string;
   statusCodes: string;
   enabled: boolean;
+  /**
+   * 命中时网关自己返回给客户端的**状态码与正文**（而不是把上游的错原样透传）。
+   *
+   * 两项**必须同时配置**（后端校验：「自定义返回状态码和内容必须同时配置。」），
+   * 因此这里存成字符串、提交时一起判断。
+   */
+  customStatus: string;
+  customBody: string;
+  /** 试规则用的模拟输入。**不是规则的一部分**，因此不参与提交。 */
+  testStatus: string;
+  testMessage: string;
 };
+
+/**
+ * 解析「自定义返回」两项。
+ *
+ * 四条校验照旧平台：
+ * - 状态码必须是 100–599 的整数；
+ * - 正文必须是合法 JSON；
+ * - 正文不超过 32 KB；
+ * - **状态码与正文必须同时配置**。
+ *
+ * 放在提交之前统一判，返回第一处错误——一次只报一条比堆一串更难读。
+ * 后端也有同样的校验（这里是提前告知，不是替代）。
+ */
+export function parseCustomResponse(
+  status: string,
+  body: string
+): { ok: true; status?: number; body?: string } | { ok: false; message: string } {
+  const statusText = status.trim();
+  const bodyText = body.trim();
+  if (statusText === "" && bodyText === "") return { ok: true };
+  if (statusText === "" || bodyText === "") {
+    return { ok: false, message: "自定义返回状态码和内容必须同时配置。" };
+  }
+  const code = Number(statusText);
+  if (!Number.isInteger(code) || code < 100 || code > 599) {
+    return { ok: false, message: "自定义返回状态码需为 100 到 599 之间的整数。" };
+  }
+  // 32 KB 按**字节**算（UTF-8）：中文字符一个占三字节，按字符数算会放过三倍的量。
+  const size = new TextEncoder().encode(bodyText).length;
+  if (size > 32 * 1024) {
+    return { ok: false, message: "自定义返回内容不能超过 32 KB。" };
+  }
+  try {
+    JSON.parse(bodyText);
+  } catch {
+    return { ok: false, message: "自定义返回内容必须是合法 JSON。" };
+  }
+  return { ok: true, status: code, body: bodyText };
+}
 
 /**
  * 外部 API。

@@ -417,6 +417,17 @@ impl CommandRouter {
         match command {
             "gateway:get-port" => GatewaySettingsCommands::get_port(ctx, &address).await,
             "gateway:set-port" => GatewaySettingsCommands::set_port(ctx, args, &address).await,
+            // 三个韧性阈值。它们的实现**一直都在**，只是从没登记过命令；
+            // 与上面几条一样需要当前地址（返回值是同一份完整状态）。
+            "gateway:set-failure-threshold" => {
+                GatewaySettingsCommands::set_failure_threshold(ctx, args, &address).await
+            }
+            "gateway:set-circuit-failure-threshold" => {
+                GatewaySettingsCommands::set_circuit_failure_threshold(ctx, args, &address).await
+            }
+            "gateway:set-circuit-duration-seconds" => {
+                GatewaySettingsCommands::set_circuit_duration_seconds(ctx, args, &address).await
+            }
             _ => GatewaySettingsCommands::set_enabled(ctx, args, &address).await,
         }
     }
@@ -651,9 +662,17 @@ impl CommandRouter {
 
             // --- 网关：设置 ---
             //
-            // 这三条都要**当前监听地址**（界面要显示「其他客户端该连哪里」，而端口为 0 时
-            // 真实端口只有网关状态知道），因此一起交给下面那个方法。
-            "gateway:get-port" | "gateway:set-port" | "gateway:set-enabled" => {
+            // 这六条都要**当前监听地址**（界面要显示「其他客户端该连哪里」，而端口为 0 时
+            // 真实端口只有网关状态知道），而且返回的是**同一份完整状态**，
+            // 因此一起交给下面那个方法。
+            //
+            // 后三条是三个韧性阈值：实现**一直都在**（含边界校验），只是从没登记过命令。
+            "gateway:get-port"
+            | "gateway:set-port"
+            | "gateway:set-enabled"
+            | "gateway:set-failure-threshold"
+            | "gateway:set-circuit-failure-threshold"
+            | "gateway:set-circuit-duration-seconds" => {
                 self.dispatch_gateway_settings(ctx, command, &args).await
             }
             "gateway:get-external-api-status" => {
@@ -1358,6 +1377,33 @@ mod tests {
             .await
             .expect_err("必须拒绝");
         assert_eq!(error.to_string(), "请至少配置错误文本或 HTTP 状态码。");
+
+        // 三个韧性阈值：**实现一直都在，只是从没登记过**。这里确认它们真的通到命令面。
+        let updated = router
+            .dispatch(
+                "gateway:set-circuit-failure-threshold",
+                json!({ "value": 5 }),
+            )
+            .await
+            .expect("threshold");
+        assert_eq!(updated["circuitFailureThreshold"], json!(5));
+        // 返回的是与 `get-port` **同一个形状**，因此界面可以整体替换状态。
+        let read = router
+            .dispatch("gateway:get-port", json!({}))
+            .await
+            .expect("port");
+        let keys = |value: &Value| {
+            let mut list: Vec<String> = value.as_object().expect("对象").keys().cloned().collect();
+            list.sort();
+            list
+        };
+        assert_eq!(keys(&read), keys(&updated));
+
+        let error = router
+            .dispatch("gateway:set-failure-threshold", json!({ "value": 11 }))
+            .await
+            .expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "异常切换阈值必须是 1 到 10 之间的整数。");
 
         // 用量查询要求显式区间——缺省会让聚合扫全表。
         let error = router

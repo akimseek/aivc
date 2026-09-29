@@ -78,7 +78,7 @@ impl CommandDomain {
 /// 现网的会话命令统一挂在 `codex:` 前缀下，但它们**服务全部四个平台**——平台由
 /// `targetId` 区分（如 `claude:local`）。这是历史命名，改名会破坏前端与既有文档，
 /// 因此保留并在此说明。
-pub const COMMANDS: [(&str, CommandDomain); 91] = [
+pub const COMMANDS: [(&str, CommandDomain); 94] = [
     ("app:command", CommandDomain::App),
     ("app:exit-choice", CommandDomain::App),
     ("app:get-version", CommandDomain::App),
@@ -138,6 +138,17 @@ pub const COMMANDS: [(&str, CommandDomain); 91] = [
     ("gateway:rotate-external-api-token", CommandDomain::Gateway),
     ("gateway:save-failover-rule", CommandDomain::Gateway),
     ("gateway:set-enabled", CommandDomain::Gateway),
+    // 三个韧性阈值。**实现一直都在**（含边界校验），只是从没登记进这张表，
+    // 因此命令面里查不到、界面也就没法调这三个设置。
+    ("gateway:set-failure-threshold", CommandDomain::Gateway),
+    (
+        "gateway:set-circuit-failure-threshold",
+        CommandDomain::Gateway,
+    ),
+    (
+        "gateway:set-circuit-duration-seconds",
+        CommandDomain::Gateway,
+    ),
     ("gateway:set-external-api-enabled", CommandDomain::Gateway),
     ("gateway:set-failover-rule-enabled", CommandDomain::Gateway),
     ("gateway:set-port", CommandDomain::Gateway),
@@ -246,8 +257,8 @@ mod tests {
     #[test]
     fn the_command_count_is_stable() {
         // 前端契约的一部分：漏接或多接一条都会在这里暴露。
-        assert_eq!(COMMAND_COUNT, 91);
-        assert_eq!(command_names().len(), 91);
+        assert_eq!(COMMAND_COUNT, 94);
+        assert_eq!(command_names().len(), 94);
     }
 
     #[test]
@@ -295,7 +306,7 @@ mod tests {
         assert_eq!(commands_of(CommandDomain::Cli).len(), 2);
         assert_eq!(commands_of(CommandDomain::Clipboard).len(), 3);
         assert_eq!(commands_of(CommandDomain::Dialog).len(), 3);
-        assert_eq!(commands_of(CommandDomain::Gateway).len(), 20);
+        assert_eq!(commands_of(CommandDomain::Gateway).len(), 23);
         assert_eq!(commands_of(CommandDomain::Models).len(), 1);
         assert_eq!(commands_of(CommandDomain::Performance).len(), 1);
         assert_eq!(commands_of(CommandDomain::Shell).len(), 5);

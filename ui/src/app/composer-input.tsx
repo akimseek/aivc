@@ -9,7 +9,10 @@ import {
   insertAtCursor,
   pasteMarker,
   shouldCompact,
-  type PastedBlock
+  terminalInputButtonLabel,
+  terminalInputButtonTitle,
+  type PastedBlock,
+  type TerminalInputMode
 } from "./composer-text";
 
 /**
@@ -45,10 +48,21 @@ const MAX_HEIGHT = 420;
 
 export function ComposerInput({
   terminalId,
+  inputMode = "composer",
+  onToggleInputMode,
   onSent,
   onError
 }: {
   terminalId: string;
+  /** 键盘输入当前去哪一边；见 [`TerminalInputMode`]。 */
+  inputMode?: TerminalInputMode;
+  /**
+   * 在「自管输入框」与「终端原生输入」之间切换。
+   *
+   * 不传就不渲染那个按钮——旧平台也只在输入框可见时才让切
+   * （`canToggleTerminalInput = composerVisible`）。
+   */
+  onToggleInputMode?: () => void;
   /** 提交成功后的回调：让父组件把焦点还给终端或记住「已提交」。 */
   onSent?: (text: string) => void;
   onError: (message: string) => void;
@@ -346,6 +360,26 @@ export function ComposerInput({
           {dragging ? "松手即添加" : blocks.length > 0 ? `已收起 ${blocks.length} 段长内容` : ""}
         </span>
         <span className="spacer" />
+        {/*
+          切换键盘输入去哪一边。
+
+          旧平台这个按钮在状态栏上，而且**只在输入框可见时**才可用
+          （`canToggleTerminalInput = composerVisible`）——输入框藏着的时候
+          「切换输入位置」没有意义。这里它就在输入框里，因此那个条件天然成立；
+          不传 `onToggleInputMode` 时干脆不渲染。
+
+          按钮上的字写的是**点下去会切到哪**（旧平台如此），不是当前在哪：
+          写成当前状态的话，用户会以为它只是个指示器。
+        */}
+        {onToggleInputMode && (
+          <Button
+            small
+            onClick={onToggleInputMode}
+            title={terminalInputButtonTitle(inputMode)}
+          >
+            {terminalInputButtonLabel(inputMode)}
+          </Button>
+        )}
         <Button
           small
           variant="primary"

@@ -626,6 +626,28 @@ export const notify = (title: string, detail?: string) =>
 /** 网关端口状态。 */
 export const getGatewayPort = () => invoke<GatewayPortStatus>("gateway:get-port");
 
+/* ── 网关韧性阈值 ───────────────────────────────────────
+ *
+ * 三条命令**已经在后端完整实现**（含边界校验与错误文案），此前只是没登记进命令表，
+ * 因此命令面里查不到、界面也就没法调这三个设置。
+ *
+ * 三个 setter 都返回**完整的 `GatewayPortStatus`**（不是只回显那一个数），
+ * 与 `setGatewayPort` / `setGatewayEnabled` 一致——界面可以整体替换状态，
+ * 不会因为「只回了一部分字段」把别的抹掉。
+ */
+
+/** 异常切换阈值（1–10）。 */
+export const setGatewayFailureThreshold = (value: number) =>
+  invoke<GatewayPortStatus>("gateway:set-failure-threshold", { value });
+
+/** 熔断次数（1–20）。 */
+export const setGatewayCircuitFailureThreshold = (value: number) =>
+  invoke<GatewayPortStatus>("gateway:set-circuit-failure-threshold", { value });
+
+/** 熔断持续时间（10–86400 秒）。 */
+export const setGatewayCircuitDurationSeconds = (value: number) =>
+  invoke<GatewayPortStatus>("gateway:set-circuit-duration-seconds", { value });
+
 /* ── 终端 ─────────────────────────────────────────────
  *
  * 后端的事件通道名与命令名一样是**契约**，因此也放在这一层：

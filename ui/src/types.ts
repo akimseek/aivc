@@ -215,6 +215,20 @@ export type GatewayPortStatus = {
   activePort: number;
   /** 可直接使用的地址，形如 `http://127.0.0.1:50064`；空串表示没有在监听。 */
   baseUrl: string;
+  /*
+    三个韧性阈值也在**这一份形状**里。
+    
+    它们原来由一个没有调用方的 `get_settings` 单独返回，字段名还不一样
+    （那份用 `port` / `enabled`，这份用 `configuredPort` / `activePort`）——
+    同一份数据的两个形状，而那个既没人调用也没人测试。
+    合并之后：读一次、改一次，界面拿到的都是完整状态。
+  */
+  /** 同一供应商连续失败达到该次数后切换到下一个（1–10）。 */
+  failureThreshold?: number;
+  /** 时间窗口内累计失败达到该次数后熔断（1–20）。 */
+  circuitFailureThreshold?: number;
+  /** 熔断持续秒数（10–86400）。 */
+  circuitDurationSeconds?: number;
 };
 
 /* ── 终端 ─────────────────────────────────────────────── */

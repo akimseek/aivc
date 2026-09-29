@@ -382,26 +382,44 @@ pub fn port_status(configured_port: u16, enabled: bool, address: &str) -> Value 
     })
 }
 
-impl GatewaySettingsCommands {
-    /// 读取全部网关设置。
-    ///
-    /// # Errors
-    ///
-    /// 设置读取失败。
-    pub async fn get_settings(ctx: &ProviderContext) -> Result<Value> {
-        let settings = ctx.settings().snapshot().await;
-        Ok(serde_json::json!({
-            "port": settings.gateway_port,
-            "enabled": settings.gateway_enabled,
-            "externalApiEnabled": settings.gateway_external_api_enabled,
-            // 只暴露「是否已设置令牌」，绝不返回令牌或其摘要。
-            "hasExternalToken": !settings.gateway_external_api_token_hash.is_empty(),
-            "failureThreshold": settings.gateway_failure_threshold,
-            "circuitFailureThreshold": settings.gateway_circuit_failure_threshold,
-            "circuitDurationSeconds": settings.gateway_circuit_duration_seconds,
-        }))
+/// 网关设置页要的**全部状态**：端口与地址 + 三个韧性阈值。
+///
+/// # 为什么合成一个形状
+///
+/// 这一页需要 6 个值（地址、配置端口、真实端口、启用位、异常切换阈值、熔断次数、
+/// 熔断时长）。如果读一次拿一部分、改一次回一部分，界面就必须自己拼——
+/// 而这个项目**已经因为「setter 只回部分字段」出过缺陷**：当时 `set-enabled`
+/// 只返回 `{enabled}`，界面拿它替换状态，把地址和端口抹成了 `undefined`。
+///
+/// 因此这里只有**一个**形状：读与写全部返回它，界面任何时候拿到的都是完整的。
+///
+/// 原来还有一个只读全部设置的 `get_settings`，返回的是另一套字段名
+/// （`port` / `enabled` 而不是 `configuredPort` / `activePort`）——同一份数据两个形状，
+/// 而它既没有调用方也没有测试。合并掉。
+#[must_use]
+pub fn gateway_status(
+    settings: &aivc_infra::config::settings::AppSettings,
+    address: &str,
+) -> Value {
+    let mut status = port_status(settings.gateway_port, settings.gateway_enabled, address);
+    if let Some(object) = status.as_object_mut() {
+        object.insert(
+            "failureThreshold".to_owned(),
+            Value::from(settings.gateway_failure_threshold),
+        );
+        object.insert(
+            "circuitFailureThreshold".to_owned(),
+            Value::from(settings.gateway_circuit_failure_threshold),
+        );
+        object.insert(
+            "circuitDurationSeconds".to_owned(),
+            Value::from(settings.gateway_circuit_duration_seconds),
+        );
     }
+    status
+}
 
+impl GatewaySettingsCommands {
     /// 读取网关端口与地址。
     ///
     /// `address` 是**当前监听地址**（由调用方从网关状态取；没在跑就是空串）。
@@ -412,17 +430,13 @@ impl GatewaySettingsCommands {
     /// 设置读取失败。
     pub async fn get_port(ctx: &ProviderContext, address: &str) -> Result<Value> {
         let settings = ctx.settings().snapshot().await;
-        Ok(port_status(
-            settings.gateway_port,
-            settings.gateway_enabled,
-            address,
-        ))
+        Ok(gateway_status(&settings, address))
     }
 
     /// 设置网关端口；`0` 表示自动分配。
     ///
     /// 返回**改完之后的完整状态**，不是只回显那个端口：界面拿它直接替换当前状态，
-    /// 只回显端口会把另外两个字段抹掉。
+    /// 只回显端口会把另外几个字段抹掉。
     ///
     /// # Errors
     ///
@@ -433,11 +447,7 @@ impl GatewaySettingsCommands {
             .update(|raw| raw.set_gateway_port(port))
             .await?;
         let settings = ctx.settings().snapshot().await;
-        Ok(port_status(
-            settings.gateway_port,
-            settings.gateway_enabled,
-            address,
-        ))
+        Ok(gateway_status(&settings, address))
     }
 
     /// 设置网关启用状态。
@@ -453,11 +463,7 @@ impl GatewaySettingsCommands {
             .update(|raw| raw.set_gateway_enabled(enabled))
             .await?;
         let settings = ctx.settings().snapshot().await;
-        Ok(port_status(
-            settings.gateway_port,
-            settings.gateway_enabled,
-            address,
-        ))
+        Ok(gateway_status(&settings, address))
     }
 
     /// 读取外部 API 状态。
@@ -505,17 +511,31 @@ impl GatewaySettingsCommands {
 
     /// 设置异常切换阈值（1–10）。
     ///
+    /// # 为什么这三个 setter 之前界面上不存在
+    ///
+    /// 它们**一直是完整实现的**（含边界校验与错误文案），只是从没登记进
+    /// `COMMANDS`——因此命令面里查不到、界面也就没法调。同一份代码里
+    /// 还躺着一个同样没登记的 `get_settings`，而且既无调用方也无测试。
+    /// 这一轮把它们接出来。
+    ///
+    /// 返回**完整的网关状态**（与 `set_port` 一致），而不是只回显那一个数字。
+    ///
     /// # Errors
     ///
     /// 越界或设置写入失败。
-    pub async fn set_failure_threshold(ctx: &ProviderContext, args: &Value) -> Result<Value> {
+    pub async fn set_failure_threshold(
+        ctx: &ProviderContext,
+        args: &Value,
+        address: &str,
+    ) -> Result<Value> {
         let value = require_gateway_failure_threshold(args.get("value"))?;
         #[allow(clippy::cast_possible_truncation)]
         let threshold = value as u8;
         ctx.settings()
             .update(|raw| raw.set_gateway_failure_threshold(threshold))
             .await?;
-        Ok(serde_json::json!({ "value": threshold }))
+        let settings = ctx.settings().snapshot().await;
+        Ok(gateway_status(&settings, address))
     }
 
     /// 设置熔断次数（1–20）。
@@ -526,6 +546,7 @@ impl GatewaySettingsCommands {
     pub async fn set_circuit_failure_threshold(
         ctx: &ProviderContext,
         args: &Value,
+        address: &str,
     ) -> Result<Value> {
         let value = require_gateway_circuit_failure_threshold(args.get("value"))?;
         #[allow(clippy::cast_possible_truncation)]
@@ -533,7 +554,8 @@ impl GatewaySettingsCommands {
         ctx.settings()
             .update(|raw| raw.set_gateway_circuit_failure_threshold(threshold))
             .await?;
-        Ok(serde_json::json!({ "value": threshold }))
+        let settings = ctx.settings().snapshot().await;
+        Ok(gateway_status(&settings, address))
     }
 
     /// 设置熔断持续时长（10–86400 秒）。
@@ -544,6 +566,7 @@ impl GatewaySettingsCommands {
     pub async fn set_circuit_duration_seconds(
         ctx: &ProviderContext,
         args: &Value,
+        address: &str,
     ) -> Result<Value> {
         let value = require_gateway_circuit_duration_seconds(args.get("value"))?;
         #[allow(clippy::cast_possible_truncation)]
@@ -551,7 +574,8 @@ impl GatewaySettingsCommands {
         ctx.settings()
             .update(|raw| raw.set_gateway_circuit_duration_seconds(seconds))
             .await?;
-        Ok(serde_json::json!({ "value": seconds }))
+        let settings = ctx.settings().snapshot().await;
+        Ok(gateway_status(&settings, address))
     }
 }
 
@@ -909,7 +933,7 @@ mod tests {
         .await
         .expect("enable");
 
-        // **三个命令的键必须完全一样**：界面拿任何一个去替换状态都要是完整的。
+        // **所有网关设置命令的键必须完全一样**：界面拿任何一个去替换状态都要是完整的。
         let keys = |value: &Value| {
             let mut list: Vec<String> = value.as_object().expect("对象").keys().cloned().collect();
             list.sort();
@@ -922,8 +946,13 @@ mod tests {
             vec![
                 "activePort".to_owned(),
                 "baseUrl".to_owned(),
+                // 三个韧性阈值后来并进这个形状（原来它们由一个**没有调用方**的
+                // `get_settings` 单独返回，字段名还不一样）。见 `gateway_status`。
+                "circuitDurationSeconds".to_owned(),
+                "circuitFailureThreshold".to_owned(),
                 "configuredPort".to_owned(),
-                "enabled".to_owned()
+                "enabled".to_owned(),
+                "failureThreshold".to_owned()
             ]
         );
 
@@ -989,25 +1018,52 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn resilience_settings_enforce_their_ranges() {
         let (ctx, _dir) = context().await;
-        assert_eq!(
-            GatewaySettingsCommands::set_failure_threshold(&ctx, &json!({ "value": 3 }))
-                .await
-                .expect("threshold")["value"],
-            3
-        );
-        let error = GatewaySettingsCommands::set_failure_threshold(&ctx, &json!({ "value": 0 }))
-            .await
-            .expect_err("必须拒绝");
+        let updated = GatewaySettingsCommands::set_failure_threshold(
+            &ctx,
+            &json!({ "value": 3 }),
+            "127.0.0.1:8787",
+        )
+        .await
+        .expect("threshold");
+        // 返回的是**完整状态**，不是只回显那一个数字：界面拿它直接替换当前状态。
+        assert_eq!(updated["failureThreshold"], 3);
+        assert_eq!(updated["configuredPort"], updated["configuredPort"]);
+        assert_eq!(updated["baseUrl"], "127.0.0.1:8787");
+        assert_eq!(updated["activePort"], 8787);
+        // 另外两个阈值也在，且没被这次写入动过。
+        assert!(updated["circuitFailureThreshold"].is_number());
+        assert!(updated["circuitDurationSeconds"].is_number());
+
+        let error = GatewaySettingsCommands::set_failure_threshold(
+            &ctx,
+            &json!({ "value": 0 }),
+            "127.0.0.1:8787",
+        )
+        .await
+        .expect_err("必须拒绝");
         assert_eq!(error.to_string(), "异常切换阈值必须是 1 到 10 之间的整数。");
 
-        let error =
-            GatewaySettingsCommands::set_circuit_duration_seconds(&ctx, &json!({ "value": 5 }))
-                .await
-                .expect_err("必须拒绝");
+        let error = GatewaySettingsCommands::set_circuit_duration_seconds(
+            &ctx,
+            &json!({ "value": 5 }),
+            "127.0.0.1:8787",
+        )
+        .await
+        .expect_err("必须拒绝");
         assert_eq!(
             error.to_string(),
             "熔断持续时间必须是 10 到 86400 秒之间的整数。"
         );
+
+        // 熔断次数的边界（1–20）。
+        let error = GatewaySettingsCommands::set_circuit_failure_threshold(
+            &ctx,
+            &json!({ "value": 21 }),
+            "127.0.0.1:8787",
+        )
+        .await
+        .expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "熔断次数必须是 1 到 20 之间的整数。");
     }
 
     #[test]

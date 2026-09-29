@@ -139,3 +139,43 @@ export function shouldRevealComposer(visible: boolean, hasOutput: boolean): bool
 export function initialComposerVisible(sessionId: string | undefined): boolean {
   return !sessionId;
 }
+
+/**
+ * 键盘输入去哪一边。
+ *
+ * - `composer`：进**自管输入框**。多行、能贴图、能拖文件，提交时按 bracketed paste 发。
+ * - `terminal`：直接进终端（**原生输入**）。交互式程序（`vim`、`less`、需要 Tab 补全的
+ *   那些）必须在终端里收键，自管输入框帮不上忙。
+ *
+ * 旧平台是一个**显式的模式**加一个状态栏按钮，而不是「谁有焦点就算谁」——
+ * 因此这里也存成一个状态：否则用户点了「终端输入」之后，只要不小心点到输入框，
+ * 模式就悄悄变回去了。
+ */
+export type TerminalInputMode = "composer" | "terminal";
+
+/**
+ * 切换按钮上的字。
+ *
+ * 写的是**点下去会切到哪**，不是当前在哪——旧平台就是这样
+ * （`mode === "composer" ? "终端输入" : "自管输入"`）。
+ * 写成当前状态的话，用户会以为按钮是「当前模式」的指示而不是可点的。
+ */
+export function terminalInputButtonLabel(mode: TerminalInputMode): string {
+  return mode === "composer" ? "终端输入" : "自管输入";
+}
+
+/** 按钮的悬停说明。旧平台原文：「切换到终端原生输入」／「切换到自管输入框」。 */
+export function terminalInputButtonTitle(mode: TerminalInputMode): string {
+  return mode === "composer" ? "切换到终端原生输入" : "切换到自管输入框";
+}
+
+/**
+ * 能不能切换。
+ *
+ * 旧平台的判据是**自管输入框此刻是否可见**（`canToggleTerminalInput =
+ * composerVisible`）：输入框藏着的时候「切换输入位置」没有意义，
+ * 用户看到的只是一个终端。
+ */
+export function canToggleTerminalInput(composerVisible: boolean): boolean {
+  return composerVisible;
+}

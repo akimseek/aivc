@@ -5,7 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import * as api from "../ipc/commands";
 import { ComposerInput } from "./composer-input";
-import { initialComposerVisible, shouldRevealComposer } from "./composer-text";
+import { initialComposerVisible, shouldRevealComposer, type TerminalInputMode } from "./composer-text";
 import { TerminalSearchBar } from "./terminal-search-bar";
 import { TerminalPasteDialog, TerminalTextContextMenu } from "./terminal-text-menu";
 import type { TerminalSink } from "./terminal-output";
@@ -68,6 +68,16 @@ export function TerminalPane({
   const [composerVisible, setComposerVisible] = useState(() =>
     initialComposerVisible(sessionId)
   );
+  /**
+   * 键盘输入去哪一边。
+   *
+   * 输入框一露出来，默认就是「自管输入框」——它出现的原因正是用户想在那里打字。
+   * 交互式程序（`vim`、`less`）要按「终端输入」切回去。
+   *
+   * 旧平台把它存成**显式模式**而不是「谁有焦点算谁」：否则用户点了「终端输入」之后，
+   * 只要不小心点到输入框，模式就悄悄变回去了。
+   */
+  const [inputMode, setInputMode] = useState<TerminalInputMode>("composer");
   const composerVisibleRef = useRef(composerVisible);
   composerVisibleRef.current = composerVisible;
   /** 每次挂载都从初值重新判断：换了一条终端（key 变了）就是另一路。 */
@@ -376,6 +386,27 @@ export function TerminalPane({
       {active && composerVisible && (
         <ComposerInput
           terminalId={terminalId}
+          inputMode={inputMode}
+          /*
+            切换键盘输入去哪一边。
+            
+            旧平台这个按钮在**状态栏**上（`status-bar.tsx`）。这里放在输入框自己的
+            工具条里：状态在 `TerminalPane`（xterm 与输入框都在它手上），
+            放进状态栏就得把它往上提两层再传回来。**流程没变**——一个按钮在
+            「终端原生输入」与「自管输入框」之间切，按钮上的字写的是点下去会切到哪。
+          */
+          onToggleInputMode={() => {
+            const next: TerminalInputMode = inputMode === "composer" ? "terminal" : "composer";
+            setInputMode(next);
+            // 切到哪边就把焦点给哪边：不转移焦点的话「切了但按键盘没反应」。
+            window.requestAnimationFrame(() => {
+              try {
+                if (next === "terminal") termRef.current?.focus();
+              } catch {
+                /* 终端还没挂上，忽略。 */
+              }
+            });
+          }}
           onSent={() => {
             // 发完把焦点还给终端：用户下一件事通常是看 CLI 的回应。
             window.requestAnimationFrame(() => {

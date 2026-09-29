@@ -165,8 +165,184 @@ export function GatewayPanel({
       </Toolbar>
 
       <GatewayInsights onError={onError} />
+      <ResilienceSection onError={onError} onNotify={onNotify} />
       <FailoverRulesSection onError={onError} onNotify={onNotify} />
       <ExternalApiSection onError={onError} onNotify={onNotify} />
+    </>
+  );
+}
+
+/**
+ * 网关的失败转移与熔断阈值。
+ *
+ * # 这三项此前在界面上根本不存在
+ *
+ * 后端的三个 setter **一直是完整实现的**（边界校验与错误文案都在），
+ * 只是从没登记进 `COMMANDS`——因此命令面里查不到、界面也就没法调。
+ * 这一轮把它们接出来。
+ *
+ * # 三条说明文案照旧平台
+ *
+ * 这三个数字对使用者的含义并不直观（「异常切换阈值」尤其如此），
+ * 旧平台为每一项配了一句解释。照抄它们，不要自己另写。
+ *
+ * # 取值范围与旧平台一致
+ *
+ * | 项 | 范围 | 旧平台的原话 |
+ * | --- | --- | --- |
+ * | 异常切换阈值 | 1–10 | `异常切换阈值必须是 1 到 10 之间的整数。` |
+ * | 熔断次数 | 1–20 | `熔断次数必须是 1 到 20 之间的整数。` |
+ * | 熔断持续时间 | 10–86400 秒 | `熔断持续时间必须是 10 到 86400 秒之间的整数。` |
+ *
+ * 界面**先校验一次**只是为了少一次往返与更早的提示；判定仍然以后端为准
+ * （这里绝不自己写一套「大概对」的规则）。
+ */
+export function ResilienceSection({
+  onError,
+  onNotify
+}: {
+  onError: (message: string) => void;
+  onNotify?: (message: string) => void;
+}) {
+  const [status, setStatus] = useState<GatewayPortStatus | null>(null);
+  /** 三个输入的草稿。数字用字符串存——「空」与「0」在输入框里不是一回事。 */
+  const [draft, setDraft] = useState({ failure: "", circuit: "", duration: "" });
+
+  const load = useCallback(async () => {
+    try {
+      const next = await api.getGatewayPort();
+      setStatus(next);
+      setDraft({
+        failure: String(next.failureThreshold ?? ""),
+        circuit: String(next.circuitFailureThreshold ?? ""),
+        duration: String(next.circuitDurationSeconds ?? "")
+      });
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!status) return null;
+
+  /**
+   * 保存一项。
+   *
+   * `label` 是这一项的显示名，用于成功提示里点名改的是哪一个——
+   * 三个数字长得很像，只说「已保存」用户不知道哪一格生效了。
+   */
+  const save = async (
+    label: string,
+    text: string,
+    range: { min: number; max: number; message: string },
+    call: (value: number) => Promise<GatewayPortStatus>
+  ) => {
+    const value = Number(text.trim());
+    if (!Number.isInteger(value) || value < range.min || value > range.max) {
+      onError(range.message);
+      return;
+    }
+    try {
+      // 三个 setter 返回的都是**完整状态**，因此直接替换即可。
+      setStatus(await call(value));
+      onNotify?.(`${label}已保存：${value}`);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  return (
+    <>
+      <h3 className="section-title">失败转移与熔断</h3>
+      <div className="field-grid">
+        <Field
+          label="异常切换阈值（次）"
+          hint="同一供应商连续请求失败达到该次数后，才切换到候选池中的下一个供应商。"
+        >
+          <div className="gateway-address">
+            <TextInput
+              value={draft.failure}
+              inputMode="numeric"
+              aria-label="异常切换阈值"
+              onChange={(event) => setDraft({ ...draft, failure: event.target.value })}
+            />
+            <Button
+              small
+              onClick={() =>
+                void save(
+                  "异常切换阈值",
+                  draft.failure,
+                  { min: 1, max: 10, message: "异常切换阈值必须是 1 到 10 之间的整数。" },
+                  api.setGatewayFailureThreshold
+                )
+              }
+            >
+              保存
+            </Button>
+          </div>
+        </Field>
+
+        <Field
+          label="熔断次数"
+          hint="供应商在该时间窗口内累计失败达到次数后进入熔断状态。"
+        >
+          <div className="gateway-address">
+            <TextInput
+              value={draft.circuit}
+              inputMode="numeric"
+              aria-label="熔断次数"
+              onChange={(event) => setDraft({ ...draft, circuit: event.target.value })}
+            />
+            <Button
+              small
+              onClick={() =>
+                void save(
+                  "熔断次数",
+                  draft.circuit,
+                  { min: 1, max: 20, message: "熔断次数必须是 1 到 20 之间的整数。" },
+                  api.setGatewayCircuitFailureThreshold
+                )
+              }
+            >
+              保存
+            </Button>
+          </div>
+        </Field>
+
+        <Field
+          label="熔断持续时间（秒）"
+          hint="熔断期间不会选择该供应商；到期后进入半开状态并允许一次试探请求。"
+        >
+          <div className="gateway-address">
+            <TextInput
+              value={draft.duration}
+              inputMode="numeric"
+              aria-label="熔断持续时间"
+              onChange={(event) => setDraft({ ...draft, duration: event.target.value })}
+            />
+            <Button
+              small
+              onClick={() =>
+                void save(
+                  "熔断持续时间",
+                  draft.duration,
+                  {
+                    min: 10,
+                    max: 86400,
+                    message: "熔断持续时间必须是 10 到 86400 秒之间的整数。"
+                  },
+                  api.setGatewayCircuitDurationSeconds
+                )
+              }
+            >
+              保存
+            </Button>
+          </div>
+        </Field>
+      </div>
     </>
   );
 }

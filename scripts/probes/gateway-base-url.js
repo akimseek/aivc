@@ -28,10 +28,25 @@
   out.raw = raw;
   out.rawKeys = Object.keys(raw ?? {}).sort();
   check(
-    "gateway:get-port 发的是界面在读的那四个字段",
+    "gateway:get-port 发的是界面在读的那几个字段",
     // 此前它只发 `{port}`，而界面读 `configuredPort`/`activePort`——
     // 于是端口输入框里是字符串 "undefined"，那一格永远显示「未启用」。
-    JSON.stringify(out.rawKeys) === JSON.stringify(["activePort", "baseUrl", "configuredPort", "enabled"]),
+    //
+    // 后来**又多了三个韧性阈值**（异常切换阈值 / 熔断次数 / 熔断时长）：
+    // 它们原来由一个没有调用方的 `get_settings` 单独返回，字段名还不一样，
+    // 是同一份数据的两个形状。合并进来之后，网关设置页读一次就拿到全部。
+    //
+    // 仍然断言**精确的键集合**（不是「包含」）：多出一个没人读的字段同样是缺陷。
+    JSON.stringify(out.rawKeys) ===
+      JSON.stringify([
+        "activePort",
+        "baseUrl",
+        "circuitDurationSeconds",
+        "circuitFailureThreshold",
+        "configuredPort",
+        "enabled",
+        "failureThreshold"
+      ]),
     JSON.stringify(out.rawKeys)
   );
   check(

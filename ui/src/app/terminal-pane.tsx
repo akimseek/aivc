@@ -7,6 +7,7 @@ import * as api from "../ipc/commands";
 import { ComposerInput } from "./composer-input";
 import { initialComposerVisible, shouldRevealComposer } from "./composer-text";
 import { TerminalSearchBar } from "./terminal-search-bar";
+import { TerminalPasteDialog, TerminalTextContextMenu } from "./terminal-text-menu";
 import type { TerminalSink } from "./terminal-output";
 
 /**
@@ -73,6 +74,59 @@ export function TerminalPane({
   useEffect(() => {
     setComposerVisible(initialComposerVisible(sessionId));
   }, [sessionId, terminalId]);
+
+  /** 文本右键菜单。`canCopy` 在右键那一刻取定，见 `onContextMenu`。 */
+  const [textMenu, setTextMenu] = useState<{
+    x: number;
+    y: number;
+    canCopy: boolean;
+  } | null>(null);
+  /** 待确认的粘贴内容。非空即显示确认框，见 `TerminalPasteDialog`。 */
+  const [pasteText, setPasteText] = useState<string | null>(null);
+
+  /**
+   * 复制选中内容。
+   *
+   * 拿不到选中就什么都不做——不要退化成「复制整屏」，
+   * 那会把几万行塞进剪贴板，用户下一次粘贴才知道闯了祸。
+   */
+  const copySelection = useCallback(() => {
+    const selection = termRef.current?.getSelection();
+    if (!selection) return;
+    void api.copyText(selection).catch(() => undefined);
+  }, []);
+
+  /** 读剪贴板并弹出确认框；空内容不弹（弹一个空白框只会让人以为坏了）。 */
+  const requestPaste = useCallback(() => {
+    void api
+      .readText()
+      .then((text) => {
+        if (text) setPasteText(text);
+      })
+      .catch((error: unknown) =>
+        onError(error instanceof Error ? error.message : String(error))
+      );
+  }, [onError]);
+
+  /**
+   * 确认粘贴。
+   *
+   * 走 xterm 自己的 `paste`：它**会处理括号粘贴模式**（应用开启了
+   * `\x1b[?2004h` 就自动加标记），手写这段标记迟早会和模式不同步。
+   *
+   * 先把结尾换行去掉：从网页里拷来的内容几乎总带一个，
+   * 而终端里的换行等于**替用户按下回车**。
+   */
+  const confirmPaste = useCallback(() => {
+    const raw = pasteText;
+    setPasteText(null);
+    if (!raw) return;
+    const text = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n+$/, "");
+    const term = termRef.current;
+    if (!text || !term) return;
+    term.focus();
+    term.paste(text);
+  }, [pasteText]);
 
   /** 终端内查找栏是否打开。Ctrl+F 开、Escape 关。 */
   const [searchOpen, setSearchOpen] = useState(false);
@@ -177,6 +231,22 @@ export function TerminalPane({
       void api.writeTerminal(terminalId, data).catch(() => undefined);
     });
 
+    /**
+     * 右键：拦掉浏览器菜单，开自己的「复制 / 粘贴」。
+     *
+     * 终端是个 `canvas`，浏览器默认菜单对它没有意义（「在新标签页打开图片」之类），
+     * 因此必须拦掉。而一旦拦掉，**复制一段终端输出就只剩「选中 + Ctrl+C」这一条路**，
+     * 鼠标用户没有出口。
+     *
+     * `canCopy` 在这一刻取：菜单弹出后再取就已经晚了（用户可能已经点了别处，
+     * 选中也就没了）。
+     */
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      setTextMenu({ x: event.clientX, y: event.clientY, canCopy: term.hasSelection() });
+    };
+    host.addEventListener("contextmenu", onContextMenu);
+
     const syncSize = () => {
       try {
         fit.fit();
@@ -199,6 +269,7 @@ export function TerminalPane({
     return () => {
       window.cancelAnimationFrame(initial);
       observer.disconnect();
+      host.removeEventListener("contextmenu", onContextMenu);
       dataSub.dispose();
       unregisterSink(terminalId);
       term.dispose();
@@ -316,6 +387,25 @@ export function TerminalPane({
             });
           }}
           onError={onError}
+        />
+      )}
+      {active && textMenu && (
+        <TerminalTextContextMenu
+          x={textMenu.x}
+          y={textMenu.y}
+          canCopy={textMenu.canCopy}
+          // 有终端就能粘：粘贴是往这一路 PTY 写，不需要它是不是在跑。
+          canPaste
+          onCopy={copySelection}
+          onPaste={requestPaste}
+          onDismiss={() => setTextMenu(null)}
+        />
+      )}
+      {active && pasteText !== null && (
+        <TerminalPasteDialog
+          text={pasteText}
+          onCancel={() => setPasteText(null)}
+          onConfirm={confirmPaste}
         />
       )}
     </div>

@@ -534,6 +534,7 @@ export function App() {
           toggleFavorite: (session) => void console.toggleFavorite(session),
           copyText: (text) => void api.copyText(text),
           removeSession: (session) => void console.removeSession(session, trash),
+          restoreSession: (session) => void console.restoreOne(session),
           startRename: (session) => setTitleDialog({ kind: "rename", session }),
           startDuplicate: (session) => setTitleDialog({ kind: "duplicate", session }),
           closeTitleDialog: () => setTitleDialog(null),

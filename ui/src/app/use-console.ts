@@ -430,9 +430,9 @@ export function useConsole() {
   );
 
   /**
-   * 还原。
+   * 恢复。
    *
-   * 后端**没有**批量还原命令（只有单条 `restore-session`），因此这里逐条发。
+   * 后端**没有**批量恢复命令（只有单条 `restore-session`），因此这里逐条发。
    * 一条失败不该让其余停下——把失败条数与成功条数一起报出来，而不是整体回滚。
    */
   const restoreSelected = useCallback(async () => {
@@ -452,11 +452,31 @@ export function useConsole() {
     await loadSessions(targetId, view, query);
     setBusy(false);
     if (failed > 0) {
-      setError(`还原完成：成功 ${refs.length - failed} 条，失败 ${failed} 条。`);
+      setError(`恢复完成：成功 ${refs.length - failed} 条，失败 ${failed} 条。`);
     } else {
       setError("");
     }
   }, [targetId, sessions, selectedIds, view, query, loadSessions]);
+
+  /**
+   * 恢复**一条**（右键菜单用）。
+   *
+   * 与 `restoreSelected` 分开而不是复用它：后者读的是勾选集，
+   * 而右键一条会话时用户并没有勾选它。硬要复用就得先偷偷改勾选集——
+   * 那会让「勾选状态」在用户没动它的时候发生变化。
+   */
+  const restoreOne = useCallback(
+    async (session: AiSession) => {
+      if (!targetId) return;
+      try {
+        await api.restoreSession(targetId, session.id);
+        await loadSessions(targetId, view, query);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [targetId, view, query, loadSessions]
+  );
 
   const selectedTarget = useMemo(
     () => targets.find((target) => target.id === targetId) ?? null,
@@ -756,6 +776,7 @@ export function useConsole() {
     deleteSelected,
     purgeSelected,
     restoreSelected,
+    restoreOne,
     renameSession,
     duplicateCurrent,
     exportCurrent,

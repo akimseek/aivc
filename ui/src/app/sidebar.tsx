@@ -307,7 +307,7 @@ export function Sidebar({
           {trash ? (
             <>
               <Button small onClick={() => void state.restoreSelected()}>
-                还原
+                恢复
               </Button>
               <Button small variant="danger" onClick={() => void state.purgeSelected()}>
                 彻底删除

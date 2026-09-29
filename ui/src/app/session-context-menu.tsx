@@ -1,4 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect } from "react";
+
+import { useViewportMenuPosition } from "./viewport-menu";
 
 import type { AiSession } from "../types";
 
@@ -18,32 +20,6 @@ import type { AiSession } from "../types";
  * 全局监听会把**点菜单自身**也当成「别处」，于是点任何一项之前菜单先关了。
  */
 
-/** 把菜单夹在视口内。布局完成后才量得到尺寸，因此用 `useLayoutEffect`。 */
-function useViewportPosition(x: number, y: number) {
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [position, setPosition] = useState({ x, y });
-
-  useLayoutEffect(() => {
-    const clamp = () => {
-      const element = menuRef.current;
-      if (!element) return;
-      const rect = element.getBoundingClientRect();
-      const margin = 8;
-      const maxX = Math.max(margin, window.innerWidth - rect.width - margin);
-      const maxY = Math.max(margin, window.innerHeight - rect.height - margin);
-      setPosition({
-        x: Math.min(Math.max(x, margin), maxX),
-        y: Math.min(Math.max(y, margin), maxY)
-      });
-    };
-    clamp();
-    window.addEventListener("resize", clamp);
-    return () => window.removeEventListener("resize", clamp);
-  }, [x, y]);
-
-  return { menuRef, position };
-}
-
 export type SessionContextMenuProps = {
   x: number;
   y: number;
@@ -62,6 +38,14 @@ export type SessionContextMenuProps = {
   onCopyId: () => void;
   onCopyPath: () => void;
   onRemove: () => void;
+  /**
+   * 从回收站恢复。
+   *
+   * 只在 `trash` 为真时会用到。此前没有这一项：恢复只能先勾选那一行、
+   * 再到批量条上点「恢复」——**右键一条会话却恢复不了它**，
+   * 而右键正是「就着这一条做事」的位置。旧平台的回收站菜单里就有「恢复」。
+   */
+  onRestore: () => void;
 };
 
 /*
@@ -86,9 +70,10 @@ export function SessionContextMenu({
   onToggleFavorite,
   onCopyId,
   onCopyPath,
-  onRemove
+  onRemove,
+  onRestore
 }: SessionContextMenuProps) {
-  const { menuRef, position } = useViewportPosition(x, y);
+  const { menuRef, position } = useViewportMenuPosition(x, y);
 
   // Escape 关闭。鼠标用户有「点别处」，键盘用户只有这一条路。
   useEffect(() => {
@@ -141,6 +126,13 @@ export function SessionContextMenu({
         <button type="button" role="menuitem" onClick={run(onCopyPath)}>
           复制文件路径
         </button>
+        {/* 在回收站里时，「恢复」必须排在「彻底删除」前面：它是这一步更常用的选择，
+            而销毁是不可撤销的。顺序本身就在防止误点。 */}
+        {supportsTrash && trash && (
+          <button type="button" role="menuitem" onClick={run(onRestore)}>
+            恢复
+          </button>
+        )}
         {supportsTrash && (
           <button type="button" role="menuitem" className="danger" onClick={run(onRemove)}>
             {trash ? "彻底删除" : "移入回收站"}

@@ -70,6 +70,8 @@ export type OverlaysActions = {
   toggleFavorite: (session: AiSession) => void;
   copyText: (text: string) => void;
   removeSession: (session: AiSession) => void;
+  /** 从回收站恢复一条。 */
+  restoreSession: (session: AiSession) => void;
   startRename: (session: AiSession) => void;
   startDuplicate: (session: AiSession) => void;
   closeTitleDialog: () => void;
@@ -226,6 +228,7 @@ export function AppOverlays({
           onCopyId={() => actions.copyText(menuSession.id)}
           onCopyPath={() => actions.copyText(menuSession.filePath)}
           onRemove={() => actions.removeSession(menuSession)}
+          onRestore={() => actions.restoreSession(menuSession)}
           onRename={() => actions.startRename(menuSession)}
           onDuplicate={() => actions.startDuplicate(menuSession)}
         />

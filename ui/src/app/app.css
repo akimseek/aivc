@@ -1713,3 +1713,15 @@ select {
   color: var(--ui-faint);
   font-size: var(--ui-text-sm);
 }
+
+/* ── 终端里的粘贴确认框 ──────────────────────────────────
+   内容可能很长，因此文本框要能滚，而不是把弹框撑到屏幕外。 */
+.terminal-paste-panel textarea {
+  width: 100%;
+  max-height: 40vh;
+  overflow: auto;
+  resize: vertical;
+  font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+  font-size: 12px;
+  white-space: pre;
+}

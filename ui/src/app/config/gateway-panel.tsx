@@ -5,7 +5,14 @@ import * as api from "../../ipc/commands";
 import { GatewayInsights } from "../gateway-insights";
 import type { ExternalApiStatus, FailoverRule, FailoverRuleScope, GatewayPortStatus } from "../../types";
 
-export function GatewayPanel({ onError }: { onError: (message: string) => void }) {
+export function GatewayPanel({
+  onError,
+  onNotify
+}: {
+  onError: (message: string) => void;
+  /** 成功反馈。见 `ConfigOverlay` 同名字段的说明。 */
+  onNotify?: (message: string) => void;
+}) {
   const [status, setStatus] = useState<GatewayPortStatus | null>(null);
   const [portDraft, setPortDraft] = useState("");
   /** 复制成功的一次性提示——复制是「做完没有任何反馈」的典型动作。 */
@@ -106,7 +113,16 @@ export function GatewayPanel({ onError }: { onError: (message: string) => void }
           onClick={() =>
             void api
               .setGatewayEnabled(!status.enabled)
-              .then(setStatus)
+              .then((next) => {
+                setStatus(next);
+                // 关网关会**立刻切断终端路由**（旧平台专门写了这句警告），
+                // 因此这里必须说清是哪一种结果。
+                onNotify?.(
+                  next.enabled
+                    ? "已启用本地网关。重启应用后开始监听。"
+                    : "已关闭本地网关。使用网关的终端路由将立即停止。"
+                );
+              })
               .catch((error: unknown) =>
                 onError(error instanceof Error ? error.message : String(error))
               )
@@ -119,7 +135,16 @@ export function GatewayPanel({ onError }: { onError: (message: string) => void }
           onClick={() =>
             void api
               .setGatewayPort(Number.parseInt(portDraft, 10) || 0)
-              .then(setStatus)
+              .then((next) => {
+                setStatus(next);
+                // 端口改了但**不会立刻生效**（要重启才重绑），这句话不说出来
+                // 用户会以为点了没反应。
+                onNotify?.(
+                  next.configuredPort === 0
+                    ? "端口已保存：改为自动分配。重启应用后生效。"
+                    : `端口已保存：${next.configuredPort}。重启应用后生效。`
+                );
+              })
               .catch((error: unknown) =>
                 onError(error instanceof Error ? error.message : String(error))
               )
@@ -130,8 +155,8 @@ export function GatewayPanel({ onError }: { onError: (message: string) => void }
       </Toolbar>
 
       <GatewayInsights onError={onError} />
-      <FailoverRulesSection onError={onError} />
-      <ExternalApiSection onError={onError} />
+      <FailoverRulesSection onError={onError} onNotify={onNotify} />
+      <ExternalApiSection onError={onError} onNotify={onNotify} />
     </>
   );
 }
@@ -144,7 +169,13 @@ export function GatewayPanel({ onError }: { onError: (message: string) => void }
  * `pattern` 是**不区分大小写的包含匹配，不是正则**。用户几乎一定会先按正则去写，
  * 因此提示必须显眼——写错正则不会报错，只会静默地匹配不到。
  */
-export function FailoverRulesSection({ onError }: { onError: (message: string) => void }) {
+export function FailoverRulesSection({
+  onError,
+  onNotify
+}: {
+  onError: (message: string) => void;
+  onNotify?: (message: string) => void;
+}) {
   const [rules, setRules] = useState<FailoverRule[]>([]);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
 
@@ -181,6 +212,7 @@ export function FailoverRulesSection({ onError }: { onError: (message: string) =
       });
       setDraft(null);
       await load();
+      onNotify?.(draft.id ? "故障规则已保存。" : "已新增故障规则。");
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     }
@@ -351,7 +383,13 @@ type RuleDraft = {
  * 令牌**只显示这一次**：后端只存哈希，之后再也取不回来。因此轮换后必须让用户
  * 当场复制走，并明确告诉他这一点。
  */
-export function ExternalApiSection({ onError }: { onError: (message: string) => void }) {
+export function ExternalApiSection({
+  onError,
+  onNotify
+}: {
+  onError: (message: string) => void;
+  onNotify?: (message: string) => void;
+}) {
   const [status, setStatus] = useState<ExternalApiStatus | null>(null);
   const [revealedToken, setRevealedToken] = useState("");
 
@@ -388,7 +426,10 @@ export function ExternalApiSection({ onError }: { onError: (message: string) => 
           onClick={() =>
             void api
               .setExternalApiEnabled(!status.enabled)
-              .then(setStatus)
+              .then((next) => {
+                setStatus(next);
+                onNotify?.(next.enabled ? "外部 API 已启用。" : "外部 API 已关闭。");
+              })
               .catch((error: unknown) =>
                 onError(error instanceof Error ? error.message : String(error))
               )
@@ -405,6 +446,8 @@ export function ExternalApiSection({ onError }: { onError: (message: string) => 
                 // 令牌只在这里出现一次，界面必须留着它让用户复制。
                 setRevealedToken(result.token);
                 void load();
+                // 旧令牌**立即失效**，这句不说用户不会知道别的客户端已经断了。
+                onNotify?.("已生成新令牌；旧令牌立即失效。");
               })
               .catch((error: unknown) =>
                 onError(error instanceof Error ? error.message : String(error))

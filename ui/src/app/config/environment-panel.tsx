@@ -7,11 +7,14 @@ import type { AiProviderId, CliEnvironmentStatus } from "../../types";
 export function EnvironmentPanel({
   providerId,
   targetId,
-  onError
+  onError,
+  onNotify
 }: {
   providerId: AiProviderId | "";
   targetId: string;
   onError: (message: string) => void;
+  /** 成功反馈。见 `ConfigOverlay` 同名字段的说明。 */
+  onNotify?: (message: string) => void;
 }) {
   const [status, setStatus] = useState<CliEnvironmentStatus | null>(null);
   const [version, setVersion] = useState("");
@@ -47,6 +50,9 @@ export function EnvironmentPanel({
         ensureNode: !status.canInstallCli && status.canInstallNodeWithNvm
       });
       await load();
+      // 装 CLI 是**分钟级**的操作，用户会去看别的东西；不说一句，
+      // 回来时既看不出装完没有、也看不出是不是点了没反应。文案照旧平台。
+      onNotify?.("CLI 安装完成。");
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {

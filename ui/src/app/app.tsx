@@ -42,7 +42,30 @@ import { useWorkspaceTabs } from "./use-workspace-tabs";
  * **动作**（开终端、导出、改配置）、**组装**。
  */
 export function App() {
-  const console = useConsole();
+  /**
+   * 一句话反馈**唯一**的出口。
+   *
+   * # 为什么收敛成一个通道
+   *
+   * 旧平台**每个动作都有一句结果回应**（改名、复制、删除、恢复、收藏、保存供应商、
+   * 启用 Skill、装完 CLI…）。新平台此前只有零星几处，因为每一处都要自己拿一个
+   * `useToast`——散在十几个组件里，补齐过程必然漏。
+   *
+   * 现在分两层：
+   * - `useConsole({ notify })` 报**会话与设置**类动作（它们都在那个 hook 里）；
+   * - `ConfigOverlay` 拿到 `onNotify` 往下传给各面板（供应商 / 技能 / 环境 / 网关）。
+   *
+   * 于是「做完一件事要说一声」只有一处实现，新加动作时也只需要调一次 `notify`。
+   *
+   * # 为什么必须自动消失
+   *
+   * 常驻的条幅会把正文往下压，而这种消息过几秒就没有价值了。
+   * **静默完成与没执行在用户看来是一样的**——这才是要补它的理由。
+   *
+   * **必须在 `useConsole` 之前**：那个 hook 要拿 `show` 当通知回调。
+   */
+  const toast = useToast();
+  const console = useConsole({ notify: toast.show });
   const terminals = useTerminals();
   const { selectedTarget } = console;
 
@@ -77,15 +100,6 @@ export function App() {
   const [sessionSettings, setSessionSettings] = useState<{ distro: string; path: string } | null>(
     null
   );
-
-  /**
-   * 一句话的操作结果提示。
-   *
-   * 菜单里的动作（清理 Gateway 日志）没有自己的界面，做完必须说一声——
-   * **静默完成与没执行在用户看来是一样的**。用 [`useToast`] 是因为它要自动消失：
-   * 常驻的条幅会把正文往下压，而这条消息过几秒就没有价值了。
-   */
-  const toast = useToast();
 
   /** 最近一次导出的实际落点，显示出来让用户知道东西去哪了。 */
   const [exportedTo, setExportedTo] = useState("");
@@ -575,7 +589,8 @@ export function App() {
           },
           branchFromMessage: (sourceLine) => void console.branchFromMessage(sourceLine),
           closeConfig: () => setConfigOpen(false),
-          reportError: console.setError
+          reportError: console.setError,
+          notify: toast.show
         }}
         commands={commands}
         providers={console.providers}

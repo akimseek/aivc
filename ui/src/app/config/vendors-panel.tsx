@@ -153,13 +153,16 @@ export function formatJson(value: Record<string, unknown> | undefined): string {
 export function VendorsPanel({
   providerId,
   providers,
-  onError
+  onError,
+  onNotify
 }: {
   /** 侧栏当前选中的平台。只用来给「新增」表单一个**默认值**。 */
   providerId: AiProviderId | "";
   /** 全部平台。厂商的下拉与筛选都从它来——名称与侧栏逐字一致。 */
   providers: AiProviderSummary[];
   onError: (message: string) => void;
+  /** 成功反馈。见 `ConfigOverlay` 同名字段的说明。 */
+  onNotify?: (message: string) => void;
 }) {
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,6 +190,7 @@ export function VendorsPanel({
     try {
       await api.setVendorEnabled(vendor.id, !vendor.enabled);
       await load();
+      onNotify?.(vendor.enabled ? `已禁用供应商：${vendor.name}` : `已启用供应商：${vendor.name}`);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     }
@@ -241,6 +245,7 @@ export function VendorsPanel({
       });
       setDraft(null);
       await load();
+      onNotify?.(draft.id ? `供应商已保存：${draft.name.trim()}` : `已新增供应商：${draft.name.trim()}`);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     }
@@ -565,7 +570,10 @@ export function VendorsPanel({
                     onClick={() =>
                       void api
                         .deleteVendor(vendor.id)
-                        .then(load)
+                        .then(() => {
+                          onNotify?.(`供应商已删除：${vendor.name}`);
+                          return load();
+                        })
                         .catch((error: unknown) =>
                           onError(error instanceof Error ? error.message : String(error))
                         )

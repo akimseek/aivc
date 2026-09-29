@@ -86,6 +86,13 @@ export type OverlaysActions = {
   branchFromMessage: (sourceLine: number) => void;
   closeConfig: () => void;
   reportError: (message: string) => void;
+  /**
+   * 一句话**成功**反馈。
+   *
+   * 与 `reportError` 分开而不是合并：失败要**留着**（用户得看清哪里错了），
+   * 成功几秒后自动消失。两条路的呈现方式不同，因此不能共用一个回调。
+   */
+  notify: (message: string) => void;
 };
 
 /**
@@ -301,6 +308,7 @@ export function AppOverlays({
           initialTab={state.configTab}
           onClose={actions.closeConfig}
           onError={actions.reportError}
+          onNotify={actions.notify}
         />
       )}
     </>

@@ -125,7 +125,28 @@ export type GlobalSearchResult = {
   session: AiSession;
 };
 
-export function useConsole() {
+/**
+ * 一句话结果反馈的出口。
+ *
+ * 由调用方注入（`app.tsx` 传 `useToast().show`）。**可选**：不传时不报，
+ * 这让不需要它的测试与别处复用不必造一个假的。
+ */
+export type Notify = (message: string) => void;
+
+export function useConsole(options: { notify?: Notify } = {}) {
+  /**
+   * 用 ref 持有回调，暴露一个**恒等稳定**的 `notify`。
+   *
+   * 直接把它塞进十几个 `useCallback` 的依赖数组里不是不行（`useToast().show`
+   * 本身是稳定的），但那样每个动作都要记得加——漏一个就是「这个动作不报」，
+   * 而且不会报错。用 ref 之后调用点只关心「说什么」，不关心它从哪来。
+   */
+  const notifyRef = useRef<Notify | undefined>(options.notify);
+  notifyRef.current = options.notify;
+  const notify = useCallback((message: string) => {
+    notifyRef.current?.(message);
+  }, []);
+
   const [providers, setProviders] = useState<AiProviderSummary[]>([]);
   /** 平台编号。`""` 表示还没选——**不要用 `null`**：界面各处都按字符串判空。 */
   const [providerId, setProviderId] = useState<AiProviderId | "">("");
@@ -382,6 +403,9 @@ export function useConsole() {
       );
       try {
         await api.setSessionFavorite(targetId, session.id, next);
+        // 收藏是即时的视觉变化，但**列表里那颗星可能不在视野内**（快捷视图、
+        // 搜索结果里都长得不一样），说一句比让用户去找那颗星更确定。
+        notify(next ? "已收藏会话。" : "已取消收藏会话。");
       } catch (problem) {
         setError(describe(problem));
         // 失败就退回去，别让界面显示一个并不存在的状态。
@@ -407,7 +431,7 @@ export function useConsole() {
     setSelectedIds((current) => (current.length === sessions.length ? [] : sessions.map((s) => s.id)));
   }, [sessions]);
 
-  /** 批量操作的公共骨架：调用、刷新、清空选择、报错。 */
+  /** 批量操作的公共骨架：调用、刷新、清空选择、报错、**报成功**。 */
   const runBatch = useCallback(
     async (label: string, action: (refs: SessionMutationRef[]) => Promise<unknown>) => {
       if (!targetId) return;
@@ -419,13 +443,15 @@ export function useConsole() {
         setSelectedIds([]);
         await loadSessions(targetId, view, query);
         setError("");
+        // 批量操作之后列表会变，但**用户可能记不清自己有没点成功**（选中状态被清掉了）。
+        notify(`${label}完成：共 ${refs.length} 条。`);
       } catch (problem) {
         setError(`${label}失败：${describe(problem)}`);
       } finally {
         setBusy(false);
       }
     },
-    [targetId, sessions, selectedIds, view, query, loadSessions]
+    [targetId, sessions, selectedIds, view, query, loadSessions, notify]
   );
 
   const deleteSelected = useCallback(
@@ -461,11 +487,13 @@ export function useConsole() {
     await loadSessions(targetId, view, query);
     setBusy(false);
     if (failed > 0) {
+      // 部分失败要**两个数都报**，只说「失败」会让用户不知道有多少条成了。
       setError(`恢复完成：成功 ${refs.length - failed} 条，失败 ${failed} 条。`);
     } else {
       setError("");
+      notify(`恢复完成：共 ${refs.length} 条。`);
     }
-  }, [targetId, sessions, selectedIds, view, query, loadSessions]);
+  }, [targetId, sessions, selectedIds, view, query, loadSessions, notify]);
 
   /**
    * 恢复**一条**（右键菜单用）。
@@ -480,11 +508,13 @@ export function useConsole() {
       try {
         await api.restoreSession(targetId, session.id);
         await loadSessions(targetId, view, query);
+        // 恢复之后它**从回收站列表里消失了**——不说一句，看起来像被删掉了。
+        notify("会话已恢复。");
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
       }
     },
-    [targetId, view, query, loadSessions]
+    [targetId, view, query, loadSessions, notify]
   );
 
   const selectedTarget = useMemo(
@@ -506,11 +536,12 @@ export function useConsole() {
         await api.setSessionCustomTitle(targetId, selectedId, trimmed);
         await loadSessions(targetId, view, query);
         setError("");
+        notify("会话名称已保存。");
       } catch (problem) {
         setError(`重命名失败：${describe(problem)}`);
       }
     },
-    [targetId, selectedId, view, query, loadSessions]
+    [targetId, selectedId, view, query, loadSessions, notify]
   );
 
   /**
@@ -529,11 +560,12 @@ export function useConsole() {
         // 复制完直接选中副本——否则用户要在列表里找哪一条才是新的。
         setSelectedId(copy.id);
         setError("");
+        notify("会话已复制。");
       } catch (problem) {
         setError(`复制失败：${describe(problem)}`);
       }
     },
-    [targetId, selectedId, view, query, loadSessions]
+    [targetId, selectedId, view, query, loadSessions, notify]
   );
 
   const exportCurrent = useCallback(
@@ -593,11 +625,12 @@ export function useConsole() {
         await loadSessions(targetId, view, query);
         setSelectedId(branch.id);
         setError("");
+        notify("已创建新的分支会话。");
       } catch (problem) {
         setError(`分支失败：${describe(problem)}`);
       }
     },
-    [targetId, selectedId, view, query, loadSessions]
+    [targetId, selectedId, view, query, loadSessions, notify]
   );
 
   /** 在系统文件管理器里打开当前会话所在的目录。 */
@@ -620,11 +653,13 @@ export function useConsole() {
         else await api.deleteSession(targetId, session.id, session.filePath);
         await loadSessions(targetId, view, query);
         setError("");
+        // 两种结果**必须说清是哪一种**：彻底删除不可撤销。
+        notify(permanent ? "会话已彻底删除。" : "会话已移入回收站。");
       } catch (problem) {
         setError(`${permanent ? "彻底删除" : "移入回收站"}失败：${describe(problem)}`);
       }
     },
-    [targetId, view, query, loadSessions]
+    [targetId, view, query, loadSessions, notify]
   );
 
   /**
@@ -639,11 +674,12 @@ export function useConsole() {
         await api.setWslCodexHome(distro, codexHome);
         await loadTargets(providerId);
         setError("");
+        notify("WSL Codex 目录已保存。");
       } catch (problem) {
         setError(`指定目录失败：${describe(problem)}`);
       }
     },
-    [providerId, loadTargets]
+    [providerId, loadTargets, notify]
   );
 
   const clearWslCodexHomeOverride = useCallback(
@@ -652,11 +688,12 @@ export function useConsole() {
         await api.clearWslCodexHome(distro);
         await loadTargets(providerId);
         setError("");
+        notify("已恢复自动探测会话目录。");
       } catch (problem) {
         setError(`清除目录覆盖失败：${describe(problem)}`);
       }
     },
-    [providerId, loadTargets]
+    [providerId, loadTargets, notify]
   );
 
   /* ── 快捷访问：只读缓存，进去就取一次 ── */

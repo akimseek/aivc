@@ -6,10 +6,13 @@ import type { SkillEntry } from "../../types";
 
 export function SkillsPanel({
   targetId,
-  onError
+  onError,
+  onNotify
 }: {
   targetId: string;
   onError: (message: string) => void;
+  /** 成功反馈。见 `ConfigOverlay` 同名字段的说明。 */
+  onNotify?: (message: string) => void;
 }) {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,12 +40,20 @@ export function SkillsPanel({
     void load();
   }, [load]);
 
-  const act = async (action: () => Promise<unknown>) => {
+  /**
+   * 做一个会改技能状态的动作。
+   *
+   * `label` 是**做完之后要说的话**（旧平台每个动作都有一句：`Skill 已启用。` 等）。
+   * 传进来而不是从 action 里推：一个匿名闭包看不出它做了什么，而结果提示正是给
+   * 用户看的「刚才那一下生效了没有」。
+   */
+  const act = async (label: string, action: () => Promise<unknown>) => {
     try {
       await action();
       // 停用会**改目录名**（加 `.disabled` 后缀），因此必须重新拉列表——
       // 拿旧名字再操作会找不到。
       await load();
+      onNotify?.(label);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     }
@@ -60,6 +71,7 @@ export function SkillsPanel({
       setConflict("");
       setMode("installed");
       await load();
+      onNotify?.(`Skill 已导入：${source}`);
     } catch (error) {
       // 重名是**预期内**的结果，不是异常：把它转成「要不要覆盖」的提问，
       // 而不是一句无从下手的错误。
@@ -147,29 +159,43 @@ export function SkillsPanel({
           {mode === "installed" ? (
             <>
               <span className={`tag ${skill.enabled ? "ok" : "off"}`}>
-                {skill.enabled ? "已启用" : "已停用"}
+                {/* 用词与旧平台一致：**禁用**，不是「停用」。按钮、标签、
+                    结果提示三处必须是同一个词，否则同一件事在界面上有三个名字。 */}
+                {skill.enabled ? "已启用" : "已禁用"}
               </span>
               <Button
                 small
                 onClick={() =>
-                  void act(() => api.setSkillEnabled(targetId, skill.name, !skill.enabled))
+                  void act(
+                    // 文案照旧平台：`Skill 已启用。` / `Skill 已禁用。`
+                    skill.enabled ? `Skill 已禁用：${skill.name}` : `Skill 已启用：${skill.name}`,
+                    () => api.setSkillEnabled(targetId, skill.name, !skill.enabled)
+                  )
                 }
               >
-                {skill.enabled ? "停用" : "启用"}
+                {skill.enabled ? "禁用" : "启用"}
               </Button>
             </>
           ) : (
             <>
               <Button
                 small
-                onClick={() => void act(() => api.restoreSkill(targetId, skill.name))}
+                onClick={() =>
+                  void act(`Skill 已恢复：${skill.name}`, () =>
+                    api.restoreSkill(targetId, skill.name)
+                  )
+                }
               >
                 还原
               </Button>
               <Button
                 small
                 variant="danger"
-                onClick={() => void act(() => api.purgeSkill(targetId, skill.name))}
+                onClick={() =>
+                  void act(`Skill 已彻底删除：${skill.name}`, () =>
+                    api.purgeSkill(targetId, skill.name)
+                  )
+                }
               >
                 彻底删除
               </Button>

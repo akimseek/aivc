@@ -53,7 +53,8 @@ export function ConfigOverlay({
   targets,
   initialTab = "vendors",
   onClose,
-  onError
+  onError,
+  onNotify
 }: {
   providerId: AiProviderId | "";
   /**
@@ -69,6 +70,14 @@ export function ConfigOverlay({
   initialTab?: ConfigTab;
   onClose: () => void;
   onError: (message: string) => void;
+  /**
+   * 一句话成功反馈。
+   *
+   * 与 `onError` 成对：旧平台**每个动作都有结果回应**，而失败与成功走的是两条路
+   * （失败常驻在状态栏、成功几秒后自动消失）。面板只管说「做完了什么」，
+   * 通道由上层给——这样「反馈长什么样」只有一处实现。
+   */
+  onNotify?: (message: string) => void;
 }) {
   const [tab, setTab] = useState<ConfigTab>(initialTab);
 
@@ -103,10 +112,17 @@ export function ConfigOverlay({
 
         <div className="overlay-body">
           {tab === "vendors" && (
-            <VendorsPanel providerId={providerId} providers={providers} onError={onError} />
+            <VendorsPanel
+              providerId={providerId}
+              providers={providers}
+              onError={onError}
+              onNotify={onNotify}
+            />
           )}
-          {tab === "skills" && <SkillsPanel targetId={targetId} onError={onError} />}
-          {tab === "gateway" && <GatewayPanel onError={onError} />}
+          {tab === "skills" && (
+            <SkillsPanel targetId={targetId} onError={onError} onNotify={onNotify} />
+          )}
+          {tab === "gateway" && <GatewayPanel onError={onError} onNotify={onNotify} />}
           {/* 观测三页：看，不改。设置仍然在「网关」那一页。 */}
           {tab === "usage" && <GatewayUsagePanel onError={onError} />}
           {tab === "failures" && (
@@ -114,7 +130,12 @@ export function ConfigOverlay({
           )}
           {tab === "logs" && <GatewayLogPanel onError={onError} />}
           {tab === "environment" && (
-            <EnvironmentPanel providerId={providerId} targetId={targetId} onError={onError} />
+            <EnvironmentPanel
+              providerId={providerId}
+              targetId={targetId}
+              onError={onError}
+              onNotify={onNotify}
+            />
           )}
           {tab === "presets" && <PresetsPanel onError={onError} />}
           {tab === "diagnostics" && (

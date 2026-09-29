@@ -30,3 +30,8 @@ Thumbs.db
 
 # 界面验证截图（由 scripts/ui-check.ps1 生成，见 docs/rust-rewrite/19）
 /shots/
+
+# 探针工具的副产物。它写在**运行根**下（scripts/app-probe.ps1 的 \），
+# 因此用 -RunRoot <仓库根> 做验证时会落到这里——实测已经误提交过一次。
+/stderr.txt
+/stdout.txt

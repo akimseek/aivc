@@ -14,6 +14,7 @@ import type {
   SessionView
 } from "../types";
 import type { SidebarPane } from "./sidebar-nav";
+import { scopeTargets } from "./search-scope";
 
 /**
  * 主流程的数据装配。
@@ -160,6 +161,13 @@ export function useConsole() {
   const [globalQuery, setGlobalQuery] = useState("");
   /** 只搜某个目标；空串表示全部。收窄范围能**少发请求**，不只是少显示结果。 */
   const [searchTargetId, setSearchTargetId] = useState("");
+  /**
+   * 只搜某个平台；空串表示全部。
+   *
+   * 与「目标」是两个独立的筛选项（旧平台也是两个下拉）：一个平台可能有多个目标
+   * （本机 + 各个 WSL 发行版），先按平台收窄再挑目标是最常见的用法。
+   */
+  const [searchProviderId, setSearchProviderId] = useState<AiProviderId | "">("");
   const [globalResults, setGlobalResults] = useState<GlobalSearchResult[]>([]);
   const [globalSearching, setGlobalSearching] = useState(false);
   const globalSeqRef = useRef(0);
@@ -681,9 +689,9 @@ export function useConsole() {
     const seq = ++globalSeqRef.current;
     // 只对**范围内的**目标发请求：收窄筛选的价值一半在于少做无用功，
     // 全量搜完再在前端过滤掉，那些请求已经付过代价了。
-    const scoped = searchTargetId
-      ? targets.filter((target) => target.id === searchTargetId)
-      : targets;
+    //
+    // 两层筛选（平台 → 目标）与旧平台 `global-session-search-panel.tsx` 的两个下拉一致。
+    const scoped = scopeTargets(targets, searchProviderId, searchTargetId);
     const timer = window.setTimeout(() => {
       void (async () => {
         setGlobalSearching(true);
@@ -708,7 +716,7 @@ export function useConsole() {
       })();
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [pane, globalQuery, targets, searchTargetId]);
+  }, [pane, globalQuery, targets, searchTargetId, searchProviderId]);
 
   /**
    * 打开一条来自其它视图的结果。
@@ -799,6 +807,8 @@ export function useConsole() {
     setGlobalQuery,
     searchTargetId,
     setSearchTargetId,
+    searchProviderId,
+    setSearchProviderId,
     globalResults,
     globalSearching,
     openAt,

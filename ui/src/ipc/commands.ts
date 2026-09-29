@@ -632,7 +632,17 @@ export const resetVendorHealth = (vendorId?: string) =>
  * （见 `crates/aivc-ipc/src/shell.rs` 的模块注释）。因此调用方**必须**把报错
  * 当成「不知道」，而不是「不存在」——否则会把 WSL 里好好的目录判成丢了。
  */
-export const pathExists = (path: string) => invoke<boolean>("shell:path-exists", { path });
+/**
+ * 路径是否存在。
+ *
+ * 带上 `targetId`：后端**按目标分流**，WSL 目标的路径在本机看来毫无意义，
+ * 它会显式拒绝而不是按本机路径误判成「不存在」。不传就按本机处理。
+ */
+export const pathExists = (path: string, targetId?: string) =>
+  invoke<boolean>("shell:path-exists", {
+    path,
+    ...(targetId ? { targetId } : {})
+  });
 
 /**
  * 列出某个会话的**子分支**。

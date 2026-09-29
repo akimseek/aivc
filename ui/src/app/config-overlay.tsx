@@ -118,7 +118,13 @@ export function ConfigOverlay({
           )}
           {tab === "presets" && <PresetsPanel onError={onError} />}
           {tab === "diagnostics" && (
-            <DiagnosticsPanel targets={targets} selectedTargetId={targetId} />
+            <DiagnosticsPanel
+              targets={targets}
+              selectedTargetId={targetId}
+              // 能力矩阵从平台摘要取，因此这里也要传进去。
+              providers={providers}
+              selectedProviderId={providerId}
+            />
           )}
         </div>
       </div>

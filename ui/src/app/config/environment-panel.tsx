@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, EmptyState, Field, Notice } from "../../components";
+import { Button, EmptyState, Field, Notice, Select } from "../../components";
 import * as api from "../../ipc/commands";
 import type { AiProviderId, CliEnvironmentStatus } from "../../types";
 
@@ -16,6 +16,16 @@ export function EnvironmentPanel({
   const [status, setStatus] = useState<CliEnvironmentStatus | null>(null);
   const [version, setVersion] = useState("");
   const [installing, setInstalling] = useState(false);
+  /**
+   * 要装的 Node 主版本。
+   *
+   * 初值是后端给的**推荐**版本（`recommendedNodeMajor`），而不是界面写死 24——
+   * 写死的话后端换了推荐版本，界面还在装旧的。
+   */
+  const [nodeMajor, setNodeMajor] = useState<number | null>(null);
+
+  /** 实际用的版本：用户没选过就用后端推荐的那个。 */
+  const chosenNodeMajor = nodeMajor ?? status?.recommendedNodeMajor ?? 24;
 
   /**
    * 安装 CLI。
@@ -30,6 +40,9 @@ export function EnvironmentPanel({
       await api.installCli({
         providerId,
         ...(targetId ? { targetId } : {}),
+        // 把用户选的版本递下去。后端本来就有这个参数（默认是它的推荐值），
+        // 此前界面没传，于是「24 LTS 推荐 / 22 LTS 兼容」这个选择在界面上不存在。
+        nodeMajor: chosenNodeMajor,
         // 后端会据此决定要不要先装 Node：能直接装 CLI 就不必动 Node。
         ensureNode: !status.canInstallCli && status.canInstallNodeWithNvm
       });
@@ -65,24 +78,79 @@ export function EnvironmentPanel({
   if (!providerId) return <EmptyState message="请先选择平台。" />;
   if (!status) return <EmptyState message="检测中…" />;
 
+  /**
+   * 状态行。与旧平台 `cli-installer-dialog.tsx` 的五项一致：
+   * **官方 Node（最低版本）/ Node / npm / nvm / CLI**。
+   *
+   * nvm 那一行不能省：Node 版本不够时靠它兜底装 Node，
+   * 用户看不到它就无法判断「能不能自动补 Node」。
+   */
   const rows: { label: string; ok: boolean; value: string }[] = [
-    { label: "Node", ok: status.hasNode, value: status.nodeVersion ?? "未找到" },
     {
-      label: "Node 版本",
-      ok: status.nodeMeetsMinimum,
-      value: status.nodeMeetsMinimum ? "满足最低版本" : "低于最低版本"
+      label: "官方 Node",
+      ok: true,
+      value: `${status.minimumNodeMajor}+`
     },
-    { label: "npm", ok: status.hasNpm, value: status.hasNpm ? "已安装" : "未找到" },
-    { label: "CLI", ok: status.hasCli, value: status.hasCli ? "已安装" : "未找到" }
+    {
+      label: "Node",
+      ok: status.nodeMeetsMinimum,
+      value: status.nodeVersion ?? "未检测到"
+    },
+    {
+      label: "npm",
+      ok: status.hasNpm,
+      value: status.npmVersion ?? "未检测到"
+    },
+    {
+      label: "nvm",
+      ok: status.hasNvm,
+      value: status.nvmVersion ?? "未检测到"
+    },
+    {
+      label: "CLI",
+      ok: status.hasCli,
+      value: status.cliVersion ?? "未安装"
+    }
   ];
 
   return (
     <>
+      <p className="field-hint">
+        选择已集成的 AI 厂商，在当前目标环境执行 npm 全局安装。Node 缺失或版本不足时，
+        会优先使用已安装的 nvm 安装 Node。
+      </p>
+
       <div className="field-grid">
-        <Field label="作用范围">
+        <Field label="目标环境">
           <span className="value">
             {status.scope === "wsl" ? "WSL 发行版内" : "本机"} · {status.providerId}
+            {status.targetId ? ` · ${status.targetId}` : ""}
           </span>
+        </Field>
+        <Field label="平台">
+          <span className="value">{status.platform || "-"}</span>
+        </Field>
+        {/*
+          Node 版本选择。旧平台的两个选项就是「推荐」与「兼容」两个 LTS，
+          因此这里也按主版本号给这两项，而不是让用户填一个任意数字——
+          填 25 这种还没进 LTS 的版本不在支持范围内。
+        */}
+        <Field label="Node 版本" hint="CLI 装不上时会先用 nvm 装这个版本。">
+          <Select
+            value={String(chosenNodeMajor)}
+            disabled={installing}
+            onChange={(event) => setNodeMajor(Number(event.target.value))}
+          >
+            <option value={String(status.recommendedNodeMajor)}>
+              {status.recommendedNodeMajor} LTS 推荐
+            </option>
+            {/* 推荐版本与最低版本相同时不重复列出。 */}
+            {status.minimumNodeMajor !== status.recommendedNodeMajor && (
+              <option value={String(status.minimumNodeMajor)}>
+                {status.minimumNodeMajor} LTS 兼容
+              </option>
+            )}
+          </Select>
         </Field>
         <Field label="应用版本">
           <span className="value">{version || "-"}</span>
@@ -108,6 +176,13 @@ export function EnvironmentPanel({
         </tbody>
       </table>
 
+      {/* Node 由 nvm 管的时候，换版本会影响其他项目——说一句比不说好。 */}
+      {status.nodeManagedByNvm && (
+        <p className="field-hint">
+          当前 Node 由 nvm 管理。切换版本会影响同一台机器上其他用 nvm 的项目。
+        </p>
+      )}
+
       {/* 建议由后端算好，界面**直接显示**——在前后端各写一份判断逻辑，两份一定会分叉。 */}
       {status.messages.length > 0 && (
         <Notice
@@ -125,9 +200,20 @@ export function EnvironmentPanel({
               </Button>
               {/* CLI 缺失时直接给安装入口——否则用户看到「未找到 codex」之后
                   仍然不知道该做什么。 */}
-              {!status.hasCli && status.canInstallCli && (
+              {/*
+                旧平台的条件是 `canInstallCli || canInstallNodeWithNvm`。
+                此前这里只判 `canInstallCli`，于是**「没有 Node 但有 nvm」那种环境
+                根本拿不到安装入口**——而那正是最需要这个按钮的情况。
+              */}
+              {!status.hasCli && (status.canInstallCli || status.canInstallNodeWithNvm) && (
                 <Button small variant="primary" disabled={installing} onClick={() => void runInstall()}>
-                  {installing ? "安装中…（可能要几分钟）" : "安装 CLI"}
+                  {installing
+                    ? "安装中…（可能要几分钟）"
+                    : status.canInstallCli
+                      ? "安装 CLI"
+                      : // 文案照旧平台：**说清这一步会顺带装 Node**，
+                        // 否则用户以为只是装个 CLI，结果机器上的 Node 被换了。
+                        `安装 Node ${chosenNodeMajor} 并安装 CLI`}
                 </Button>
               )}
             </>

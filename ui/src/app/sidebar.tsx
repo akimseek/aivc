@@ -13,7 +13,13 @@ import {
   Toolbar,
   ToolbarSpacer
 } from "../components";
-import type { AiProviderSummary, AiTarget, ApiVendor, GatewayPortStatus } from "../types";
+import type {
+  AiProviderId,
+  AiProviderSummary,
+  AiTarget,
+  ApiVendor,
+  GatewayPortStatus
+} from "../types";
 import { emptySessionMessage } from "./session-display";
 import { QuickGroup, SearchResultRow, SessionRow } from "./session-row";
 import {
@@ -60,6 +66,8 @@ export type SidebarConsole = Pick<
   | "globalSearching"
   | "searchTargetId"
   | "setSearchTargetId"
+  | "searchProviderId"
+  | "setSearchProviderId"
   | "globalResults"
   | "restoreSelected"
   | "purgeSelected"
@@ -141,6 +149,15 @@ export function Sidebar({
    */
   const canUseTrash = supportsTrash(providers, state.providerId);
   const canBatch = supportsBatchActions(providers, state.providerId);
+  /**
+   * 「按目标筛选」里该列哪些目标。
+   *
+   * 选了平台之后只列那个平台的目标——这正是「先按平台再按目标」的意义，
+   * 否则第二个下拉里全是别的平台的目标，挑起来和没有筛选一样。
+   */
+  const scopedTargets = state.searchProviderId
+    ? state.targets.filter((target) => target.provider === state.searchProviderId)
+    : state.targets;
 
   /**
    * 折起来时**只保留那个按钮**。
@@ -326,18 +343,44 @@ export function Sidebar({
             <SearchInput
               value={state.globalQuery}
               onChange={state.setGlobalQuery}
-              placeholder="在所有目标里搜索…"
+              placeholder="搜索全部活跃会话"
               busy={state.globalSearching}
             />
-            {/* 范围收窄：不只是少显示结果，而是**少发请求**——
-                全量搜完再在前端过滤掉，那些请求已经付过代价了。 */}
-            <Field label="搜索范围">
+            {/*
+              两个筛选项，与旧平台 `global-session-search-panel.tsx` 一致：
+              **按平台筛选 + 按目标筛选**。此前只有「目标」一个下拉，
+              于是「只看 Codex 的」这件事在界面上做不到——而一个平台常常有多个目标
+              （本机 + 各个 WSL 发行版），从目标列表里一个个认平台并不现实。
+
+              范围收窄不只是少显示结果，而是**少发请求**：全量搜完再在前端过滤掉，
+              那些请求已经付过代价了。
+            */}
+            <Field label="按平台筛选">
+              <Select
+                value={state.searchProviderId}
+                aria-label="按平台筛选"
+                onChange={(event) => {
+                  state.setSearchProviderId(event.target.value as AiProviderId | "");
+                  // 换了平台，之前挑的目标多半已经不在范围内了，清掉免得看起来「没结果」。
+                  state.setSearchTargetId("");
+                }}
+              >
+                <option value="">全部平台</option>
+                {state.providers.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="按目标筛选">
               <Select
                 value={state.searchTargetId}
+                aria-label="按目标筛选"
                 onChange={(event) => state.setSearchTargetId(event.target.value)}
               >
-                <option value="">全部目标（{state.targets.length}）</option>
-                {state.targets.map((target) => (
+                <option value="">全部目标（{scopedTargets.length}）</option>
+                {scopedTargets.map((target) => (
                   <option key={target.id} value={target.id}>
                     {target.available ? target.label : `${target.label}（不可用）`}
                   </option>

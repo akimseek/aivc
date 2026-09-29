@@ -498,16 +498,46 @@ export type ExternalApiStatus = {
 /* ── CLI 环境 ─────────────────────────────────────────── */
 
 /** CLI 环境检测结果（`cli:check-environment`）。 */
+/**
+ * CLI 环境状态（`cli:check-environment`）。
+ *
+ * # 为什么字段这么全
+ *
+ * 后端 `CliEnvironmentStatus` 发二十来个字段。此前这里只声明了其中十个，
+ * **正好把 `minimumNodeMajor` / `recommendedNodeMajor` / `nvmVersion` / `hasNvm`
+ * / `cliVersion` / 路径这些都裁掉了**——于是「官方 Node 最低版本」「nvm 状态」
+ * 这些后端早就在发的信息，在界面上根本不存在。
+ *
+ * 手抄一个子集比不写类型更糟：两边都能编译，缺的东西只在运行时表现为「那一格是空的」。
+ * 因此这里**按后端的字段逐个列全**。
+ */
 export type CliEnvironmentStatus = {
   providerId: AiProviderId;
+  targetId: string;
   scope: "local" | "wsl";
+  /** `windows` / `macos` / `linux`。 */
+  platform: string;
+  /** 该平台要求的**最低** Node 主版本（旧平台显示成「官方 Node 24+」）。 */
+  minimumNodeMajor: number;
+  /** **推荐**的 Node 主版本（旧平台的「24 LTS 推荐」）。 */
+  recommendedNodeMajor: number;
+  nodeVersion?: string;
+  npmVersion?: string;
+  /** nvm 版本原文。Node 不够时靠它兜底安装。 */
+  nvmVersion?: string;
+  cliVersion?: string;
+  nodePath?: string;
+  npmPath?: string;
   hasNode: boolean;
   hasNpm: boolean;
+  /** 装了 nvm 才能在版本不够时自动补 Node。 */
+  hasNvm: boolean;
   hasCli: boolean;
+  /** 当前 Node 是不是由 nvm 装/管的。显示出来才知道换版本会不会影响别处。 */
+  nodeManagedByNvm: boolean;
   nodeMeetsMinimum: boolean;
   canInstallCli: boolean;
   canInstallNodeWithNvm: boolean;
-  nodeVersion?: string;
   /** 后端给出的**可执行建议**，直接显示即可。 */
   messages: string[];
 };

@@ -213,8 +213,11 @@
     await p.sleep(2500);
     const logBody = p.clean((document.querySelector(".overlay-body") || {}).textContent);
     check(
-      "日志页有查询范围与结果类型",
-      logBody.includes("查询范围") && logBody.includes("结果类型"),
+      // 标签从「查询范围」改成「时间范围」：三个观测面板现在**共用同一个**
+      // `GatewayRangePicker`，那个组件的字段名就是「时间范围」。
+      // 统一是刻意的——旧平台是三处各写一遍，提示语与默认值都略有不同。
+      "日志页有时间范围与结果类型",
+      logBody.includes("时间范围") && logBody.includes("结果类型"),
       logBody.slice(0, 200)
     );
     check("日志页提示只搜回滚之外还有全选/删除", logBody.includes("全选当前页") || logBody.includes("删除选中"), logBody.slice(0, 200));

@@ -90,7 +90,17 @@ export function GatewayPanel({
             </Button>
           </div>
         ) : (
-          <span className="row-meta">当前没有在监听。开启网关并重启应用后这里会出现地址。</span>
+          /*
+            没有地址时要说清**下一步做什么**，而不是只说「没有」。
+            旧平台的原文是「本地 Gateway 正在监听后显示可用地址。」／
+            「请先开启本地 Gateway」——用户看见「没有地址」时想知道的就是这个。
+            按停在哪一步给不同的指引：关着就让他开，开着没监听就让他重启。
+          */
+          <span className="row-meta">
+            {status.enabled
+              ? "已启用但还没开始监听。重启应用后这里会出现可用地址。"
+              : "尚未开启本地网关。请先在上面点「启用网关」，然后重启应用。"}
+          </span>
         )}
       </Field>
       {status.baseUrl && (
@@ -427,6 +437,11 @@ export function FailoverRulesSection({
               <th>作用域</th>
               <th>匹配</th>
               <th>状态码</th>
+              {/*
+                「自定义返回」单列一栏：它是**命中之后客户端实际看到什么**，
+                与「匹配什么」是两个问题。配置了却看不出来，用户会怀疑自己没保存成功。
+              */}
+              <th>自定义返回</th>
               <th>状态</th>
               <th />
               <th />
@@ -438,6 +453,13 @@ export function FailoverRulesSection({
                 <td>{scopeLabel(rule.scope)}</td>
                 <td className="mono">{rule.pattern}</td>
                 <td>{rule.statusCodes?.join(", ") ?? "-"}</td>
+                <td className="mono" title={rule.customResponseBody}>
+                  {rule.customResponseStatus === undefined
+                    ? // 没配就是「透传上游」——用 `-` 表示「未设置」，
+                      // 而不是留空（留空看不出是没配还是没加载出来）。
+                      "透传上游"
+                    : `${rule.customResponseStatus}${rule.customResponseBody ? " · JSON" : ""}`}
+                </td>
                 <td>
                   <span className={`tag ${rule.enabled ? "ok" : "off"}`}>
                     {rule.enabled ? "已启用" : "已停用"}
@@ -611,9 +633,22 @@ export function ExternalApiSection({
           </span>
         </Field>
         <Field label="令牌">
+          {/* 只显示「是否已设置」，**绝不回显令牌本身**——后端只存哈希。 */}
           <span className="value">{status.hasToken ? "已设置" : "未设置"}</span>
         </Field>
       </div>
+      {/*
+        说清当前这一步该做什么（旧平台原文：「尚未生成访问令牌。」／
+        「已配置；轮换后旧令牌立即失效。」）。外部 API 开着却没有令牌是**半配置状态**：
+        请求会全部被拒，而界面上只看得出「开着」。
+      */}
+      <p className="field-hint">
+        {!status.hasToken
+          ? "尚未生成访问令牌。外部客户端现在连不上——请先点「轮换令牌」生成一个。"
+          : status.enabled
+            ? "已配置；轮换后旧令牌立即失效，用它的客户端需要同步更新。"
+            : "已配置令牌，但外部 API 处于关闭状态。"}
+      </p>
       <Toolbar>
         <Button
           small

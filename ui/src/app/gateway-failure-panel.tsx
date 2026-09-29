@@ -13,7 +13,16 @@ import {
 } from "../components";
 import * as api from "../ipc/commands";
 import type { AiProviderId } from "../types";
-import { failureSummary, formatDuration, formatLogTime, outcomeLabel } from "./gateway-range";
+import {
+  customBounds,
+  failureSummary,
+  formatDuration,
+  formatLogTime,
+  outcomeLabel,
+  rangeBounds,
+  type UsageRangeKey
+} from "./gateway-range";
+import { GatewayRangePicker } from "./gateway-range-picker";
 
 /** 每页条数。后端会把它钳制在上限内，因此这里给的是一个「意愿」。 */
 const PAGE_SIZE = 20;
@@ -40,6 +49,18 @@ export function GatewayFailurePanel({
   const [outcome, setOutcome] = useState<"" | "error" | "timeout">("");
   const [vendorId, setVendorId] = useState("");
   const [useCurrentProvider, setUseCurrentProvider] = useState(true);
+  const [picker, setPicker] = useState({ range: "7d" as UsageRangeKey, start: "", end: "" });
+
+  /**
+   * 当前区间；自定义没填全时为 `null`。
+   *
+   * 与用量、日志两处同一个契约：**不发请求**而不是编一个区间。
+   * 后端 `filter()` 里 `periodStart`/`periodEnd` 缺省表示「不限时间」——
+   * 那会让这个面板默认扫全表，与「近 7 天」的默认值不符。
+   */
+  const custom = picker.range === "custom" ? customBounds(picker.start, picker.end) : null;
+  const preset = picker.range === "custom" ? null : rangeBounds(picker.range);
+  const period = custom?.ok ? custom : preset;
 
   /**
    * 筛选条件变化时**回到第 1 页**。
@@ -54,16 +75,21 @@ export function GatewayFailurePanel({
 
   const load = useCallback(
     () =>
-      api.getFailureDiagnostics({
-        page,
-        pageSize: PAGE_SIZE,
-        // 空字符串**不传**，而不是传空串：后端把空串当「不筛选」，
-        // 但少传一个无意义参数总是更清楚。
-        ...(vendorId ? { vendorId } : {}),
-        ...(useCurrentProvider && providerId ? { providerId } : {}),
-        ...(outcome ? { outcome } : {})
-      }),
-    [page, vendorId, useCurrentProvider, providerId, outcome]
+      period
+        ? api.getFailureDiagnostics({
+            page,
+            pageSize: PAGE_SIZE,
+            // 空字符串**不传**，而不是传空串：后端把空串当「不筛选」，
+            // 但少传一个无意义参数总是更清楚。
+            ...(vendorId ? { vendorId } : {}),
+            ...(useCurrentProvider && providerId ? { providerId } : {}),
+            ...(outcome ? { outcome } : {}),
+            periodStart: period.start,
+            periodEnd: period.end
+          })
+        : // 自定义区间还没填全：给一个空页，而不是扫全表。
+          Promise.resolve({ items: [], total: 0, page: 1, pageSize: PAGE_SIZE }),
+    [page, vendorId, useCurrentProvider, providerId, outcome, period]
   );
 
   const diagnostics = useAsyncData(load, { errorMessage: "异常诊断读取失败" });
@@ -117,6 +143,20 @@ export function GatewayFailurePanel({
               onChange={(event) => applyFilter(() => setVendorId(event.target.value.trim()))}
             />
           </label>
+
+          {/*
+            时间范围与用量、日志两处**共用同一个组件**：旧平台是三处各写一遍，
+            于是提示语与默认值略有不同，用户会觉得「同一件事在不同页面上不一样」。
+          */}
+          <GatewayRangePicker
+            range={picker.range}
+            start={picker.start}
+            end={picker.end}
+            onChange={(next) => {
+              setPicker(next);
+              applyFilter(() => undefined);
+            }}
+          />
         </Toolbar>
       </Card>
 

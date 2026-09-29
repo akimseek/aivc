@@ -12,9 +12,24 @@
 //! │   ├── webview/                WebView 的数据目录（缓存 / localStorage）
 //! │   └── vendor-backups/          写入用户 CLI 配置前的备份
 //! └── logs/
-//!     ├── gateway.log              网关文本日志（含轮转 gateway.log.1）
+//!     ├── app.log                  应用统一日志出口。路径常量在 `aivc-app` 的
+//!     │                            `logging::LOG_RELATIVE_PATH`（那里才是写入方，
+//!     │                            因此路径只在那里定义一次）
 //!     └── performance.log          启动阶段性能埋点
 //! ```
+//!
+//! # 没有 `gateway.log`：网关的日志就是数据库里的请求记录
+//!
+//! 旧工程把网关日志写成两个东西——`logs/gateway.log`（+ 轮转 `.1`，单文件 2 MB）
+//! 与数据库里的请求记录，界面上那个「仅文件日志 / 仅请求记录 / 两者」的下拉就是
+//! 为区分它们而存在的。
+//!
+//! 本工程**只保留后者**，理由是两份记录的内容完全重合，而请求记录**可查询**
+//! （按平台 / 供应商 / 结果 / 时间过滤、分页、聚合用量），文本文件做不到这些。
+//! 再写一份轮转文本日志只是为了给「清理文件日志」这个选项一个对象，
+//! 那是把旧工程的实现形状当成需求。
+//!
+//! 因此界面上没有「日志模式」这一项，`gateway:clear-logs` 清的也**只有**请求记录。
 //!
 //! # 与旧工程的关系：**完全区分**
 //!
@@ -126,12 +141,6 @@ impl AppPaths {
         self.log_dir().join("performance.log")
     }
 
-    /// `logs/gateway.log` —— 网关文本日志。
-    #[must_use]
-    pub fn gateway_log_path(&self) -> PathBuf {
-        self.log_dir().join("gateway.log")
-    }
-
     /// 需要预先创建的目录（按创建顺序）。
     ///
     /// `webview/` 必须在窗口创建**之前**就存在：它是 `WebView2` 的数据目录。
@@ -188,10 +197,6 @@ mod tests {
             paths.performance_log_path(),
             PathBuf::from("D:/code/ai/aivc-rs/logs/performance.log")
         );
-        assert_eq!(
-            paths.gateway_log_path(),
-            PathBuf::from("D:/code/ai/aivc-rs/logs/gateway.log")
-        );
     }
 
     #[test]
@@ -233,7 +238,6 @@ mod tests {
             paths.cache_dir(),
             paths.vendor_backup_dir(),
             paths.performance_log_path(),
-            paths.gateway_log_path(),
         ] {
             assert!(
                 path.starts_with(root),

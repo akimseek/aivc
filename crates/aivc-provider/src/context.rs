@@ -219,9 +219,13 @@ impl ProviderContext {
     /// `logs/performance.log` —— 启动埋点与**前端异常**的落点。
     ///
     /// 前端异常在 Rust 侧完全不可见，因此这个文件是排查「界面静默失效」的唯一线索。
+    ///
+    /// 路径**由 [`AppPaths`] 给**，不在这里再拼一次：上面那个方法就是这么做的，
+    /// 而这一个原来自己 `join("performance.log")`——同一个文件名有两处真值，
+    /// 改目录结构时必漏一处。
     #[must_use]
     pub fn performance_log_path(&self) -> std::path::PathBuf {
-        self.paths.log_dir().join("performance.log")
+        self.paths.performance_log_path()
     }
 
     /// 本机为 `local`，WSL 为 `wsl-<净化后的发行版名>`：发行版名可能含路径分隔符，

@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CUSTOM_BOUNDS_MESSAGES,
   customBounds,
   failureSummary,
   formatCost,
@@ -57,28 +58,50 @@ describe("customBounds", () => {
   it("结束日期包含**一整天**", () => {
     // 用户选「到 10 月 8 日」的意思是包含 8 号那天。当成 00:00 会把最后一天整个漏掉。
     const bounds = customBounds("2025-10-01", "2025-10-08");
-    expect(bounds).not.toBeNull();
-    const end = new Date(bounds!.end);
+    expect(bounds.ok).toBe(true);
+    if (!bounds.ok) return;
+    const end = new Date(bounds.end);
     expect(end.getDate()).toBe(8);
     expect(end.getHours()).toBe(23);
     expect(end.getMinutes()).toBe(59);
   });
 
-  it("缺任一端就返回 null（调用方应当不发请求）", () => {
+  it("缺任一端 → `incomplete`（调用方**不发请求**，并提示「请选择完整的起止日期」）", () => {
     // 拿一个自己编的区间去查，会让用户以为「自定义」没生效。
-    expect(customBounds("", "2025-10-08")).toBeNull();
-    expect(customBounds("2025-10-01", "")).toBeNull();
-    expect(customBounds("", "")).toBeNull();
+    for (const [start, end] of [
+      ["", "2025-10-08"],
+      ["2025-10-01", ""],
+      ["", ""]
+    ]) {
+      const result = customBounds(start, end);
+      expect(result.ok, `${start}|${end}`).toBe(false);
+      expect(result.ok === false && result.reason).toBe("incomplete");
+    }
   });
 
-  it("起止颠倒时**交换**而不是报错", () => {
-    const bounds = customBounds("2025-10-08", "2025-10-01");
-    expect(bounds).not.toBeNull();
-    expect(new Date(bounds!.start).getTime()).toBeLessThan(new Date(bounds!.end).getTime());
+  it("**起止颠倒 → `reversed`，不再静默交换**", () => {
+    // 原来这里是交换两端并照常查询。改成报错的理由：
+    // 静默重排用户输入会让他从此不知道自己填的到底被怎么理解了；
+    // 而旧平台本来就是报错（`起始日期不能晚于结束日期。`）。
+    const result = customBounds("2025-10-08", "2025-10-01");
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toBe("reversed");
   });
 
-  it("无法解析的日期返回 null", () => {
-    expect(customBounds("不是日期", "2025-10-08")).toBeNull();
+  it("同一天是合法的（不是颠倒）", () => {
+    const result = customBounds("2025-10-08", "2025-10-08");
+    expect(result.ok).toBe(true);
+  });
+
+  it("无法解析的日期按「没填全」处理（提示用户补日期，而不是一个内部错）", () => {
+    const result = customBounds("不是日期", "2025-10-08");
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toBe("incomplete");
+  });
+
+  it("两条提示语与旧平台逐字一致", () => {
+    expect(CUSTOM_BOUNDS_MESSAGES.incomplete).toBe("请选择完整的起止日期。");
+    expect(CUSTOM_BOUNDS_MESSAGES.reversed).toBe("起始日期不能晚于结束日期。");
   });
 });
 

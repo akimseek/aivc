@@ -13,7 +13,14 @@ import {
 } from "../components";
 import * as api from "../ipc/commands";
 import type { GatewayLogEntry } from "../types";
-import { formatLogTime, outcomeLabel, rangeBounds, USAGE_RANGES, type UsageRangeKey } from "./gateway-range";
+import {
+  customBounds,
+  formatLogTime,
+  outcomeLabel,
+  rangeBounds,
+  type UsageRangeKey
+} from "./gateway-range";
+import { GatewayRangePicker } from "./gateway-range-picker";
 
 /**
  * Gateway 日志的**查询与清理**。
@@ -30,21 +37,27 @@ import { formatLogTime, outcomeLabel, rangeBounds, USAGE_RANGES, type UsageRange
  * 后端 `gateway:query-logs` 与 `gateway:delete-log-entries` 一直在，界面此前没有接。
  */
 export function GatewayLogPanel({ onError }: { onError: (message: string) => void }) {
-  const [range, setRange] = useState<UsageRangeKey>("7d");
+  const [picker, setPicker] = useState({ range: "7d" as UsageRangeKey, start: "", end: "" });
   const [outcome, setOutcome] = useState<"" | "ok" | "error" | "timeout" | "client-aborted">("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toast = useToast();
 
-  const bounds = rangeBounds(range);
+  // 自定义区间没填全时**不发请求**：编一个区间去查会掩盖「还没填完」这件事。
+  const custom = picker.range === "custom" ? customBounds(picker.start, picker.end) : null;
+  const preset = picker.range === "custom" ? null : rangeBounds(picker.range);
+  const start = custom?.ok ? custom.start : (preset?.start ?? "");
+  const end = custom?.ok ? custom.end : (preset?.end ?? "");
 
   const load = useCallback(
     () =>
-      api.queryGatewayLogs({
-        ...(outcome ? { outcome } : {}),
-        periodStart: bounds.start,
-        periodEnd: bounds.end
-      }),
-    [outcome, bounds.start, bounds.end]
+      start && end
+        ? api.queryGatewayLogs({
+            ...(outcome ? { outcome } : {}),
+            periodStart: start,
+            periodEnd: end
+          })
+        : Promise.resolve([]),
+    [outcome, start, end]
   );
 
   const logs = useAsyncData(load, { errorMessage: "日志查询失败" });
@@ -99,22 +112,16 @@ export function GatewayLogPanel({ onError }: { onError: (message: string) => voi
         }
       >
         <Toolbar>
-          <label className="field">
-            <span className="field-label">查询范围</span>
-            <Select
-              value={range}
-              onChange={(event) => {
-                setSelected(new Set());
-                setRange(event.target.value as UsageRangeKey);
-              }}
-            >
-              {USAGE_RANGES.filter((item) => item.key !== "custom").map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.label}
-                </option>
-              ))}
-            </Select>
-          </label>
+          <GatewayRangePicker
+            range={picker.range}
+            start={picker.start}
+            end={picker.end}
+            onChange={(next) => {
+              // 换范围就清空勾选：跨区间保留勾选会让「删除选中」删掉没显示的那几条。
+              setSelected(new Set());
+              setPicker(next);
+            }}
+          />
 
           <label className="field">
             <span className="field-label">结果类型</span>

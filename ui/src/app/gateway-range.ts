@@ -57,23 +57,55 @@ export function rangeBounds(
 }
 
 /**
- * 从两个日期输入框的值算出区间。
+ * 自定义区间的结果。
  *
- * 两端都缺失时返回 `null`——调用方应当**不发请求**，而不是拿一个自己编的区间去查：
- * 那会让用户以为「自定义」没生效。
+ * # 为什么不是「返回 `null` 或区间」
+ *
+ * 旧平台对这两个输入有**两条不同的提示**：
+ *
+ * | 情况 | 旧平台的提示 |
+ * | --- | --- |
+ * | 只填了一端 | `请选择完整的起止日期。` |
+ * | 起始晚于结束 | `起始日期不能晚于结束日期。` |
+ *
+ * 用一个 `null` 表达不了「是哪一种」，于是界面只能给一句笼统的话，
+ * 而用户看不出自己该补哪个框、还是该调顺序。因此这里把原因带出来。
+ */
+export type CustomBounds =
+  | { ok: true; start: string; end: string }
+  | { ok: false; reason: "incomplete" | "reversed" };
+
+/** 两条提示语，与旧平台逐字一致。 */
+export const CUSTOM_BOUNDS_MESSAGES: Record<"incomplete" | "reversed", string> = {
+  incomplete: "请选择完整的起止日期。",
+  reversed: "起始日期不能晚于结束日期。"
+};
+
+/**
+ * 从两个日期输入框的值算出区间。
  *
  * 结束日期取**当天 23:59:59.999**：用户选「到 10 月 8 日」的意思是包含 10 月 8 日一整天。
  * 直接用它当 00:00 会把最后一天整个漏掉，而这种错看起来只是「数字小了一点」。
+ *
+ * # 起止颠倒时**报错，不静默交换**
+ *
+ * 这里原来是交换两端并照常查询。改成报错有两个理由：
+ *
+ * 1. 静默重排用户输入是那种会让人不信任工具的行为——他明明填反了，
+ *    工具却假装没看见，从此他不知道自己填的到底被怎么理解了；
+ * 2. 旧平台本来就是报错（`起始日期不能晚于结束日期。`），照它做不必另创一套语义。
  */
-export function customBounds(start: string, end: string): { start: string; end: string } | null {
-  if (!start || !end) return null;
+export function customBounds(start: string, end: string): CustomBounds {
+  if (!start || !end) return { ok: false, reason: "incomplete" };
   const from = new Date(`${start}T00:00:00`);
   const to = new Date(`${end}T23:59:59.999`);
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
-  // 起止颠倒时**交换**而不是报错：用户拖错了顺序是常事，而结果仍然是他想要的。
-  return from <= to
-    ? { start: from.toISOString(), end: to.toISOString() }
-    : { start: to.toISOString(), end: from.toISOString() };
+  // 日期串解析失败也按「没填全」处理：用户看到的是「请选择完整的起止日期」，
+  // 而他确实是没给一个能用的日期。
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return { ok: false, reason: "incomplete" };
+  }
+  if (from > to) return { ok: false, reason: "reversed" };
+  return { ok: true, start: from.toISOString(), end: to.toISOString() };
 }
 
 /** 把 ISO 时间显示成 `MM-DD HH:mm`。日志表里要能一眼扫出时间，秒是噪音。 */

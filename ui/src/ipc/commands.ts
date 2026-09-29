@@ -195,9 +195,21 @@ export const markSessionOpened = (targetId: string, sessionId: string) =>
 
 /* ── 供应商 ─────────────────────────────────────────── */
 
-/** 列出某平台的供应商。 */
-export const listVendors = (providerId: string) =>
-  invoke<ApiVendor[]>("vendor:list", { providerId });
+/**
+ * 列出供应商。
+ *
+ * `providerId` **可以省略**：省略或传空串时后端列出**全部平台**的供应商
+ * （`vendor:list` 只在参数非空时才过滤）。供应商管理页需要这一条——
+ * 它是「所有厂商的供应商放在一起管」，不是「当前平台的供应商」。
+ *
+ * # 这里不能用 `ProviderId::from_target_id` 那种宽松解析
+ *
+ * 后端的注释写得很明确：宽松解析对没有前缀的裸字符串（如 `"claude"`）
+ * 会**兜底成 Codex**，于是「查询 Claude 供应商」返回的是 Codex 的结果——
+ * 静默出错，比报错更糟。所以传值必须是真的平台编号。
+ */
+export const listVendors = (providerId?: string) =>
+  invoke<ApiVendor[]>("vendor:list", providerId ? { providerId } : {});
 
 /**
  * 把一路终端的路由切到指定供应商。

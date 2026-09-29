@@ -560,6 +560,7 @@ export function App() {
           reportError: console.setError
         }}
         commands={commands}
+        providers={console.providers}
         providerId={console.providerId}
         targetId={console.targetId}
         targets={console.targets}

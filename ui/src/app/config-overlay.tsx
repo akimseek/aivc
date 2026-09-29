@@ -6,11 +6,11 @@ import { GatewayInsights } from "./gateway-insights";
 import { GatewayFailurePanel } from "./gateway-failure-panel";
 import { GatewayLogPanel } from "./gateway-log-panel";
 import { GatewayUsagePanel } from "./gateway-usage-panel";
-import { VendorProbePanel } from "./vendor-probe-panel";
+import { VendorsPanel } from "./config/vendors-panel";
 import type {
   AiProviderId,
+  AiProviderSummary,
   AiTarget,
-  ApiVendor,
   CliEnvironmentStatus,
   ExternalApiStatus,
   FailoverRule,
@@ -56,6 +56,7 @@ export type ConfigTab =
 
 export function ConfigOverlay({
   providerId,
+  providers,
   targetId,
   targets,
   initialTab = "vendors",
@@ -63,6 +64,13 @@ export function ConfigOverlay({
   onError
 }: {
   providerId: AiProviderId | "";
+  /**
+   * 全部平台。
+   *
+   * 供应商页要它——那里管的是**所有厂商**的供应商，厂商的下拉与筛选都从这里取，
+   * 因此显示名与侧栏逐字一致。缺了它那一页只能拿编号当名字。
+   */
+  providers: AiProviderSummary[];
   targetId: string;
   /** 全部目标：诊断页要把每个目标的状态列出来。 */
   targets: AiTarget[];
@@ -102,7 +110,9 @@ export function ConfigOverlay({
         </div>
 
         <div className="overlay-body">
-          {tab === "vendors" && <VendorsPanel providerId={providerId} onError={onError} />}
+          {tab === "vendors" && (
+            <VendorsPanel providerId={providerId} providers={providers} onError={onError} />
+          )}
           {tab === "skills" && <SkillsPanel targetId={targetId} onError={onError} />}
           {tab === "gateway" && <GatewayPanel onError={onError} />}
           {/* 观测三页：看，不改。设置仍然在「网关」那一页。 */}
@@ -265,260 +275,6 @@ function DiagnosticsPanel({
     </>
   );
 }
-
-/* ── 供应商 ──────────────────────────────────────────── */
-
-function VendorsPanel({
-  providerId,
-  onError
-}: {
-  providerId: AiProviderId | "";
-  onError: (message: string) => void;
-}) {
-  const [vendors, setVendors] = useState<ApiVendor[]>([]);
-  const [loading, setLoading] = useState(false);
-  /** 正在编辑的草稿；`id` 为空表示新建。`null` 表示表单未打开。 */
-  const [draft, setDraft] = useState<VendorDraft | null>(null);
-
-  const load = useCallback(async () => {
-    if (!providerId) {
-      setVendors([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      setVendors(await api.listVendors(providerId));
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
-  }, [providerId, onError]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const toggle = async (vendor: ApiVendor) => {
-    try {
-      await api.setVendorEnabled(vendor.id, !vendor.enabled);
-      await load();
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const save = async () => {
-    if (!draft || !providerId) return;
-    try {
-      await api.saveVendor({
-        ...(draft.id ? { id: draft.id } : {}),
-        providerId,
-        name: draft.name.trim(),
-        // 留空即沿用旧值——后端归一化时这样处理，因此编辑时不必重输密钥。
-        apiKey: draft.apiKey.trim(),
-        apiBaseUrl: draft.apiBaseUrl.trim(),
-        ...(draft.sort.trim() ? { sort: Number.parseInt(draft.sort, 10) || 0 } : {}),
-        enabled: draft.enabled
-      });
-      setDraft(null);
-      await load();
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  if (!providerId) return <EmptyState message="请先选择平台。" />;
-
-  return (
-    <>
-      <Toolbar>
-        <span className="row-meta">
-          {loading ? "加载中…" : `${vendors.length} 个 · ${vendors.filter((v) => v.enabled).length} 个启用`}
-        </span>
-        <ToolbarSpacer />
-        <Button
-          small
-          variant="primary"
-          onClick={() =>
-            setDraft({
-              id: "",
-              name: "",
-              apiKey: "",
-              apiBaseUrl: "",
-              sort: String(vendors.length),
-              enabled: true
-            })
-          }
-        >
-          新增供应商
-        </Button>
-      </Toolbar>
-
-      {draft && (
-        <div className="editor">
-          <div className="field-grid">
-            <Field label="名称">
-              <TextInput
-                value={draft.name}
-                placeholder="例如 官方 v2"
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              />
-            </Field>
-            <Field label="API 地址">
-              <TextInput
-                value={draft.apiBaseUrl}
-                placeholder="https://api.example.com/v1"
-                onChange={(event) => setDraft({ ...draft, apiBaseUrl: event.target.value })}
-              />
-            </Field>
-            <Field
-              label="API Key"
-              hint={draft.id ? "留空表示沿用原密钥。" : undefined}
-            >
-              <TextInput
-                value={draft.apiKey}
-                placeholder={draft.id ? "（不修改）" : "sk-…"}
-                onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
-              />
-            </Field>
-            <Field label="排序" hint="同平台内唯一，决定候选池顺序。">
-              <TextInput
-                value={draft.sort}
-                inputMode="numeric"
-                onChange={(event) => setDraft({ ...draft, sort: event.target.value })}
-              />
-            </Field>
-          </div>
-          <Toolbar>
-            <Button
-              small
-              variant="primary"
-              disabled={!draft.name.trim() || !draft.apiBaseUrl.trim()}
-              onClick={() => void save()}
-            >
-              {draft.id ? "保存修改" : "创建"}
-            </Button>
-            <Button small onClick={() => setDraft(null)}>
-              取消
-            </Button>
-            <ToolbarSpacer />
-            <span className="row-meta">
-              写入 CLI 配置前会自动备份到 <code>data/vendor-backups/</code>
-            </span>
-          </Toolbar>
-        </div>
-      )}
-
-      {!loading && vendors.length === 0 && (
-        <EmptyState
-          message="这个平台还没有配置供应商。"
-          hint="供应商决定 CLI 走哪个 API 地址与密钥。"
-          action={
-            <Button
-              onClick={() =>
-                setDraft({
-                  id: "",
-                  name: "",
-                  apiKey: "",
-                  apiBaseUrl: "",
-                  sort: "0",
-                  enabled: true
-                })
-              }
-            >
-              新增供应商
-            </Button>
-          }
-        />
-      )}
-
-      {vendors.length > 0 && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>名称</th>
-              <th>API 地址</th>
-              <th>排序</th>
-              <th>状态</th>
-              <th />
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {vendors.map((vendor) => (
-              <tr key={vendor.id}>
-                <td>{vendor.name}</td>
-                {/* 地址可能很长，用等宽字体并允许换行——截断会让同名中转商分不出来。 */}
-                <td className="mono">{vendor.apiBaseUrl}</td>
-                <td>{vendor.sort}</td>
-                <td>
-                  <span className={`tag ${vendor.enabled ? "ok" : "off"}`}>
-                    {vendor.enabled ? "已启用" : "已禁用"}
-                  </span>
-                </td>
-                <td>
-                  <Button
-                    small
-                    onClick={() =>
-                      setDraft({
-                        id: vendor.id,
-                        name: vendor.name,
-                        // **不回填密钥**：接口本来就不返回它，界面也不该假装有。
-                        apiKey: "",
-                        apiBaseUrl: vendor.apiBaseUrl,
-                        sort: String(vendor.sort),
-                        enabled: vendor.enabled
-                      })
-                    }
-                  >
-                    编辑
-                  </Button>
-                </td>
-                <td>
-                  <Button small onClick={() => void toggle(vendor)}>
-                    {vendor.enabled ? "禁用" : "启用"}
-                  </Button>
-                </td>
-                <td>
-                  <Button
-                    small
-                    variant="danger"
-                    onClick={() =>
-                      void api
-                        .deleteVendor(vendor.id)
-                        .then(load)
-                        .catch((error: unknown) =>
-                          onError(error instanceof Error ? error.message : String(error))
-                        )
-                    }
-                  >
-                    删除
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* 探活三条：测连接 / 查余额 / 读 CLI 实际读到的配置。
-          它们与上面的编辑表单是**两件事**：表单改的是应用的记录，
-          这里验证的是「那家供应商现在到底能不能用」。 */}
-      <VendorProbePanel vendors={vendors} onError={onError} />
-    </>
-  );
-}
-
-/** 供应商编辑草稿。数字字段用字符串存——输入框里「空」和「0」不是一回事。 */
-type VendorDraft = {
-  id: string;
-  name: string;
-  apiKey: string;
-  apiBaseUrl: string;
-  sort: string;
-  enabled: boolean;
-};
 
 /* ── 技能 ────────────────────────────────────────────── */
 

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Button, CommandPalette, type Command } from "../components";
-import type { AiProviderId, AiSession, AiTarget } from "../types";
+import type { AiProviderId, AiProviderSummary, AiSession, AiTarget } from "../types";
 import { AboutDialog } from "./about-dialog";
 import { ConfigOverlay, type ConfigTab } from "./config-overlay";
 import { ExitConfirm } from "./exit-confirm";
@@ -108,6 +108,7 @@ export function AppOverlays({
   state,
   actions,
   commands,
+  providers,
   providerId,
   targetId,
   targets,
@@ -121,6 +122,8 @@ export function AppOverlays({
   actions: OverlaysActions;
   /** 命令面板的命令表。 */
   commands: Command[];
+  /** 全部平台：供应商页要用它显示厂商名。 */
+  providers: AiProviderSummary[];
   providerId: AiProviderId | "";
   targetId: string;
   targets: AiTarget[];
@@ -277,6 +280,7 @@ export function AppOverlays({
       {state.configOpen && (
         <ConfigOverlay
           providerId={providerId}
+          providers={providers}
           targetId={targetId}
           targets={targets}
           initialTab={state.configTab}

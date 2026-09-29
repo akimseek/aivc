@@ -1,0 +1,89 @@
+import { useCallback, useEffect, useState } from "react";
+
+import { Button, EmptyState, Field, TextInput, Toolbar } from "../../components";
+import * as api from "../../ipc/commands";
+import type { WorkspacePreset } from "../../types";
+
+/**
+ * 工作区预设：把「用哪个目录、带什么提示词、附加什么 CLI 参数」存下来复用。
+ *
+ * 去重键是 `cwd` + 目标类型——同一个目录配两次没有意义，后端会替换旧的那条。
+ */
+export function PresetsPanel({ onError }: { onError: (message: string) => void }) {
+  const [presets, setPresets] = useState<WorkspacePreset[]>([]);
+  const [name, setName] = useState("");
+  const [cwd, setCwd] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setPresets(await api.listPresets());
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const save = async () => {
+    if (!cwd.trim()) return;
+    try {
+      await api.savePreset({ name: name.trim(), cwd: cwd.trim() });
+      setName("");
+      setCwd("");
+      await load();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  return (
+    <>
+      <div className="field-grid">
+        <Field label="名称" hint="留空时用工作目录作为名称。">
+          <TextInput value={name} onChange={(event) => setName(event.target.value)} />
+        </Field>
+        <Field label="工作目录" hint="必填：空目录的预设没有意义。">
+          <TextInput
+            value={cwd}
+            placeholder="例如 /home/akim/code/ai"
+            onChange={(event) => setCwd(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void save();
+            }}
+          />
+        </Field>
+      </div>
+      <Toolbar>
+        <Button small disabled={!cwd.trim()} onClick={() => void save()}>
+          新增预设
+        </Button>
+      </Toolbar>
+
+      {presets.length === 0 && <EmptyState message="还没有工作区预设。" />}
+      {presets.map((preset) => (
+        <div key={preset.id} className="list-row">
+          <div className="list-row-main">
+            <span className="list-row-title">{preset.name}</span>
+            <span className="list-row-sub">{preset.cwd}</span>
+          </div>
+          <Button
+            small
+            variant="danger"
+            onClick={() =>
+              void api
+                .deletePreset(preset.id)
+                .then(load)
+                .catch((error: unknown) =>
+                  onError(error instanceof Error ? error.message : String(error))
+                )
+            }
+          >
+            删除
+          </Button>
+        </div>
+      ))}
+    </>
+  );
+}

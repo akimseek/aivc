@@ -120,6 +120,13 @@ export function App() {
   const [titleDialog, setTitleDialog] = useState<
     { kind: "rename" | "duplicate"; session: AiSession } | null
   >(null);
+  /**
+   * 侧栏是否折起来。
+   *
+   * 折起来把宽度全让给终端——终端排版按列数算，多 200px 就是多十几列。
+   * 状态**不持久化**：它是一次会话里的临时调整，与窗口大小同理。
+   */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   /**
    * 新会话对话框的内容；`null` 表示没打开。
@@ -691,6 +698,8 @@ export function App() {
           gateway={console.gateway}
           lastSwitch={lastRouteSwitch}
           workbenchToken={workbenchToken}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
         />
 
         <SessionWorkspace

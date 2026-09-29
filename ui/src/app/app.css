@@ -204,9 +204,27 @@ select {
 
 .main {
   display: grid;
+  /*
+   * 列宽由**侧栏自己的状态**决定，而不是 `.main` 上再挂一个类。
+   *
+   * 挂类的话「折叠」这个事实会同时活在两处（侧栏知道、`.main` 也知道），
+   * 迟早会出现「侧栏折了但列还是 360px」这种半截状态。
+   * `:has()` 让列宽直接跟着侧栏走，只有一处真相。
+   */
   grid-template-columns: 360px minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
+}
+
+/* 侧栏折起来时只留一条能放按钮的竖边——`0px` 会让按钮也没地方站。 */
+.main:has(.sidebar.collapsed) {
+  grid-template-columns: 36px minmax(0, 1fr);
+}
+
+.sidebar.collapsed {
+  align-items: center;
+  padding-top: var(--ui-space-3);
+  gap: var(--ui-space-2);
 }
 
 /* ── 侧栏 ────────────────────────────────────────────── */
@@ -231,6 +249,9 @@ select {
 }
 
 .sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
   padding: var(--ui-space-4) var(--ui-space-4) var(--ui-space-3);
   border-bottom: 1px solid var(--ui-divider);
 }
@@ -239,6 +260,8 @@ select {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* 折叠按钮贴到右端：两者之间留出空白，按错了不会误触。 */
+  margin-right: auto;
 }
 
 .sidebar-head h1 {

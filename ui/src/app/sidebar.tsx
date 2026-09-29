@@ -92,7 +92,9 @@ export function Sidebar({
   vendors,
   gateway,
   lastSwitch,
-  workbenchToken
+  workbenchToken,
+  collapsed = false,
+  onToggleCollapsed
 }: {
   console: SidebarConsole;
   selectedTarget: AiTarget | null;
@@ -105,12 +107,31 @@ export function Sidebar({
   lastSwitch?: { vendorId: string; reason: string; at: string };
   /** 变化时让工作台重新取数（后端推送请求记录时外层会加一）。 */
   workbenchToken: number;
+  /** 折起来只留一条竖边。终端很宽时用得着。 */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }) {
   const trash = state.view === "trash";
   const selectedCount = state.selectedIds.length;
   const quickCount = state.quickAccess.favorites.length + state.quickAccess.recent.length;
   const workbenchOpen = state.pane === "workbench";
   const provider = providers.find((item) => item.id === state.providerId);
+
+  /**
+   * 折起来时**只保留那个按钮**。
+   *
+   * 折叠的意义就是把宽度让给终端，留一半内容等于没折。但按钮本身必须留着——
+   * 折起来之后没有别的入口能把它打开，那就是一条死路。
+   */
+  if (collapsed) {
+    return (
+      <aside className="sidebar collapsed" aria-label="会话侧栏（已折叠）">
+        <Button small onClick={onToggleCollapsed} title="展开侧栏" aria-label="展开侧栏">
+          »
+        </Button>
+      </aside>
+    );
+  }
 
   return (
     <aside className="sidebar">
@@ -119,6 +140,13 @@ export function Sidebar({
           <span className={`status-dot${state.busy ? " off" : ""}`} />
           <h1>会话</h1>
         </div>
+        {/* 折起来把宽度让给终端。**必须留在标题行里**：折起来之后
+            没有别的入口能把它打开。 */}
+        {onToggleCollapsed && (
+          <Button small onClick={onToggleCollapsed} title="折叠侧栏" aria-label="折叠侧栏">
+            «
+          </Button>
+        )}
       </div>
 
       <div className="pickers">

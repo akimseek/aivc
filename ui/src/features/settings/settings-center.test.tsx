@@ -149,6 +149,24 @@ describe("SettingsCenter 导航", () => {
     expect(active?.getAttribute("aria-current")).toBe("page");
     expect(items().filter((item) => item.hasAttribute("aria-current"))).toHaveLength(1);
   });
+
+  it("**十个面板每一个都套了 `.panel-header`**（标题 + 说明），不靠各页自己拼", async () => {
+    // 面板头统一是批次二的要求：只有十个都真的用上，用户在页与页之间才不会
+    // 一会儿看到卡片头、一会儿看到裸标题。
+    const { view, items } = setup();
+    for (const item of items()) {
+      const label = (item.textContent ?? "").trim();
+      await act(async () => {
+        item.click();
+      });
+      await waitFor(() => {
+        const header = view.container.querySelector(".settings-content .panel-header");
+        expect(header, `「${label}」没有面板头`).toBeTruthy();
+        // 标题非空即可——说明可以短，但不能一个字都没有。
+        expect((header!.textContent ?? "").trim().length, `「${label}」的标题是空的`).toBeGreaterThan(0);
+      });
+    }
+  });
 });
 
 describe("SettingsCenter：关于与关闭", () => {

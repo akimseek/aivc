@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, Card, EmptyState, Field, Notice, Select } from "../../components";
+import { PanelHeader } from "../../features/settings/panel-header";
 import * as api from "../../ipc/commands";
 import type { AiProviderId, AiTarget, CliEnvironmentStatus } from "../../types";
 
@@ -138,10 +139,11 @@ export function EnvironmentPanel({
 
   return (
     <>
-      <p className="field-hint">
-        选择已集成的 AI 厂商，在当前目标环境执行 npm 全局安装。Node 缺失或版本不足时，
-        会优先使用已安装的 nvm 安装 Node。
-      </p>
+      {/* 面板头统一：原来那段开场说明搬到这里（同一句话，只是位置从正文变到头部）。 */}
+      <PanelHeader
+        title="运行时环境"
+        description="选择已集成的 AI 厂商，在当前目标环境执行 npm 全局安装。Node 缺失或版本不足时，会优先使用已安装的 nvm 安装 Node。"
+      />
 
       <div className="field-grid">
         <Field label="目标环境">

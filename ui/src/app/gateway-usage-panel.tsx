@@ -11,6 +11,7 @@ import {
   useAsyncData
 } from "../components";
 import * as api from "../ipc/commands";
+import { PanelHeader } from "../features/settings/panel-header";
 import type { UsageDimension } from "../types";
 import {
   USAGE_RANGES,
@@ -57,7 +58,8 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
 
   return (
     <>
-      <Card
+      {/* 面板头统一：标题与范围选择从卡片头搬到这里，卡片本体只管内容。 */}
+      <PanelHeader
         title="用量报表"
         description="按供应商与模型分组。「全部时间」的起点是 Unix 纪元——它覆盖所有已有记录。"
         actions={
@@ -84,7 +86,8 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
             />
           </>
         }
-      >
+      />
+      <Card>
         {report.loading ? (
           <LoadingBlock label="正在汇总用量…" />
         ) : report.error ? (

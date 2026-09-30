@@ -16,7 +16,8 @@ export function Card({
   children,
   className
 }: {
-  title: ReactNode;
+  /** 卡片标题。**可以不给**：面板头已经写了这一页的标题时，再写一遍就是重复。 */
+  title?: ReactNode;
   /** 标题下的一句说明。有些开关的后果不看说明根本猜不到。 */
   description?: ReactNode;
   /** 右上角动作（按钮、状态胶囊）。 */
@@ -24,15 +25,19 @@ export function Card({
   children?: ReactNode;
   className?: string;
 }) {
+  // 三样都没有就不渲染卡片头：一个空 `<header>` 会白占一段间距。
+  const hasHead = title !== undefined || description !== undefined || actions !== undefined;
   return (
     <section className={["card", className ?? ""].filter(Boolean).join(" ")}>
-      <header className="card-head">
-        <div className="card-heading">
-          <h3 className="card-title">{title}</h3>
-          {description !== undefined && <p className="card-description">{description}</p>}
-        </div>
-        {actions !== undefined && <div className="card-actions">{actions}</div>}
-      </header>
+      {hasHead && (
+        <header className="card-head">
+          <div className="card-heading">
+            {title !== undefined && <h3 className="card-title">{title}</h3>}
+            {description !== undefined && <p className="card-description">{description}</p>}
+          </div>
+          {actions !== undefined && <div className="card-actions">{actions}</div>}
+        </header>
+      )}
       {children !== undefined && <div className="card-body">{children}</div>}
     </section>
   );

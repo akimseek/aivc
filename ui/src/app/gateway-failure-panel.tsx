@@ -12,6 +12,7 @@ import {
   useAsyncData
 } from "../components";
 import * as api from "../ipc/commands";
+import { PanelHeader } from "../features/settings/panel-header";
 import type { AiProviderId } from "../types";
 import {
   customBounds,
@@ -98,15 +99,17 @@ export function GatewayFailurePanel({
 
   return (
     <>
-      <Card
-        title="Gateway 异常诊断"
+      {/* 面板头统一：标题、说明与「重新查询」从卡片头搬到这里（卡片本体只管内容）。 */}
+      <PanelHeader
+        title="异常诊断"
         description="按平台、供应商、结果筛选。错误代码比「结果」更能说明问题——「路由不存在 / 鉴权失败」记的是成功。"
         actions={
           <Button small onClick={() => void diagnostics.reload()}>
             重新查询
           </Button>
         }
-      >
+      />
+      <Card>
         <Toolbar>
           <label className="field">
             <span className="field-label">按平台筛选</span>

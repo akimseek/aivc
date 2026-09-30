@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { act, render, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { VendorsPanel, parseAdvancedJson, parsePrice } from "./vendors-panel";
+import {
+  VendorsPanel,
+  balanceLabel,
+  parseAdvancedJson,
+  parsePrice,
+  priceText
+} from "./vendors-panel";
 import type { AiProviderId } from "../../types";
 
 /**
@@ -15,11 +21,25 @@ import type { AiProviderId } from "../../types";
  *
  * 所以这里钉住的第一条就是：**保存时用的是草稿里的厂商，不是外层的当前平台**。
  * 这一条不测的话，界面看起来有选择器、保存时却被覆盖掉——那是最难发现的一类错。
+ *
+ * # 批次二补上的几条
+ *
+ * 重排把「厂商筛选」从下拉换成带条数的 chips、把余额搬进每一行、
+ * 把探活工具收进面板头的两个按钮。因此新增的断言集中在**这些新结构说的还是不是真话**：
+ * 条数按全量算、健康列不编造数据（后端根本没有延时）、删除要确认。
  */
 
 type Invoke = { command: string; args: Record<string, unknown> };
 
-function fakeRuntime(existing: unknown[] = []) {
+function fakeRuntime(
+  existing: unknown[] = [],
+  extra: {
+    health?: unknown[];
+    /** 单家余额：`"fail"` 表示后端返回带 `error` 的结果。 */
+    balance?: Record<string, unknown> | "fail";
+    allBalances?: unknown[];
+  } = {}
+) {
   const calls: Invoke[] = [];
   window.__TAURI__ = {
     core: {
@@ -28,9 +48,18 @@ function fakeRuntime(existing: unknown[] = []) {
         const name = payload?.command ?? "";
         calls.push({ command: name, args: payload?.args ?? {} });
         if (name === "vendor:list") return existing;
+        if (name === "gateway:get-vendor-health") return extra.health ?? [];
         if (name === "vendor:save") return { id: "new" };
         if (name === "vendor:set-enabled") return {};
         if (name === "vendor:delete") return true;
+        if (name === "vendor:refresh-balance") {
+          const vendorId = String(payload?.args?.vendorId ?? "");
+          if (extra.balance === "fail") return { vendorId, error: "连不上上游" };
+          return { vendorId, balance: extra.balance ?? {} };
+        }
+        if (name === "vendor:refresh-balances") return extra.allBalances ?? [];
+        if (name === "vendor:list-models") return [];
+        if (name === "vendor:read-configs") return [];
         return null;
       }
     },
@@ -46,14 +75,19 @@ const PROVIDERS = [
   { id: "qoder" as const, label: "Qoder CN", capabilities: {} }
 ];
 
-function setup(overrides: { existing?: unknown[]; providerId?: AiProviderId | "" } = {}) {
-  const runtime = fakeRuntime(overrides.existing ?? []);
+function setup(
+  overrides: { existing?: unknown[]; providerId?: AiProviderId | "" } = {},
+  extra: Parameters<typeof fakeRuntime>[1] = {}
+) {
+  const runtime = fakeRuntime(overrides.existing ?? [], extra);
   const onError = vi.fn();
+  const onNotify = vi.fn();
   const view = render(
     <VendorsPanel
       providerId={overrides.providerId === undefined ? "codex" : overrides.providerId}
       providers={PROVIDERS}
       onError={onError}
+      onNotify={onNotify}
     />
   );
   const byText = (label: string) => {
@@ -62,6 +96,11 @@ function setup(overrides: { existing?: unknown[]; providerId?: AiProviderId | ""
     );
     return found as HTMLButtonElement | undefined;
   };
+  /** chips 的文字带条数（`Codex (1)`），因此按前缀找。 */
+  const chip = (prefix: string) =>
+    [...view.container.querySelectorAll<HTMLButtonElement>(".chip")].find((item) =>
+      (item.textContent ?? "").startsWith(prefix)
+    );
   const typeInto = async (input: HTMLInputElement, value: string) => {
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -73,8 +112,41 @@ function setup(overrides: { existing?: unknown[]; providerId?: AiProviderId | ""
     [...view.container.querySelectorAll<HTMLInputElement>("input")].find((item) =>
       (item.placeholder ?? "").includes(part)
     );
-  return { view, runtime, onError, byText, typeInto, inputsByPlaceholder };
+  const rows = () => [...view.container.querySelectorAll("tbody tr")];
+  return { view, runtime, onError, onNotify, byText, chip, typeInto, inputsByPlaceholder, rows };
 }
+
+/** 一条供应商。除 `id` 外都可覆盖——不同断言要的形状不一样。 */
+function vendor(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "v1",
+    providerId: "codex",
+    name: "测试家",
+    apiBaseUrl: "https://a/v1",
+    sort: 0,
+    enabled: true,
+    ...over
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("VendorsPanel：面板头", () => {
+  it("头部就是那四个动作，且都在面板头里", async () => {
+    const { view, byText } = setup({ existing: [vendor()] });
+    await waitFor(() => expect(byText("查余额")).toBeTruthy());
+    for (const label of ["查余额", "测连接（列模型）", "读本地配置", "新增供应商"]) {
+      expect(byText(label), label).toBeTruthy();
+    }
+    const header = view.container.querySelector(".panel-header")!;
+    expect(header.textContent).toContain("供应商管理");
+    for (const label of ["查余额", "测连接（列模型）", "读本地配置", "新增供应商"]) {
+      expect(header.textContent, label).toContain(label);
+    }
+  });
+});
 
 describe("VendorsPanel：模型厂商选择", () => {
   it("表单里有「模型厂商」，四个厂商都在", async () => {
@@ -142,7 +214,13 @@ describe("VendorsPanel：模型厂商选择", () => {
   });
 });
 
-describe("VendorsPanel：跨平台列表", () => {
+describe("VendorsPanel：跨平台列表与厂商过滤", () => {
+  const mixed = [
+    vendor({ id: "c1", providerId: "codex", name: "Codex 家" }),
+    vendor({ id: "c2", providerId: "codex", name: "Codex 备用", enabled: false }),
+    vendor({ id: "a1", providerId: "claude", name: "Claude 家" })
+  ];
+
   it("默认列出**全部平台**的供应商（不传 providerId）", async () => {
     const { runtime } = setup();
     await waitFor(() => {
@@ -153,42 +231,50 @@ describe("VendorsPanel：跨平台列表", () => {
     });
   });
 
-  it("有平台筛选，默认是「全部平台」", async () => {
-    const { view } = setup();
-    const select = view.container.querySelector("select")!;
-    expect(select.value).toBe("all");
-    expect([...select.options].map((item) => item.textContent)).toContain("全部平台");
+  it("厂商过滤是 chips，默认选中「全部 (N)」，每家的条数按全量算", async () => {
+    const { chip } = setup({ existing: mixed });
+    await waitFor(() => expect(chip("全部")).toBeTruthy());
+    // 条数只有在**一次取全量**之后才算得出来——这正是这里不断言「筛选发给后端」的原因。
+    expect(chip("全部")!.textContent).toBe("全部 (3)");
+    expect(chip("Codex")!.textContent).toBe("Codex (2)");
+    expect(chip("Claude Code")!.textContent).toBe("Claude Code (1)");
+    expect(chip("Gemini")!.textContent).toBe("Gemini (0)");
+    expect(chip("全部")!.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("选了某个平台就把筛选交给后端", async () => {
-    const { view, runtime } = setup();
-    const select = view.container.querySelector("select")!;
+  it("选一家厂商只显示它那几家；切回「全部」都回来", async () => {
+    const { view, chip, rows } = setup({ existing: mixed });
+    await waitFor(() => expect(rows()).toHaveLength(3));
+
     await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
-      setter.call(select, "claude");
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      chip("Claude Code")!.click();
+    });
+    expect(rows()).toHaveLength(1);
+    expect(view.container.textContent).toContain("Claude 家");
+    expect(view.container.textContent).not.toContain("Codex 备用");
+    expect(chip("Claude Code")!.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => {
+      chip("全部")!.click();
+    });
+    expect(rows()).toHaveLength(3);
+  });
+
+  it("筛选结果为空时说清是**这个厂商**没有，而不是「一个都没有」", async () => {
+    const { view, chip } = setup({ existing: mixed });
+    await waitFor(() => expect(chip("Gemini (0)")).toBeTruthy());
+    await act(async () => {
+      chip("Gemini")!.click();
     });
     await waitFor(() => {
-      const call = runtime.calls.find(
-        (item) => item.command === "vendor:list" && item.args.providerId === "claude"
-      );
-      expect(call).toBeTruthy();
+      expect(view.container.textContent).toContain("Gemini 下还没有供应商");
     });
   });
 
   it("表格里有「厂商」列，显示的是**平台名**而不是编号", async () => {
     // 列表是跨平台的，不标出来同名供应商分不清；显示编号则没人认得出。
     const { view } = setup({
-      existing: [
-        {
-          id: "v1",
-          providerId: "claude",
-          name: "中转站",
-          apiBaseUrl: "https://b/v1",
-          sort: 0,
-          enabled: true
-        }
-      ]
+      existing: [vendor({ id: "v1", providerId: "claude", name: "中转站" })]
     });
     const table = await waitFor(() => {
       const found = view.container.querySelector("table.data-table");
@@ -199,32 +285,8 @@ describe("VendorsPanel：跨平台列表", () => {
     expect(table.textContent).toContain("Claude Code");
   });
 
-  it("筛选结果为空时说清是**这个平台**没有，而不是「一个都没有」", async () => {
-    const { view } = setup({ existing: [] });
-    const select = view.container.querySelector("select")!;
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
-      setter.call(select, "gemini");
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await waitFor(() => {
-      expect(view.container.textContent).toContain("Gemini 下还没有供应商");
-    });
-  });
-
   it("编辑时**不回填密钥**——接口本来就不返回它", async () => {
-    const { view, byText } = setup({
-      existing: [
-        {
-          id: "v1",
-          providerId: "codex",
-          name: "官方",
-          apiBaseUrl: "https://a/v1",
-          sort: 0,
-          enabled: true
-        }
-      ]
-    });
+    const { byText, view } = setup({ existing: [vendor({ name: "官方" })] });
     await waitFor(() => {
       expect(byText("编辑")).toBeTruthy();
     });
@@ -241,16 +303,7 @@ describe("VendorsPanel：跨平台列表", () => {
   it("编辑时带出这条自己的厂商，而不是当前平台", async () => {
     const { byText, runtime, inputsByPlaceholder, typeInto } = setup({
       providerId: "codex",
-      existing: [
-        {
-          id: "v1",
-          providerId: "qoder",
-          name: "Qoder 官方",
-          apiBaseUrl: "https://q/v1",
-          sort: 0,
-          enabled: true
-        }
-      ]
+      existing: [vendor({ id: "v1", providerId: "qoder", name: "Qoder 官方" })]
     });
     await waitFor(() => expect(byText("编辑")).toBeTruthy());
     await act(async () => {
@@ -264,6 +317,245 @@ describe("VendorsPanel：跨平台列表", () => {
       const call = runtime.calls.find((item) => item.command === "vendor:save");
       expect(call?.args.providerId).toBe("qoder");
       expect(call?.args.id).toBe("v1");
+    });
+  });
+});
+
+describe("VendorsPanel：表格列", () => {
+  it("费率一格：`$输入 / $输出`，未设置的那一边是 `-`（与 0 不是一回事）", () => {
+    expect(priceText(undefined)).toBe("-");
+    expect(priceText({ inputPerMillionUsd: 0 })).toBe("$0 / -");
+    expect(priceText({ inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 })).toBe("$0.15 / $0.6");
+  });
+
+  it("费率列显示真实值；未设置时是 `-` 而不是 `$0`", async () => {
+    const { view } = setup({
+      existing: [
+        vendor({ id: "v1", name: "带费率", pricing: { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 } }),
+        vendor({ id: "v2", name: "没费率" })
+      ]
+    });
+    await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
+    expect(view.container.textContent).toContain("$0.15 / $0.6");
+    // 两行都写「没费率」的那一格是 `-`。
+    expect(view.container.querySelectorAll("tbody tr")).toHaveLength(2);
+  });
+
+  it("**健康列不编造数据**：有快照才显示，没有就留空（后端根本不记延时）", async () => {
+    const circuitUntil = new Date(Date.now() + 3 * 60_000).toISOString();
+    const { view } = setup(
+      {
+        existing: [
+          vendor({ id: "v1", name: "有健康" }),
+          vendor({ id: "v2", name: "没健康" })
+        ]
+      },
+      {
+        health: [
+          {
+            vendorId: "v1",
+            providerId: "codex",
+            status: "open",
+            failureCount: 3,
+            successCount: 1,
+            failureRate: 0.75,
+            lastSuccessAt: new Date().toISOString(),
+            circuitUntil
+          }
+        ]
+      }
+    );
+    await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
+    const text = view.container.textContent ?? "";
+    expect(text).toContain("已熔断");
+    expect(text).toContain("失败率 75%");
+    expect(text).toContain("最近成功");
+    expect(text).toContain("熔断剩余 3 分钟");
+    // 延时这类后端不提供的东西**不许出现**（demo 里那 142ms 是编的）。
+    expect(text).not.toMatch(/\d+\s*ms/);
+    // 没有快照的那一行，健康那一格是空的。
+    const cells = [...view.container.querySelectorAll("tbody tr")][1]!.querySelectorAll("td");
+    expect(cells[3]!.textContent).toBe("");
+  });
+
+  it("候选池状态：同厂商里顺位最前的那家是「已启用 · 优先」", async () => {
+    const { view } = setup({
+      existing: [
+        vendor({ id: "v1", name: "第一顺位", sort: 1 }),
+        vendor({ id: "v2", name: "第二顺位", sort: 2 }),
+        vendor({ id: "v3", name: "被禁用", sort: 0, enabled: false })
+      ]
+    });
+    await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
+    const text = view.container.textContent ?? "";
+    expect(text).toContain("已启用 · 优先");
+    expect(text).toContain("已启用");
+    expect(text).toContain("未启用");
+    // 「优先」属于**启用且顺位最前**的那家：被禁用的那家排序更靠前也不算。
+    const rows = [...view.container.querySelectorAll("tbody tr")];
+    expect(rows[0]!.textContent).toContain("已启用 · 优先");
+    expect(rows[1]!.textContent).not.toContain("优先");
+    expect(rows[2]!.textContent).toContain("未启用");
+  });
+});
+
+describe("VendorsPanel：余额行内状态", () => {
+  it("没查过时说「未获取」，不是 0 也不是空白", async () => {
+    const { view } = setup({ existing: [vendor()] });
+    await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
+    expect(view.container.textContent).toContain("余额 未获取");
+  });
+
+  it("`balanceLabel` 的三态与「已过期」", () => {
+    expect(balanceLabel(undefined)).toBe("未获取");
+    expect(balanceLabel({ status: "loading" })).toBe("查询中…");
+    expect(balanceLabel({ status: "ok", balance: { remaining: 12.5, unit: "USD" } })).toBe("12.5 USD");
+    // 上游没提供余额与「这次查失败」都要说成查询失败——显示 0 会让人以为钱用完了。
+    expect(balanceLabel({ status: "ok", balance: {} })).toBe("查询失败");
+    expect(balanceLabel({ status: "error" })).toBe("查询失败");
+    // 失败时留着上一次的数字，标成过期：抹掉它等于把「查不到」说成「没有」。
+    expect(
+      balanceLabel({ status: "error", balance: { remaining: 3, unit: "USD" }, error: "超时" })
+    ).toBe("3 USD（已过期）");
+  });
+
+  it("单家刷新：点「刷新」拿到金额", async () => {
+    const { view, byText } = setup(
+      { existing: [vendor()] },
+      { balance: { remaining: 12.5, unit: "USD" } }
+    );
+    await waitFor(() => expect(byText("刷新")).toBeTruthy());
+    await act(async () => {
+      byText("刷新")!.click();
+    });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("余额 12.5 USD");
+    });
+  });
+
+  it("查询余额失败时报错，而不是安静地显示 0", async () => {
+    const { view, byText, onError } = setup({ existing: [vendor()] }, { balance: "fail" });
+    await waitFor(() => expect(byText("刷新")).toBeTruthy());
+    await act(async () => {
+      byText("刷新")!.click();
+    });
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining("余额查询失败"));
+      expect(view.container.textContent).toContain("余额 查询失败");
+    });
+    expect(view.container.textContent).not.toContain("余额 0");
+  });
+
+  it("「查余额」刷全部，并把每一家的结果落到它自己那一行", async () => {
+    const { view, byText } = setup(
+      {
+        existing: [
+          vendor({ id: "v1", name: "第一家" }),
+          vendor({ id: "v2", name: "第二家" })
+        ]
+      },
+      {
+        allBalances: [
+          { vendorId: "v1", balance: { remaining: 5, unit: "USD" } },
+          { vendorId: "v2", error: "没有余额接口" }
+        ]
+      }
+    );
+    await waitFor(() => expect(byText("查余额")).toBeTruthy());
+    await act(async () => {
+      byText("查余额")!.click();
+    });
+    await waitFor(() => {
+      const rows = [...view.container.querySelectorAll("tbody tr")];
+      expect(rows[0]!.textContent).toContain("余额 5 USD");
+      expect(rows[1]!.textContent).toContain("余额 查询失败");
+    });
+  });
+});
+
+describe("VendorsPanel：删除需要确认", () => {
+  it("**取消确认时什么都不发生**", async () => {
+    const { byText, runtime, onNotify } = setup({ existing: [vendor()] });
+    await waitFor(() => expect(byText("删除")).toBeTruthy());
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await act(async () => {
+      byText("删除")!.click();
+    });
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    // 确认文案要点名是哪一家，并说清「已写入的 CLI 配置不会还原」。
+    expect(String(confirmSpy.mock.calls[0]![0])).toContain("测试家");
+    expect(String(confirmSpy.mock.calls[0]![0])).toContain("不会还原已写入的 CLI 配置");
+    expect(runtime.calls.some((item) => item.command === "vendor:delete")).toBe(false);
+    expect(onNotify).not.toHaveBeenCalled();
+  });
+
+  it("确认后才删，并说一声", async () => {
+    const { byText, runtime, onNotify } = setup({ existing: [vendor()] });
+    await waitFor(() => expect(byText("删除")).toBeTruthy());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await act(async () => {
+      byText("删除")!.click();
+    });
+    await waitFor(() => {
+      expect(runtime.calls.some((item) => item.command === "vendor:delete")).toBe(true);
+      expect(onNotify).toHaveBeenCalledWith(expect.stringContaining("测试家"));
+    });
+  });
+});
+
+describe("VendorsPanel：启用与禁用的区别必须是说得出的话", () => {
+  it("两个动作各自的后果写在按钮提示里（一个写文件、一个只翻位）", async () => {
+    const { byText } = setup({
+      existing: [
+        vendor({ id: "v1", name: "开着的" }),
+        vendor({ id: "v2", name: "关着的", enabled: false })
+      ]
+    });
+    await waitFor(() => expect(byText("禁用")).toBeTruthy());
+    // 禁用只翻数据库标志位；启用会**写用户的 CLI 配置文件**（写前备份）。
+    expect(byText("禁用")!.getAttribute("title")).toContain("只翻启用位");
+    expect(byText("启用")!.getAttribute("title")).toContain("写进 CLI 配置文件");
+  });
+
+  it("表单底部的说明同样如实分开说（那句话此前与实现相反）", async () => {
+    const { byText, view } = setup({ existing: [vendor()] });
+    await waitFor(() => expect(byText("编辑")).toBeTruthy());
+    await act(async () => {
+      byText("编辑")!.click();
+    });
+    const note = view.container.querySelector(".editor .row-meta")!.textContent ?? "";
+    expect(note).toContain("写进你的 CLI 配置文件");
+    expect(note).toContain("只翻启用位");
+  });
+});
+
+describe("VendorsPanel：工具区块在表下方，按需展开", () => {  it("「测连接（列模型）」展开测连接卡片，再点一次收起", async () => {
+    const { view, byText } = setup({ existing: [vendor()] });
+    await waitFor(() => expect(byText("测连接（列模型）")).toBeTruthy());
+    expect(view.container.textContent).not.toContain("查询模型");
+
+    await act(async () => {
+      byText("测连接（列模型）")!.click();
+    });
+    await waitFor(() => expect(byText("查询模型")).toBeTruthy());
+
+    await act(async () => {
+      byText("测连接（列模型）")!.click();
+    });
+    expect(byText("查询模型")).toBeFalsy();
+  });
+
+  it("「读本地配置」展开白名单里的三个入口", async () => {
+    const { view, byText } = setup({ existing: [vendor()] });
+    await waitFor(() => expect(byText("读本地配置")).toBeTruthy());
+    await act(async () => {
+      byText("读本地配置")!.click();
+    });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("CLI 实际读到的配置");
+      expect(byText("Codex 配置")).toBeTruthy();
+      expect(byText("Claude 配置")).toBeTruthy();
+      expect(byText("Gemini 配置")).toBeTruthy();
     });
   });
 });
@@ -419,16 +711,11 @@ describe("VendorsPanel：费率与高级 JSON 接线", () => {
   it("编辑时回填费率与高级 JSON（不回填就会被「保存修改」清掉）", async () => {
     const { byText, view, inputsByPlaceholder } = setup({
       existing: [
-        {
-          id: "v1",
-          providerId: "codex",
+        vendor({
           name: "官方",
-          apiBaseUrl: "https://a/v1",
-          sort: 0,
-          enabled: true,
           pricing: { inputPerMillionUsd: 1.5 },
           balanceQuery: { endpoint: "/balance" }
-        }
+        })
       ]
     });
     await waitFor(() => expect(byText("编辑")).toBeTruthy());

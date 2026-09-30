@@ -2943,6 +2943,46 @@ select {
   font-size: 12px;
   white-space: pre;
 }
+
+/* ── 供应商面板（批次二重排：主表在上、工具在下）─────────
+   面板区不是 flex 容器，兄弟元素之间没有 gap——主表与工具卡片的间距
+   因此必须由这一层给出，否则它们会贴在一起。 */
+.vendor-panel {
+  display: grid;
+  gap: var(--ui-space-4);
+  align-content: start;
+}
+/* 名称与端点叠成两行：同名中转商靠地址区分，地址因此不能被挤到看不见。 */
+.vendor-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.vendor-identity-name {
+  font-weight: 620;
+  font-size: var(--ui-text-md);
+}
+/* 健康：徽章一行、细节一行。没有快照时这一格是**空的**——不拿「未知」填满它。 */
+.vendor-health {
+  display: grid;
+  gap: var(--ui-space-1);
+  justify-items: start;
+}
+/* 余额与它的刷新入口贴在一起：两者说的是同一件事。 */
+.vendor-balance-line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ui-space-2);
+}
+.vendor-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ui-space-2);
+  margin-top: var(--ui-space-2);
+}
+
 /* ── 故障规则的「试规则」区 ──────────────────────────────
    与规则本体分开：试的输入**不是规则的一部分**，视觉上就不该混在一起。 */
 .rule-test {

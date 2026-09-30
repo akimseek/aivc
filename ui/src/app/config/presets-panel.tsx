@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, EmptyState, Field, TextInput, Toolbar } from "../../components";
+import { PanelHeader } from "../../features/settings/panel-header";
 import * as api from "../../ipc/commands";
 import type { WorkspacePreset } from "../../types";
 
@@ -40,6 +41,10 @@ export function PresetsPanel({ onError }: { onError: (message: string) => void }
 
   return (
     <>
+      <PanelHeader
+        title="工作区预设"
+        description="保存常用的工作目录。同一个目录重复保存时会替换旧的那条。"
+      />
       <div className="field-grid">
         <Field label="名称" hint="留空时用工作目录作为名称。">
           <TextInput value={name} onChange={(event) => setName(event.target.value)} />

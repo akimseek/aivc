@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer } from "../../components";
 import * as api from "../../ipc/commands";
+import { PanelHeader } from "../../features/settings/panel-header";
 import type { SkillEntry } from "../../types";
 
 export function SkillsPanel({
@@ -98,6 +99,10 @@ export function SkillsPanel({
 
   return (
     <>
+      <PanelHeader
+        title="平台技能 (Skills)"
+        description="管理注入到各 AI CLI 运行时的自定义 Skill 扩展包：导入、启停与回收站。"
+      />
       <Toolbar>
         <ChipGroup
           value={mode}

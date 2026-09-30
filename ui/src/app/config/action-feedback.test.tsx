@@ -75,7 +75,7 @@ describe("VendorsPanel：供应商动作要有回音", () => {
     expect(onNotify.mock.calls[0][0]).toContain("测试家");
   });
 
-  it("**删除**会说一声", async () => {
+  it("**删除**要先确认，确认后会说一声", async () => {
     const onNotify = vi.fn();
     fakeRuntime({ "vendor:list": () => [vendor], "vendor:delete": () => true });
     const view = render(
@@ -93,11 +93,15 @@ describe("VendorsPanel：供应商动作要有回音", () => {
     const button = [...view.container.querySelectorAll("button")].find(
       (b) => b.textContent === "删除"
     )!;
+    // 删除不可撤销，界面要先问一次（旧平台的原文是「此操作不会还原已写入的 CLI 配置」）。
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     await act(async () => {
       button.click();
     });
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(onNotify).toHaveBeenCalled());
     expect(onNotify.mock.calls[0][0]).toContain("测试家");
+    confirmSpy.mockRestore();
   });
 
   it("**启用走 vendor:enable（写 CLI 配置），停用只翻启用位**", async () => {

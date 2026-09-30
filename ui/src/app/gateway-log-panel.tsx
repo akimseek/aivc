@@ -12,6 +12,7 @@ import {
   useToast
 } from "../components";
 import * as api from "../ipc/commands";
+import { PanelHeader } from "../features/settings/panel-header";
 import type { GatewayLogEntry } from "../types";
 import {
   customBounds,
@@ -131,15 +132,17 @@ export function GatewayLogPanel({
         </div>
       )}
 
-      <Card
-        title="Gateway 日志"
+      {/* 面板头统一：标题、说明与「重新查询」从卡片头搬到这里（卡片本体只管内容）。 */}
+      <PanelHeader
+        title="请求日志"
         description="按时间区间与结果筛选。逐条勾选后可以只删掉选中的那些。"
         actions={
           <Button small onClick={() => void logs.reload()}>
             重新查询
           </Button>
         }
-      >
+      />
+      <Card>
         <Toolbar>
           <GatewayRangePicker
             range={picker.range}

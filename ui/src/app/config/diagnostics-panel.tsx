@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, EmptyState, Toolbar, ToolbarSpacer } from "../../components";
+import { PanelHeader } from "../../features/settings/panel-header";
 import * as api from "../../ipc/commands";
 import type { AiProviderId, AiProviderSummary, AiTarget } from "../../types";
 
@@ -84,7 +85,15 @@ export function DiagnosticsPanel({
   }, [target, configPath, probe]);
 
   if (targets.length === 0) {
-    return <EmptyState message="还没有探测到任何目标。" hint="先在上方选择平台。" />;
+    return (
+      <>
+        <PanelHeader
+          title="系统诊断"
+          description="列出每个目标的 CLI 命令探测结果、配置路径与平台能力矩阵。"
+        />
+        <EmptyState message="还没有探测到任何目标。" hint="先在上方选择平台。" />
+      </>
+    );
   }
 
   const pathState = (path: string): PathProbe["state"] => probes[path] ?? "checking";
@@ -93,6 +102,11 @@ export function DiagnosticsPanel({
 
   return (
     <>
+      <PanelHeader
+        title="系统诊断"
+        description="列出每个目标的 CLI 命令探测结果、配置路径与平台能力矩阵。"
+      />
+
       <div className="row-meta">
         共 {targets.length} 个目标 · {targets.filter((item) => item.available).length} 个可用
       </div>

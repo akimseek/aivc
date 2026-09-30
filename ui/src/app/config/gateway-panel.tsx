@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, EmptyState, Field, Notice, Select, TextInput, Toolbar, ToolbarSpacer } from "../../components";
+import { PanelHeader } from "../../features/settings/panel-header";
 import * as api from "../../ipc/commands";
 import { GatewayInsights } from "../gateway-insights";
 import type { ExternalApiStatus, FailoverRule, FailoverRuleScope, GatewayPortStatus } from "../../types";
@@ -46,10 +47,25 @@ export function GatewayPanel({
     void load();
   }, [load]);
 
-  if (!status) return <EmptyState message="读取网关状态…" />;
+  if (!status) {
+    return (
+      <>
+        {/* 头部先出现：等待状态读回来时，用户至少知道自己在哪一页。 */}
+        <PanelHeader
+          title="本地网关 & 路由"
+          description="控制本地反向代理端口、外部客户端接入、熔断器阈值与故障识别引擎。"
+        />
+        <EmptyState message="读取网关状态…" />
+      </>
+    );
+  }
 
   return (
     <>
+      <PanelHeader
+        title="本地网关 & 路由"
+        description="控制本地反向代理端口、外部客户端接入、熔断器阈值与故障识别引擎。"
+      />
       <div className="field-grid">
         <Field label="状态">
           <span className={`tag ${status.enabled ? "ok" : "off"}`}>

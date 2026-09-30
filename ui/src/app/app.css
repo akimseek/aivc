@@ -1878,8 +1878,11 @@ select {
 /* ── 自管输入 ────────────────────────────────────────── */
 
 /*
- * 它是终端区的一部分，因此**用终端的深色底**，而不是工作区的浅色底。
- * 用浅色会让人以为它属于上面那块会话正文，而不是下面这个终端。
+ * 它是终端区的一部分，底仍然是终端那一套（`--term-bg`）。
+ *
+ * **但输入卡本身走界面 token**：此前这里是一整块写死的深色，明亮主题下就是嵌在
+ * 浅色终端里的黑板，而它上面那层终端与右边的工作区又是别的颜色。现在卡里的
+ * 底 / 边 / 文字 / 焦点环都是界面令牌，跟着主题一起换。
  */
 .composer {
   position: relative;
@@ -1887,7 +1890,7 @@ select {
   flex-direction: column;
   gap: var(--ui-space-2);
   padding: 6px 10px 10px;
-  border-top: 1px solid #1f2a3a;
+  border-top: 1px solid var(--term-border);
   background: var(--term-bg);
 }
 
@@ -1901,38 +1904,55 @@ select {
 }
 
 .composer-resize:hover {
-  background: #2f3b4d;
+  background: var(--ui-border-strong);
 }
 
+/* 输入卡：卡里装的是「写一段完整的话」这件事的全部表面。
+   焦点环给**整张卡**而不是 textarea —— 用户看到被点亮的是这一整块输入区。 */
+.composer-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-bg-input);
+}
+
+.composer-card:focus-within {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-focus);
+}
+
+/* textarea 只是卡里的一块文本：底与边都在卡上，它自己不画框。 */
 .composer-text {
   width: 100%;
   min-height: 40px;
-  padding: 8px 10px;
-  border: 1px solid #2f3b4d;
-  border-radius: var(--ui-radius-sm);
-  background: #131c2b;
-  color: #c9d1d9;
+  padding: 8px 10px 2px;
+  border: none;
+  background: transparent;
+  color: var(--ui-text);
   font-family: var(--ui-font-mono);
   font-size: 12.5px;
   line-height: 1.5;
   resize: none;
 }
 
+/* 焦点环由卡片给（`:focus-within`），textarea 再画一圈就是两层。 */
 .composer-text:focus-visible {
-  outline: 2px solid #7ee787;
-  outline-offset: 1px;
+  outline: none;
 }
 
 .composer-text::placeholder {
-  color: #6b7688;
+  color: var(--ui-faint);
 }
 
+/* 工具行在卡内底部。它自己不定颜色：按钮与文字都走工作区那一套 token。 */
 .composer-actions {
   display: flex;
   align-items: center;
   gap: var(--ui-space-2);
+  padding: 0 8px 6px 10px;
   font-size: var(--ui-text-xs);
-  color: #8b949e;
+  color: var(--ui-muted);
 }
 
 .composer-attachments {
@@ -1947,14 +1967,14 @@ select {
   gap: 6px;
   max-width: 46ch;
   padding: 2px 4px 2px 8px;
-  border: 1px solid #2f3b4d;
+  border: 1px solid var(--ui-border-strong);
   border-radius: var(--ui-radius-sm);
-  background: #131c2b;
+  background: var(--ui-bg-card);
 }
 
 .composer-attachment-file {
   overflow: hidden;
-  color: #c9d1d9;
+  color: var(--ui-text-soft);
   font-family: var(--ui-font-mono);
   font-size: 11.5px;
   text-overflow: ellipsis;
@@ -1964,30 +1984,53 @@ select {
 .composer-attachment button {
   border: none;
   background: none;
-  color: #8b949e;
+  color: var(--ui-muted);
   cursor: pointer;
   font-size: 11px;
 }
 
 .composer-attachment button:hover {
-  color: #f0f6fc;
+  color: var(--ui-text);
 }
 
-/* 终端区里的按钮沿用工作区的样式，但深底上要提亮，否则看不出来。 */
-.composer .btn {
-  border-color: #2f3b4d;
-  background: #1a2434;
-  color: #c9d1d9;
+/* 附件菜单：两项，各带一个图标——「图片 / 文件」的区分就在图标上。 */
+.composer-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
 }
 
-.composer .btn:hover:not(:disabled) {
-  background: #22304a;
+.composer-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text-soft);
+  font-size: var(--ui-text-sm);
+  text-align: left;
+  cursor: pointer;
 }
 
-.composer .btn-primary {
-  border-color: #2ea043;
-  background: #238636;
-  color: #ffffff;
+.composer-menu-item:hover {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+/* 模型选择：等宽小下拉。故意窄——它是工具行里的一项，不是主操作。 */
+.model-select {
+  max-width: 22ch;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-card);
+  color: var(--ui-text-soft);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-xs);
 }
 
 /* ── 终端内查找 ──────────────────────────────────────── */
@@ -2628,7 +2671,7 @@ select {
   max-height: 60vh;
   overflow: auto;
   background: var(--ui-bg-activity);
-  border-radius: var(--ui-radius-md, 6px);
+  border-radius: var(--ui-radius-md);
 }
 .composer-preview-stage img {
   /* 放大时以中心为原点，不然会往右下角跑。 */

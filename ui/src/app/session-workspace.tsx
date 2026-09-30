@@ -5,7 +5,6 @@ import type {
   ApiVendor,
   GatewayPortStatus
 } from "../types";
-import type { TerminalInputMode } from "./composer-text";
 import type { StageContent } from "./stage-content";
 import type { TerminalSession, TerminalUiState } from "./use-terminals";
 import type { WorkspaceTabItem } from "./use-workspace-tabs";
@@ -34,7 +33,6 @@ export function SessionWorkspace({
   stage,
   terminalItems,
   uiStates,
-  onInputModeChange,
   onOutput,
   registerSink,
   unregisterSink,
@@ -78,8 +76,6 @@ export function SessionWorkspace({
    * 透传给对应的 `TerminalPane`。编号缺席时用「自管输入 + 隐藏」，见下面的回退。
    */
   uiStates: Record<string, TerminalUiState>;
-  /** 用户把某一路切到了另一种输入模式。 */
-  onInputModeChange: (terminalId: string, mode: TerminalInputMode) => void;
   /** 某一路收到了输出（用于把藏着的输入框放出来）。 */
   onOutput: (terminalId: string) => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
@@ -141,7 +137,6 @@ export function SessionWorkspace({
         stage={stage}
         terminals={terminalItems}
         uiStates={uiStates}
-        onInputModeChange={onInputModeChange}
         onOutput={onOutput}
         registerSink={registerSink}
         unregisterSink={unregisterSink}

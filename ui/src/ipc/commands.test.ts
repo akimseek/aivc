@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { openSessionFolder } from "./commands";
+import { openSessionFolder, listModels } from "./commands";
 
 /**
  * 命令名必须与后端注册表一致。
@@ -26,6 +26,27 @@ describe("openSessionFolder", () => {
     expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
       command: "shell:open-session-folder",
       args: { targetId: "local", sessionId: "sess-1" }
+    });
+  });
+});
+
+describe("listModels", () => {
+  const invoke = vi.fn(async () => null);
+
+  beforeEach(() => {
+    invoke.mockClear();
+    (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn() }
+    };
+  });
+
+  it("调用后端注册的 models:list，并带上 targetId", async () => {
+    // 命令名写错与参数名写错一样：两边都编译得过，点下去才报「未知命令」/「缺少 targetId」。
+    await listModels("qoder:local");
+    expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
+      command: "models:list",
+      args: { targetId: "qoder:local" }
     });
   });
 });

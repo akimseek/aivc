@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Dialog } from "../components";
-import * as api from "../ipc/commands";
+import { Button, Dialog } from "../../../components";
+import * as api from "../../../ipc/commands";
 import { clampZoom, stepZoom, zoomLabel, type ComposerAttachment } from "./composer-attachments";
 
 /**

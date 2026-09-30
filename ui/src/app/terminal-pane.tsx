@@ -4,8 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
 import * as api from "../ipc/commands";
-import { ComposerInput } from "./composer-input";
-import type { TerminalInputMode } from "./composer-text";
+import { ComposerInput } from "../features/workspace/composer/composer-input";
 import { TerminalSearchBar } from "./terminal-search-bar";
 import { terminalThemeFor } from "./terminal-theme";
 import { TerminalPasteDialog, TerminalTextContextMenu } from "./terminal-text-menu";
@@ -28,7 +27,8 @@ import type { TerminalSink } from "./terminal-output";
  *
  * 输入模式与输入框可见性此前是本组件的本地状态。现在它们在
  * [`useTerminals`](./use-terminals.ts) 里（状态栏也要读它，spec §6），
- * 这里只做三件事：报告「收到了输出」、把用户切模式的意图报上去、按 props 渲染。
+ * 这里只做两件事：报告「收到了输出」、按 props 渲染。
+ * 模式的切换入口也已经在状态栏上（输入区不再有那个按钮）。
  *
  * # 主题也是受控的，而且**不重建终端**
  *
@@ -43,12 +43,10 @@ export function TerminalPane({
   running,
   /**
    * 自管输入框此刻该不该显示。初值与「收到输出后放出来」的规则都在
-   * [`useTerminals`](./use-terminals.ts)（纯判据在 `composer-text.ts`）。
+   * [`useTerminals`](./use-terminals.ts)（纯判据在
+   * [`composer-text.ts`](../features/workspace/composer/composer-text.ts)）。
    */
   composerVisible,
-  /** 键盘输入去哪一边（自管输入框 / 终端原生）。 */
-  inputMode,
-  onInputModeChange,
   /** 收到一段输出。**在数据回调里调**——这是「恢复的会话把输入框放出来」的唯一时机。 */
   onOutput,
   registerSink,
@@ -61,7 +59,11 @@ export function TerminalPane({
    *
    * **只有变化才算一次请求**：不变（包括挂载时拿到的那个数）都不触发。
    */
-  findSignal = 0
+  findSignal = 0,
+  /** 这一路终端的平台 / 供应商 / 目标：输入区里的模型选择要用它决定清单从哪来。 */
+  providerId,
+  vendorId,
+  targetId
 }: {
   terminalId: string;
   /** 是否在前台。非前台的仍然挂载——见下。 */
@@ -75,14 +77,15 @@ export function TerminalPane({
    */
   running: boolean;
   composerVisible: boolean;
-  inputMode: TerminalInputMode;
-  onInputModeChange: (mode: TerminalInputMode) => void;
   onOutput: () => void;
   registerSink: (id: string, sink: TerminalSink) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
   resolvedTheme: "light" | "dark";
   findSignal?: number;
+  providerId: string;
+  vendorId?: string;
+  targetId?: string;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -443,25 +446,9 @@ export function TerminalPane({
       {active && composerVisible && (
         <ComposerInput
           terminalId={terminalId}
-          inputMode={inputMode}
-          /*
-            切换键盘输入去哪一边。
-
-            按钮仍在输入框自己的工具条里（状态栏那个胶囊也走同一条状态，spec §6）。
-            模式与可见性都在 `useTerminals` 里，这里报意图 + 管焦点。
-          */
-          onToggleInputMode={() => {
-            const next: TerminalInputMode = inputMode === "composer" ? "terminal" : "composer";
-            onInputModeChange(next);
-            // 切到哪边就把焦点给哪边：不转移焦点的话「切了但按键盘没反应」。
-            window.requestAnimationFrame(() => {
-              try {
-                if (next === "terminal") termRef.current?.focus();
-              } catch {
-                /* 终端还没挂上，忽略。 */
-              }
-            });
-          }}
+          providerId={providerId}
+          vendorId={vendorId}
+          targetId={targetId}
           onSent={() => {
             // 发完把焦点还给终端：用户下一件事通常是看 CLI 的回应。
             window.requestAnimationFrame(() => {

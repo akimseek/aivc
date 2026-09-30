@@ -6,7 +6,7 @@ import {
   initialComposerVisible,
   shouldRevealComposer,
   type TerminalInputMode
-} from "./composer-text";
+} from "../features/workspace/composer/composer-text";
 import { TerminalOutputRouter } from "./terminal-output";
 import type { TerminalSink } from "./terminal-output";
 
@@ -78,6 +78,14 @@ export type TerminalSession = {
    */
   vendorId?: string;
   vendorMode?: VendorRouteMode;
+  /**
+   * 这一路终端绑的是哪个目标（`qoder:local` / `local` …）。
+   *
+   * 它决定**后端按什么形态起进程**（本机 / WSL），界面上还有一处要用：
+   * Qoder 的模型清单只认 `targetId`（`models:list`），见
+   * [`resolveModelSource`](../features/workspace/composer/models.ts)。
+   */
+  targetId?: string;
   /** 最近一次切换。有值时界面上会标出来「已自动切换」之类。 */
   lastSwitch?: VendorSwitch;
   /**
@@ -336,6 +344,8 @@ export function useTerminals() {
     async (options: {
       title: string;
       providerId: string;
+      /** 这一路终端绑的目标；模型清单（`models:list`）需要它。 */
+      targetId?: string;
       start: (terminalId: string) => Promise<unknown>;
       /** 「启动提示词」：会话可交互之后自动发一次，见 `pendingPrompts`。 */
       prompt?: string;
@@ -347,11 +357,14 @@ export function useTerminals() {
        */
       sessionId?: string;
     }): Promise<string> => {
-      const { title, providerId, start, prompt, sessionId } = options;
+      const { title, providerId, targetId, start, prompt, sessionId } = options;
       const id = nextId();
       // 先入列表再启动：启动失败时用户至少能看到这一路的存在与失败原因，
       // 而不是「点了没反应」。
-      setTerminals((current) => [...current, { id, title, running: true, providerId }]);
+      setTerminals((current) => [
+        ...current,
+        { id, title, running: true, providerId, ...(targetId ? { targetId } : {}) }
+      ]);
       /**
        * 输入侧界面的初值**与列表项一起写**（乐观），不等 `start` 返回。
        *
@@ -448,7 +461,8 @@ export function useTerminals() {
    *
    * 恢复历史会话时输入框是藏着的，而**第一段输出是唯一的显示时机**——
    * 旧平台也只在 `onTerminalData` 里调 `revealComposer()`。判据本身在
-   * [`shouldRevealComposer`](./composer-text.ts) 里（有测试），这里只负责落状态。
+   * [`shouldRevealComposer`](../features/workspace/composer/composer-text.ts) 里
+   * （有测试），这里只负责落状态。
    */
   const noteOutput = useCallback((id: string) => {
     setUiStates((current) => {
@@ -471,6 +485,8 @@ export function useTerminals() {
       open({
         title: target ? `终端 · ${target.label}` : "终端",
         providerId: target?.provider ?? "codex",
+        // 记下这一路的目标：模型清单（`models:list`）只认 `targetId`。
+        ...(target?.id ? { targetId: target.id } : {}),
         prompt,
         sessionId,
         start: (terminalId) =>

@@ -12,6 +12,9 @@ import { ComposerInput } from "./composer-input";
  * 1. **空白内容不发送**——它会给 CLI 塞一个多余的回车；
  * 2. **Enter 发送、Shift+Enter 换行**——反过来会让「写完按回车」这个最自然的动作失效。
  *
+ * 另外两条盯的是**重做之后不能再丢的东西**：附件入口虽然合并成一个下拉，但
+ * 「添加图片」与「添加文件」仍是两个动作（过滤器不同）；模型选择只在有来源时出现。
+ *
  * 写入 PTY 的字节形状本身在 `composer-text.test.ts` 里逐条钉住，这里只验证
  * 「按钮/按键真的调到了写终端，并且带上了那一串字节」。
  */
@@ -43,7 +46,7 @@ describe("ComposerInput", () => {
   it("空白内容时发送按钮是禁用的", () => {
     // 空提交会往 CLI 里塞一个多余的回车。
     fakeRuntime();
-    const view = render(<ComposerInput terminalId="t1" onError={vi.fn()} />);
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
     const send = [...view.container.querySelectorAll("button")].find((item) =>
       item.textContent?.includes("发送")
     )!;
@@ -52,7 +55,7 @@ describe("ComposerInput", () => {
 
   it("写下内容后可以发送，且写进去的是括号粘贴 + 回车", async () => {
     const runtime = fakeRuntime();
-    const view = render(<ComposerInput terminalId="t1" onError={vi.fn()} />);
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
     const area = view.container.querySelector("textarea")!;
 
     await act(async () => {
@@ -77,7 +80,7 @@ describe("ComposerInput", () => {
 
   it("Enter 发送、Shift+Enter **不**发送", async () => {
     const runtime = fakeRuntime();
-    const view = render(<ComposerInput terminalId="t1" onError={vi.fn()} />);
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
     const area = view.container.querySelector("textarea")!;
 
     await act(async () => {
@@ -102,7 +105,7 @@ describe("ComposerInput", () => {
 
   it("发送成功后清空输入框", async () => {
     fakeRuntime();
-    const view = render(<ComposerInput terminalId="t1" onError={vi.fn()} />);
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
     const area = view.container.querySelector("textarea")!;
 
     await act(async () => {
@@ -119,13 +122,13 @@ describe("ComposerInput", () => {
 
   it("换终端会清掉草稿——草稿属于那一路终端", async () => {
     fakeRuntime();
-    const view = render(<ComposerInput terminalId="t1" onError={vi.fn()} />);
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
     const area = view.container.querySelector("textarea")!;
 
     await act(async () => {
       type(area, "写给 t1 的");
     });
-    view.rerender(<ComposerInput terminalId="t2" onError={vi.fn()} />);
+    view.rerender(<ComposerInput terminalId="t2" providerId="codex" onError={vi.fn()} />);
 
     await waitFor(() => {
       expect(view.container.querySelector("textarea")!.value).toBe("");
@@ -145,7 +148,7 @@ describe("ComposerInput", () => {
       },
       event: { listen: async () => () => undefined }
     };
-    const view = render(<ComposerInput terminalId="t1" onError={onError} />);
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={onError} />);
     const area = view.container.querySelector("textarea")!;
 
     await act(async () => {
@@ -163,9 +166,37 @@ describe("ComposerInput", () => {
 
   it("有拖动手柄，且它是可访问的分隔条", () => {
     fakeRuntime();
-    const view = render(<ComposerInput terminalId="t1" onError={vi.fn()} />);
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
     const handle = view.container.querySelector('[role="separator"]');
     expect(handle).toBeTruthy();
     expect(handle!.getAttribute("aria-label")).toBe("拖动调整输入框高度");
+  });
+
+  it("附件是一个下拉，展开后两项（添加图片 / 添加文件）", () => {
+    // 两个动作被合并成一个入口，但**动作本身没合并**：过滤器不同，
+    // 合成一项会让图片选不中（那条 `.md` 过滤器的老毛病）。
+    fakeRuntime();
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
+
+    const trigger = [...view.container.querySelectorAll("button")].find((item) =>
+      item.textContent?.includes("附件")
+    )!;
+    expect(trigger).toBeTruthy();
+
+    expect(view.container.querySelectorAll(".composer-menu-item")).toHaveLength(0);
+    act(() => {
+      trigger.click();
+    });
+
+    const items = [...view.container.querySelectorAll(".composer-menu-item")].map(
+      (item) => item.textContent
+    );
+    expect(items).toEqual(["添加图片", "添加文件"]);
+  });
+
+  it("没有模型来源（无供应商、非 Qoder）时不渲染模型选择", () => {
+    fakeRuntime();
+    const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
+    expect(view.container.querySelector(".model-select")).toBeNull();
   });
 });

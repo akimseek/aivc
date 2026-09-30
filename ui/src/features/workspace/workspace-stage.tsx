@@ -1,7 +1,6 @@
 import { EmptyState } from "../../components";
 import type { AiMessage, AiSession, AiTarget, ApiVendor, GatewayPortStatus } from "../../types";
 import type { StageContent } from "../../app/stage-content";
-import type { TerminalInputMode } from "../../app/composer-text";
 import type { TerminalSession, TerminalUiState } from "../../app/use-terminals";
 import { HistoryView } from "./history-view";
 import { TerminalView } from "./terminal-view";
@@ -26,7 +25,6 @@ export function WorkspaceStage({
   stage,
   terminals,
   uiStates,
-  onInputModeChange,
   onOutput,
   registerSink,
   unregisterSink,
@@ -52,7 +50,6 @@ export function WorkspaceStage({
   /** 当前挂着的终端（全部，不只是前台那一个）。 */
   terminals: TerminalSession[];
   uiStates: Record<string, TerminalUiState>;
-  onInputModeChange: (terminalId: string, mode: TerminalInputMode) => void;
   onOutput: (terminalId: string) => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
   unregisterSink: (id: string) => void;
@@ -87,7 +84,6 @@ export function WorkspaceStage({
           gateway={gateway}
           vendors={vendors}
           uiStates={uiStates}
-          onInputModeChange={onInputModeChange}
           onOutput={onOutput}
           registerSink={registerSink}
           unregisterSink={unregisterSink}

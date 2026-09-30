@@ -694,9 +694,9 @@ export function App() {
               activeKey={workspace.activeKey}
               stage={stage}
               terminalItems={terminals.terminals}
-              // 输入模式与输入框可见性都在 `useTerminals` 里：这里只是把它按编号透传下去。
+              // 输入框可见性在 `useTerminals` 里：这里只是把它按编号透传下去。
+              // （输入模式不再往下传：切换入口在状态栏，输入区已经没有那个按钮。）
               uiStates={terminals.uiStates}
-              onInputModeChange={terminals.setInputMode}
               onOutput={terminals.noteOutput}
               registerSink={terminals.registerSink}
               unregisterSink={terminals.unregisterSink}

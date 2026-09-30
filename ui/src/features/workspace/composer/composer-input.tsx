@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button } from "../components";
-import * as api from "../ipc/commands";
+import { Button, Icon, Popover } from "../../../components";
+import * as api from "../../../ipc/commands";
 import { appendAttachments, attachmentFromPath, type ComposerAttachment } from "./composer-attachments";
 import { ComposerImagePreview } from "./composer-image-preview";
+import { ModelSelect } from "./model-select";
 import {
   composeSubmission,
   insertAtCursor,
   pasteMarker,
   shouldCompact,
-  terminalInputButtonLabel,
-  terminalInputButtonTitle,
-  type PastedBlock,
-  type TerminalInputMode
+  type PastedBlock
 } from "./composer-text";
 
 /**
@@ -35,6 +33,13 @@ import {
  * | 附件用 `@完整路径` | PTY 只能传文本，靠路径让 CLI 自己去读真实文件 |
  * | 空白内容**不提交** | 空提交会往 CLI 里塞一个多余的回车 |
  *
+ * # 视觉
+ *
+ * 它在终端区里，底仍然是终端那一套；但**输入卡本身走界面 token**
+ * （`--ui-bg-input` 底、`--ui-border-strong` 边、聚焦时 `--ui-accent` + `--ui-focus` 环）。
+ * 此前这里是一整块写死的深色：明亮主题下那是嵌在终端里的一块黑板，
+ * 与它右边的工作区完全不是一套语言。
+ *
  * # 高度可拖
  *
  * 长提示词的编辑需要空间，而固定高度要么太矮（写不下）要么太高（挡住终端）。
@@ -48,21 +53,21 @@ const MAX_HEIGHT = 420;
 
 export function ComposerInput({
   terminalId,
-  inputMode = "composer",
-  onToggleInputMode,
+  providerId,
+  vendorId,
+  targetId,
   onSent,
   onError
 }: {
   terminalId: string;
-  /** 键盘输入当前去哪一边；见 [`TerminalInputMode`]。 */
-  inputMode?: TerminalInputMode;
   /**
-   * 在「自管输入框」与「终端原生输入」之间切换。
+   * 这一路终端的平台 / 供应商 / 目标。
    *
-   * 不传就不渲染那个按钮——旧平台也只在输入框可见时才让切
-   * （`canToggleTerminalInput = composerVisible`）。
+   * 模型选择靠它们决定**有没有清单可列、去哪个接口列**（判据在 `models.ts`）。
    */
-  onToggleInputMode?: () => void;
+  providerId: string;
+  vendorId?: string;
+  targetId?: string;
   /** 提交成功后的回调：让父组件把焦点还给终端或记住「已提交」。 */
   onSent?: (text: string) => void;
   onError: (message: string) => void;
@@ -76,7 +81,11 @@ export function ComposerInput({
   const [preview, setPreview] = useState<ComposerAttachment | null>(null);
   /** 正在拖东西进来。用来给整块输入区加一个可见的落点提示。 */
   const [dragging, setDragging] = useState(false);
+  /** 附件菜单是否展开。 */
+  const [menuOpen, setMenuOpen] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 附件菜单的锚点：那个「📎 附件」按钮。`Popover` 靠它算位置、判点击内外。 */
+  const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
   /** 附件编号的自增源，只用来做 key。 */
   const nextIdRef = useRef(0);
 
@@ -240,6 +249,33 @@ export function ComposerInput({
     [send]
   );
 
+  /**
+   * 「添加图片」与「添加文件」是**两个动作**，因此是两个菜单项而不是一个。
+   *
+   * 此前只有一个按钮，而它背后的选择框**过滤器写死是 `.md`** —— 图片根本选不中，
+   * 界面却写着「添加文件」。合并回去的时候别把这条教训丢了：过滤器由
+   * `kind`（`"image"` / `"any"`）决定，选完立刻收起菜单。
+   */
+  const addImages = useCallback(() => {
+    setMenuOpen(false);
+    void api
+      .chooseFiles("添加图片（可多选）", "image")
+      .then((picked) => addPaths(picked))
+      .catch((problem: unknown) =>
+        onError(problem instanceof Error ? problem.message : String(problem))
+      );
+  }, [addPaths, onError]);
+
+  const addFiles = useCallback(() => {
+    setMenuOpen(false);
+    void api
+      .chooseFiles("添加文件（可多选）", "any")
+      .then((picked) => addPaths(picked))
+      .catch((problem: unknown) =>
+        onError(problem instanceof Error ? problem.message : String(problem))
+      );
+  }, [addPaths, onError]);
+
   /** 拖动手柄调整高度。`pointermove` 挂在 window 上，鼠标移出面板也不会断。 */
   const startResize = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -305,97 +341,107 @@ export function ComposerInput({
         </div>
       )}
 
-      <textarea
-        ref={areaRef}
-        className="composer-text"
-        style={{ height }}
-        value={text}
-        placeholder="在这里写完整的提示词，Enter 发送、Shift+Enter 换行。粘贴长内容会自动收成标记，截图可以直接粘进来。"
-        onChange={(event) => setText(event.target.value)}
-        onPaste={onPaste}
-        onKeyDown={onKeyDown}
-        // 拖到输入框上方时给一个可见的落点提示。用 `dragover` 而不是 Tauri 的
-        // 拖入事件：后者是窗口级的，写在这里会让整块面板一起高亮。
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-      />
+      {/* 输入卡：底 / 边 / 焦点环都在 `.composer-card` 上，textarea 只是卡里的一块文本。 */}
+      <div className="composer-card">
+        <textarea
+          ref={areaRef}
+          className="composer-text"
+          style={{ height }}
+          value={text}
+          placeholder="在这里写完整的提示词，Enter 发送、Shift+Enter 换行。粘贴长内容会自动收成标记，截图可以直接粘进来。"
+          onChange={(event) => setText(event.target.value)}
+          onPaste={onPaste}
+          onKeyDown={onKeyDown}
+          // 拖到输入框上方时给一个可见的落点提示。用 `dragover` 而不是 Tauri 的
+          // 拖入事件：后者是窗口级的，写在这里会让整块面板一起高亮。
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+        />
 
-      <div className={`composer-actions${dragging ? " dragging" : ""}`}>
-        {/*
-          「添加图片」与「添加文件」分开：此前只有一个按钮，而它背后的选择框
-          **过滤器写死是 `.md`** —— 图片根本选不中，界面却写着「添加文件」。
-        */}
-        <Button
-          small
-          onClick={() =>
-            void api
-              .chooseFiles("添加图片（可多选）", "image")
-              .then((picked) => addPaths(picked))
-              .catch((problem: unknown) =>
-                onError(problem instanceof Error ? problem.message : String(problem))
-              )
-          }
-          title="添加图片：会以 @路径 的形式附加，并在提示词里带上图片"
-        >
-          添加图片
-        </Button>
-        <Button
-          small
-          onClick={() =>
-            void api
-              .chooseFiles("添加文件（可多选）", "any")
-              .then((picked) => addPaths(picked))
-              .catch((problem: unknown) =>
-                onError(problem instanceof Error ? problem.message : String(problem))
-              )
-          }
-          title="添加文件或文件夹：会以 @路径 的形式附加"
-        >
-          添加文件
-        </Button>
-        <span className="row-meta">
-          {dragging ? "松手即添加" : blocks.length > 0 ? `已收起 ${blocks.length} 段长内容` : ""}
-        </span>
-        <span className="spacer" />
-        {/*
-          切换键盘输入去哪一边。
+        <div className={`composer-actions${dragging ? " dragging" : ""}`}>
+          {/* 模型选择：这一路没有可列的清单时它自己什么都不渲染（判据在 `models.ts`）。 */}
+          <ModelSelect
+            terminalId={terminalId}
+            providerId={providerId}
+            vendorId={vendorId}
+            targetId={targetId}
+            onSent={onSent}
+            onError={onError}
+          />
 
-          旧平台这个按钮在状态栏上，而且**只在输入框可见时**才可用
-          （`canToggleTerminalInput = composerVisible`）——输入框藏着的时候
-          「切换输入位置」没有意义。这里它就在输入框里，因此那个条件天然成立；
-          不传 `onToggleInputMode` 时干脆不渲染。
+          {/*
+            附件入口是**一个按钮带一个下拉**，而不是两个并排的按钮：
+            工具行左边现在归模型选择，再加两个按钮会把这一行撑成一排控件。
+            两个动作本身没变（见 `addImages` / `addFiles`）。
 
-          按钮上的字写的是**点下去会切到哪**（旧平台如此），不是当前在哪：
-          写成当前状态的话，用户会以为它只是个指示器。
-        */}
-        {onToggleInputMode && (
+            用原生 `button` 而不是 `Button`：`Popover` 需要一个能测位置的锚点，
+            而组件层的 `Button` 不透传 `ref`。
+          */}
+          <button
+            type="button"
+            ref={menuAnchorRef}
+            className="btn btn-sm"
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            title="添加附件：图片或文件，都会以 @路径 的形式附加"
+            onClick={() => setMenuOpen((value) => !value)}
+          >
+            <Icon name="paperclip" size={12} />
+            附件
+            <Icon name="chevron-down" size={12} />
+          </button>
+          <Popover
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            anchorRef={menuAnchorRef}
+            className="composer-menu"
+          >
+            <button
+              type="button"
+              className="composer-menu-item"
+              onClick={addImages}
+              title="添加图片：会以 @路径 的形式附加，并在提示词里带上图片"
+            >
+              <Icon name="image" size={12} />
+              添加图片
+            </button>
+            <button
+              type="button"
+              className="composer-menu-item"
+              onClick={addFiles}
+              title="添加文件或文件夹：会以 @路径 的形式附加"
+            >
+              <Icon name="file" size={12} />
+              添加文件
+            </button>
+          </Popover>
+
+          <span className="row-meta">
+            {dragging ? "松手即添加" : blocks.length > 0 ? `已收起 ${blocks.length} 段长内容` : ""}
+          </span>
+          <span className="spacer" />
+          {/* 快捷方式写在按钮旁边：这是这一块最需要被记住的一件事。 */}
+          <span className="row-meta">Enter 发送</span>
           <Button
             small
-            onClick={onToggleInputMode}
-            title={terminalInputButtonTitle(inputMode)}
+            variant="primary"
+            disabled={
+              sending ||
+              composeSubmission(
+                text,
+                blocks,
+                attachments.map((item) => item.path)
+              ) === null
+            }
+            onClick={() => void send()}
+            title="发送 (Enter)"
           >
-            {terminalInputButtonLabel(inputMode)}
+            {sending ? "发送中…" : "发送"}
           </Button>
-        )}
-        <Button
-          small
-          variant="primary"
-          disabled={
-            sending ||
-            composeSubmission(
-              text,
-              blocks,
-              attachments.map((item) => item.path)
-            ) === null
-          }
-          onClick={() => void send()}
-          title="发送 (Enter)"
-        >
-          {sending ? "发送中…" : "发送"}
-        </Button>
+        </div>
       </div>
 
       {preview && (

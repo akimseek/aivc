@@ -30,7 +30,6 @@ function renderStage(stage: StageContent) {
       stage={stage}
       terminals={[]}
       uiStates={{}}
-      onInputModeChange={vi.fn()}
       onOutput={vi.fn()}
       registerSink={vi.fn()}
       unregisterSink={vi.fn()}

@@ -3,7 +3,6 @@ import { lazy, Suspense } from "react";
 import type { AiSession, AiTarget, ApiVendor, GatewayPortStatus } from "../../types";
 import { displayTitle } from "../../app/session-display";
 import type { TerminalUiState, TerminalSession } from "../../app/use-terminals";
-import type { TerminalInputMode } from "../../app/composer-text";
 
 /**
  * 终端**按需加载**。
@@ -42,7 +41,6 @@ export function TerminalView({
   gateway,
   vendors,
   uiStates,
-  onInputModeChange,
   onOutput,
   registerSink,
   unregisterSink,
@@ -60,7 +58,6 @@ export function TerminalView({
   /** 供应商清单：把 `vendor-3f2a` 这样的编号翻成名字。还没取到就是空数组。 */
   vendors: ApiVendor[];
   uiStates: Record<string, TerminalUiState>;
-  onInputModeChange: (terminalId: string, mode: TerminalInputMode) => void;
   onOutput: (terminalId: string) => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
   unregisterSink: (id: string) => void;
@@ -131,15 +128,21 @@ export function TerminalView({
                   藏着的输入框不会挡住终端正在回放的内容，等 `noteOutput`
                   按 `initialComposerVisible` 的规则把它放出来。
                 */
-                inputMode={ui?.inputMode ?? "composer"}
                 composerVisible={ui?.composerVisible ?? false}
-                onInputModeChange={(mode) => onInputModeChange(item.id, mode)}
                 onOutput={() => onOutput(item.id)}
                 registerSink={registerSink}
                 unregisterSink={unregisterSink}
                 onError={onError}
                 resolvedTheme={resolvedTheme}
                 findSignal={findSignal}
+                /*
+                  模型选择的来源判据要用这三个：平台、当前供应商、目标。
+                  目标取自**这一路终端**记住的那个，不是当前选中的那个——两者在
+                  多标签时可能不同（见 `use-terminals` 的 `TerminalSession.targetId`）。
+                */
+                providerId={item.providerId}
+                vendorId={item.vendorId}
+                targetId={item.targetId}
               />
             );
           })}

@@ -2,7 +2,6 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import type { TerminalInputMode } from "./composer-text";
 import { TerminalPane } from "./terminal-pane";
 
 /**
@@ -60,14 +59,15 @@ interface PaneProps {
   active: boolean;
   running: boolean;
   composerVisible: boolean;
-  inputMode: TerminalInputMode;
-  onInputModeChange: (mode: TerminalInputMode) => void;
   onOutput: () => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
   resolvedTheme: "light" | "dark";
   findSignal?: number;
+  providerId: string;
+  vendorId?: string;
+  targetId?: string;
 }
 
 function props(overrides: Partial<PaneProps> = {}): PaneProps {
@@ -76,14 +76,13 @@ function props(overrides: Partial<PaneProps> = {}): PaneProps {
     active: true,
     running: false,
     composerVisible: false,
-    inputMode: "composer",
-    onInputModeChange: vi.fn(),
     onOutput: vi.fn(),
     registerSink: vi.fn(),
     unregisterSink: vi.fn(),
     onError: vi.fn(),
     resolvedTheme: "dark",
     findSignal: 0,
+    providerId: "codex",
     ...overrides
   };
 }

@@ -314,6 +314,18 @@ export const listVendorModels = (vendorId: string) =>
   invoke<VendorModel[]>("vendor:list-models", { vendorId });
 
 /**
+ * 列出某个目标下 **CLI 自己**能识别的模型（目前只有 Qoder 支持）。
+ *
+ * 与 `listVendorModels` 是两件事：那个查供应商的 HTTP 接口（当前路由到的那家有什么模型），
+ * 这个查 CLI 自己的清单（`qodercn --list-models`），选中后靠 `/model <id>` 切。
+ *
+ * 后端只认 `qoder:` 开头的目标，其余目标**显式报错**而不是返回空列表——否则界面上
+ * 「不支持」与「一个模型都没有」长得一模一样（见 `aivc-ipc/src/router.rs` 的 `dispatch_models`）。
+ */
+export const listModels = (targetId: string) =>
+  invoke<Array<{ id: string }>>("models:list", { targetId });
+
+/**
  * 查询一个供应商的余额。
  *
  * 单家与批量是**两条命令**：批量那条会对十几家并发（仓储自己分批，

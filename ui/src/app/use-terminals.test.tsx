@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useTerminals } from "./use-terminals";
+import type { AiTarget } from "../types";
 
 /**
  * `useTerminals` 的装配测试。
@@ -409,6 +410,25 @@ describe("useTerminals 的事件装配", () => {
       );
     const payload = (start!.args as { args?: Record<string, string> }).args ?? {};
     expect(payload.cliArgs).toBeUndefined();
+  });
+
+  it("把目标编号记在这一路终端上（模型清单要用）", async () => {
+    // 输入区的模型选择靠它：Qoder 的 `models:list` 只认 `targetId`。
+    // 记在**这一路终端**上而不是「当前选中的目标」——多标签时两者未必是同一个。
+    const view = await render(() => useTerminals());
+    const target: AiTarget = {
+      id: "qoder:local",
+      provider: "qoder",
+      label: "Qoder（本机）",
+      kind: "local",
+      available: true
+    };
+
+    await act(async () => {
+      await view.result.current.openTerminal(target);
+    });
+
+    expect(view.result.current.terminals.at(-1)!.targetId).toBe("qoder:local");
   });
 
   it("恢复历史会话时把 sessionId 递给 terminal:start", async () => {

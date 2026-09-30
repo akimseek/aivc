@@ -11,6 +11,7 @@ import type {
   FailoverRule,
   FailoverRuleScope,
   GatewayLogEntry,
+  GatewayLogsPage,
   GatewayPortStatus,
   GatewayVendorHealth,
   SessionMessagePage,
@@ -457,14 +458,46 @@ export const getFailureDiagnostics = (request: {
  * 它原本传的是 `{ page, pageSize }`，而后端的 `query_logs` 用的是
  * `filter(args)`——只读 `vendorId` / `outcome` / `periodStart` / `periodEnd`。
  * 也就是说那两个参数**被静默忽略了**，函数看起来「分页」，实际每次都是全量。
- * 现在按后端的真实参数传，并如实说明它不分页。
+ * 现在后端真的支持分页了，这里把参数接回去。
+ *
+ * # 分页可选，且参数决定返回形状
+ *
+ * - **不带** `page`/`pageSize`：后端返回裸数组（全量）——与加参数之前完全一致，
+ *   「最近请求」（`GatewayInsights`）那条旧调用不受影响；
+ * - **带上**（必须两个一起给）：后端返回 `{ entries, total, page, pageSize }`。
+ *
+ * 两种形状用重载分开声明，调用方不必自己 `Array.isArray` 收窄；
+ * 只给一个参数在**编译期**就通不过（后端也会报「参数无效」——静默忽略参数
+ * 正是这个函数踩过的坑）。
+ *
+ * 页码从 **1** 起；`pageSize` 由仓储钳制在上限（50）内。
  */
-export const queryGatewayLogs = (request: {
+export function queryGatewayLogs(request: {
+  page: number;
+  pageSize: number;
   vendorId?: string;
   outcome?: "ok" | "error" | "timeout" | "client-aborted";
   periodStart?: string;
   periodEnd?: string;
-} = {}) => invoke<GatewayLogEntry[]>("gateway:query-logs", request);
+}): Promise<GatewayLogsPage>;
+export function queryGatewayLogs(request?: {
+  vendorId?: string;
+  outcome?: "ok" | "error" | "timeout" | "client-aborted";
+  periodStart?: string;
+  periodEnd?: string;
+}): Promise<GatewayLogEntry[]>;
+export function queryGatewayLogs(
+  request: {
+    page?: number;
+    pageSize?: number;
+    vendorId?: string;
+    outcome?: "ok" | "error" | "timeout" | "client-aborted";
+    periodStart?: string;
+    periodEnd?: string;
+  } = {}
+) {
+  return invoke<GatewayLogEntry[] | GatewayLogsPage>("gateway:query-logs", request);
+}
 
 /** 删除指定请求编号的日志，返回删除条数。 */
 export const deleteGatewayLogEntries = (requestIds: string[]) =>

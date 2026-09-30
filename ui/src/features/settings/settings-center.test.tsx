@@ -22,7 +22,9 @@ function fakeCore(): void {
     "skill:list": [],
     "skill:list-trash": [],
     "workspace:list-presets": [],
-    "gateway:query-logs": [],
+    // 日志页走**分页**那条路（带 page/pageSize ⇒ 后端返回分页对象）。
+    // 给裸数组会让 `entries` 落到 `Array.prototype.entries` 上，测试却看起来是绿的。
+    "gateway:query-logs": { entries: [], total: 0, page: 1, pageSize: 20 },
     "gateway:list-failover-rules": [],
     "gateway:get-vendor-health": [],
     "gateway:get-port": null,

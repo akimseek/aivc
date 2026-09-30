@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   listModels,
   openSessionFolder,
+  queryGatewayLogs,
   windowClose,
   windowMinimize,
   windowStartDrag,
@@ -54,6 +55,54 @@ describe("listModels", () => {
     expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
       command: "models:list",
       args: { targetId: "qoder:local" }
+    });
+  });
+});
+
+/**
+ * 日志分页参数必须**真的传下去**。
+ *
+ * 这条命令此前踩过一次：前端传 `{ page, pageSize }`，后端读的是另一套筛选参数名，
+ * 于是那两个参数被**静默忽略**——函数看起来在分页，实际每次都拿全量，
+ * 而且两边都编译得过。现在后端真的支持分页了，参数名再写错（少个 `s`、换成下划线）
+ * 会退回同一个坑，因此在这里钉住。
+ */
+describe("queryGatewayLogs", () => {
+  const invoke = vi.fn(async () => null);
+
+  beforeEach(() => {
+    invoke.mockClear();
+    (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn() }
+    };
+  });
+
+  it("分页调用带上 page/pageSize", async () => {
+    await queryGatewayLogs({
+      page: 2,
+      pageSize: 20,
+      outcome: "error",
+      periodStart: "2026-09-01T00:00:00.000Z",
+      periodEnd: "2026-09-30T00:00:00.000Z"
+    });
+    expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
+      command: "gateway:query-logs",
+      args: {
+        page: 2,
+        pageSize: 20,
+        outcome: "error",
+        periodStart: "2026-09-01T00:00:00.000Z",
+        periodEnd: "2026-09-30T00:00:00.000Z"
+      }
+    });
+  });
+
+  it("不带分页参数的旧调用：同一个命令，参数原样（返回裸数组那条路）", async () => {
+    await queryGatewayLogs({ periodStart: "s", periodEnd: "e" });
+    expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
+      command: "gateway:query-logs",
+      args: { periodStart: "s", periodEnd: "e" }
     });
   });
 });

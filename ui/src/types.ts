@@ -511,6 +511,29 @@ export type GatewayLogEntry = {
   errorCode?: string;
 };
 
+/**
+ * 一页网关请求日志（`gateway:query-logs` **带分页参数**时的返回）。
+ *
+ * # 为什么返回形状取决于参数
+ *
+ * 分页参数是可选的：不带时后端仍返回裸数组（界面上的「最近请求」走那条路，
+ * 形状与加参数之前完全一致）。两个参数必须**一起给**，只给一个后端会报「参数无效」
+ * ——它此前吃过一次「参数被静默忽略、调用方以为在分页」的亏。
+ *
+ * 与 [`FailureDiagnosticsPage`] 同形（条目 + 总数 + 页码 + 每页条数），
+ * 只有条目字段名不同：那边是 `items`，这里是 `entries`。
+ */
+export type GatewayLogsPage = {
+  /** 本页条目（按时间倒序）。 */
+  entries: GatewayLogEntry[];
+  /** 满足筛选条件的总数（**不是**本页条数），分页控件据此算页数。 */
+  total: number;
+  /** 当前页码（1 起）。 */
+  page: number;
+  /** 每页条数（后端已钳制到上限内）。 */
+  pageSize: number;
+};
+
 /** 故障规则作用域。 */
 export type FailoverRuleScope = "global" | "provider" | "vendor";
 

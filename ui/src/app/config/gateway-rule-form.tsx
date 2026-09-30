@@ -1,5 +1,6 @@
 import { Button, Field, Select, TextInput, Toolbar, ToolbarSpacer } from "../../components";
-import type { AiProviderId, ApiVendor, FailoverRuleScope } from "../../types";
+import type { AiProviderId, AiProviderSummary, ApiVendor, FailoverRuleScope } from "../../types";
+import { providerLabel } from "./gateway-external-card";
 import type { RuleDraft } from "./gateway-rule-model";
 
 /**
@@ -12,17 +13,13 @@ import type { RuleDraft } from "./gateway-rule-model";
  * 草稿模型、四条校验与载荷拼装在 `gateway-rule-model.ts`。
  */
 
-/** 作用域里可选的平台（与后端 `ProviderId` 的四个取值一致）。 */
-const PROVIDER_OPTIONS: { value: AiProviderId; label: string }[] = [
-  { value: "codex", label: "Codex" },
-  { value: "claude", label: "Claude" },
-  { value: "gemini", label: "Gemini" },
-  { value: "qoder", label: "Qoder" }
-];
+/** 作用域里可选的平台（与后端 `ProviderId` 的四个取值一致）。名称见 `providerLabel`。 */
+const PROVIDER_IDS: readonly AiProviderId[] = ["codex", "claude", "gemini", "qoder"];
 
 export function RuleForm({
   draft,
   vendors,
+  providers,
   testing,
   testResult,
   onChange,
@@ -33,6 +30,8 @@ export function RuleForm({
   draft: RuleDraft;
   /** 全部供应商：作用域选到「按供应商」时用来出选项。 */
   vendors: ApiVendor[];
+  /** 全部平台：平台名要用后端的 label（与侧栏逐字一致），本地表只兜底。 */
+  providers?: AiProviderSummary[];
   testing: boolean;
   testResult: { matched: boolean; matchedBy: "status" | "pattern" | "none" } | null;
   onChange: (next: RuleDraft) => void;
@@ -98,9 +97,9 @@ export function RuleForm({
               }
             >
               <option value="">请选择平台</option>
-              {PROVIDER_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
+              {PROVIDER_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {providerLabel(providers, id)}
                 </option>
               ))}
             </Select>

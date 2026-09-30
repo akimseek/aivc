@@ -9,7 +9,8 @@ import { hasLayerAbove } from "./overlay-stack";
  * 模态会抢走焦点并遮住整屏。
  *
  * 定位策略：先按「锚的下方、左对齐」放，超出视口就翻到上方（或右对齐），
- * 与现有右键菜单的 `viewport-menu.ts` 同一套「不越界」原则。
+ * 与现有右键菜单的 `viewport-menu.ts` 同一套「不越界」原则；锚被滚动/窗口缩放
+ * 带走时跟着重算（菜单的寿命只有一次点击，本浮层会一直开到用户点别处）。
  *
  * # Escape 也要让位
  *
@@ -43,15 +44,36 @@ export function Popover({
 
   useLayoutEffect(() => {
     if (!open) return;
-    const anchor = anchorRef.current;
-    const panel = panelRef.current;
-    if (!anchor || !panel) return;
-    const a = anchor.getBoundingClientRect();
-    const p = panel.getBoundingClientRect();
-    const below = a.bottom + 6;
-    const top = below + p.height > window.innerHeight ? Math.max(8, a.top - p.height - 6) : below;
-    const left = Math.min(Math.max(8, a.left), Math.max(8, window.innerWidth - p.width - 8));
-    setStyle({ top, left });
+    const place = () => {
+      const anchor = anchorRef.current;
+      const panel = panelRef.current;
+      if (!anchor || !panel) return;
+      const a = anchor.getBoundingClientRect();
+      const p = panel.getBoundingClientRect();
+      const below = a.bottom + 6;
+      const top = below + p.height > window.innerHeight ? Math.max(8, a.top - p.height - 6) : below;
+      const left = Math.min(Math.max(8, a.left), Math.max(8, window.innerWidth - p.width - 8));
+      // 位置没变时不换新对象：滚动事件很密，每次换新对象都会多一轮渲染。
+      setStyle((current) =>
+        current.top === top && current.left === left ? current : { top, left }
+      );
+    };
+    place();
+    /*
+      锚在页面里移动（滚动、窗口缩放）之后浮层会**脱锚**：它用的是初始那次量到的
+      视口坐标，锚滚上去了它还悬在原地——点起来还在，却已经指不到触发它的按钮。
+      因此跟着这两种变化重算。
+
+      滚动用**捕获阶段**监听：真正滚动的常常是内层容器（消息列表、终端区），
+      只在 window 的冒泡阶段听收不到那些事件。这与 `viewport-menu.ts` 只管 resize
+      不同——菜单是一次性弹层，本浮层会一直开到用户点别处为止。
+    */
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
   }, [open, anchorRef]);
 
   useEffect(() => {

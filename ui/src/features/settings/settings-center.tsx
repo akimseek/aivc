@@ -160,7 +160,14 @@ export function SettingsCenter({
                 onNotify={onNotify}
               />
             )}
-            {tab === "gateway" && <GatewayPanel onError={onError} onNotify={onNotify} />}
+            {tab === "gateway" && (
+              <GatewayPanel
+                // 平台名以**后端 label** 为准（规则表与侧栏要逐字一致）。
+                providers={providers}
+                onError={onError}
+                onNotify={onNotify}
+              />
+            )}
             {tab === "usage" && <GatewayUsagePanel onError={onError} />}
             {tab === "failures" && <GatewayFailurePanel providerId={providerId} onError={onError} />}
             {tab === "logs" && <GatewayLogPanel onError={onError} onNotify={onNotify} />}

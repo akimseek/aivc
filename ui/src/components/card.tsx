@@ -1,6 +1,17 @@
 import type { ReactNode } from "react";
 
 /**
+ * 传进来的东西会不会渲染出内容。
+ *
+ * `{cond && <…/>}` 为假时传进来的是 **`false`**（不是 `null`/`undefined`）——
+ * 只判 `!== undefined` 会为它配上一个空标题或空动作区，白占一段间距。
+ * `!= null` 判掉 `null`/`undefined`，再把 `false` 一并剔掉。
+ */
+function hasContent(node: ReactNode): boolean {
+  return node != null && node !== false;
+}
+
+/**
  * 卡片 / 区块。
  *
  * # 它与 `.field` 的分工
@@ -26,21 +37,21 @@ export function Card({
   className?: string;
 }) {
   // 三样都没有就不渲染卡片头：一个空 `<header>` 会白占一段间距。
-  const hasHead = title !== undefined || description !== undefined || actions !== undefined;
+  const hasHead = hasContent(title) || hasContent(description) || hasContent(actions);
   return (
     <section className={["card", className ?? ""].filter(Boolean).join(" ")}>
       {hasHead && (
         <header className="card-head">
           <div className="card-heading">
-            {title !== undefined && <h3 className="card-title">{title}</h3>}
-            {description !== undefined && <p className="card-description">{description}</p>}
+            {hasContent(title) && <h3 className="card-title">{title}</h3>}
+            {hasContent(description) && <p className="card-description">{description}</p>}
           </div>
-          {actions !== undefined && <div className="card-actions">{actions}</div>}
+          {hasContent(actions) && <div className="card-actions">{actions}</div>}
         </header>
       )}
-      {/* 判 `null` 也判 `undefined`：`{cond && <…/>}` 为假时传进来的就是 `null`，
-          只判 `undefined` 会留下一个空的 `.card-body`。 */}
-      {children != null && <div className="card-body">{children}</div>}
+      {/* 同一条判据：`{cond && <…/>}` 为假时传进来的是 `false`，
+          只判 `null` 会留下一个空的 `.card-body`。 */}
+      {hasContent(children) && <div className="card-body">{children}</div>}
     </section>
   );
 }

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, Card, Icon, Toolbar } from "../../components";
-// 平台名表与供应商名解析各只有一处实现：这里再抄一份，迟早会出现
-// 「同一个平台在两张表上叫两个名字」。
+// 平台名与供应商名解析各只有一处实现：这里再抄一份，迟早会出现
+// 「同一个平台在两张表上叫两个名字」。平台名优先用后端 label（见 `providerLabel`）。
 import { vendorName } from "../../features/workbench/workbench-cards";
 import * as api from "../../ipc/commands";
-import type { ApiVendor, FailoverRule } from "../../types";
-import { PROVIDER_LABELS } from "./gateway-external-card";
+import type { AiProviderId, AiProviderSummary, ApiVendor, FailoverRule } from "../../types";
+import { providerLabel } from "./gateway-external-card";
 import {
   draftFromRule,
   emptyRuleDraft,
@@ -29,9 +29,16 @@ import { RuleForm } from "./gateway-rule-form";
  * 因此提示必须显眼——写错正则不会报错，只会静默地匹配不到。
  */
 export function GatewayRulesCard({
+  providers,
   onError,
   onNotify
 }: {
+  /**
+   * 全部平台。平台名要用**后端给的 label**（与侧栏、标签栏逐字一致），
+   * 本地那份 `PROVIDER_LABELS` 只在拿不到时兜底——两处叫法不同的话，
+   * 同一张规则在表里写「Claude」、侧栏写「Claude Code」，用户会以为是两家。
+   */
+  providers?: AiProviderSummary[];
   onError: (message: string) => void;
   onNotify?: (message: string) => void;
 }) {
@@ -114,12 +121,14 @@ export function GatewayRulesCard({
     try {
       // 留空 = 不按状态码判定：**不能发 `statusCode: 0`**——0 不是合法的 HTTP 状态码，
       // 后端会拿它去比规则里的状态码列表（旧实现是省略该字段）。
-      // `Number("")` 恰好是 0 且是整数，因此必须连同空串一起判，光看 `Number.isInteger` 拦不住。
+      // `Number("")` 与 `Number("0")` 都是 0 且都是整数，因此必须看**正值**：
+      // 只判 `Number.isInteger` 会把用户明确输入的「0」也送出去。
       const statusText = draft.testStatus.trim();
       const statusCode = Number(statusText);
+      const validStatus = Number.isInteger(statusCode) && statusCode > 0;
       const result = await api.testFailoverRule({
         rule: payload.value,
-        ...(statusText !== "" && Number.isInteger(statusCode) ? { statusCode } : {}),
+        ...(validStatus ? { statusCode } : {}),
         ...(draft.testMessage.trim() ? { message: draft.testMessage.trim() } : {})
       });
       setTestResult(result);
@@ -131,6 +140,15 @@ export function GatewayRulesCard({
   };
 
   const enabledCount = rules.filter((rule) => rule.enabled).length;
+
+  /**
+   * 平台显示名。
+   *
+   * 优先用后端 `providers` 的 label（侧栏、标签栏、供应商面板都是它），
+   * 本地那份表只在拿不到平台列表时兜底——不这样，同一个平台在两张表里
+   * 会有两种叫法（「Claude」/「Claude Code」）。
+   */
+  const labelOf = (id: AiProviderId) => providerLabel(providers, id);
 
   return (
     <Card
@@ -153,6 +171,7 @@ export function GatewayRulesCard({
         <RuleForm
           draft={draft}
           vendors={vendors}
+          providers={providers}
           testing={testing}
           testResult={testResult}
           onChange={setDraft}
@@ -187,7 +206,7 @@ export function GatewayRulesCard({
             <tbody>
               {rules.map((rule) => (
                 <tr key={rule.id}>
-                  <td>{scopeText(rule, vendors)}</td>
+                  <td>{scopeText(rule, vendors, labelOf)}</td>
                   <td className="mono">{rule.pattern}</td>
                   <td>{rule.statusCodes?.join(", ") ?? "-"}</td>
                   <td className="mono" title={rule.customResponseBody}>
@@ -247,12 +266,16 @@ export function GatewayRulesCard({
 }
 
 /** 一行里怎么读作用域：带目标的要把目标也写出来，否则「按平台」的几条规则长得一模一样。 */
-function scopeText(rule: FailoverRule, vendors: ApiVendor[]): string {
+function scopeText(
+  rule: FailoverRule,
+  vendors: ApiVendor[],
+  labelOf: (id: AiProviderId) => string
+): string {
   // 目标写成**显示名**而不是编号：`codex` 与 `vendor-3f2a` 在表里认不出是谁，
   // 而这一列存在的意义正是「一眼看出这条规则管谁」。查不到再退回编号（与
   // 供应商面板同一条规矩）。
   if (rule.scope === "provider") {
-    return `按平台 · ${rule.providerId ? PROVIDER_LABELS[rule.providerId] : "?"}`;
+    return `按平台 · ${rule.providerId ? labelOf(rule.providerId) : "?"}`;
   }
   if (rule.scope === "vendor") {
     return `按供应商 · ${rule.vendorId ? vendorName(vendors, rule.vendorId) : "?"}`;

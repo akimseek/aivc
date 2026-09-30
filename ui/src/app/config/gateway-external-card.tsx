@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 
 import { Badge, Button, Card, Notice } from "../../components";
 import * as api from "../../ipc/commands";
-import type { AiProviderId, ExternalApiStatus } from "../../types";
+import type { AiProviderId, AiProviderSummary, ExternalApiStatus } from "../../types";
 import { SwitchPill } from "./gateway-switch-pill";
 
 /**
@@ -44,6 +44,20 @@ export const PROVIDER_LABELS: Record<AiProviderId, string> = {
   gemini: "Gemini",
   qoder: "Qoder"
 };
+
+/**
+ * 平台显示名。
+ *
+ * 优先用后端 `providers` 的 label（侧栏、标签栏、供应商面板都是它），本地那份
+ * `PROVIDER_LABELS` 只在拿不到平台列表时兜底——两处各叫各的时，同一个平台会出现
+ * 「Claude」与「Claude Code」两种写法，用户会以为是两家。
+ */
+export function providerLabel(
+  providers: AiProviderSummary[] | undefined,
+  id: AiProviderId
+): string {
+  return providers?.find((item) => item.id === id)?.label ?? PROVIDER_LABELS[id];
+}
 
 /**
  * 每个平台客户端习惯用的凭据携带方式。
@@ -100,6 +114,8 @@ export function buildExternalEndpoints(
 export function GatewayExternalCard({
   baseUrl,
   status,
+  statusError,
+  onRetry,
   onStatusChange,
   onError,
   onNotify
@@ -107,6 +123,15 @@ export function GatewayExternalCard({
   /** 当前监听地址（取自网关状态）；空串表示网关没在监听。 */
   baseUrl: string;
   status: ExternalApiStatus;
+  /**
+   * 状态读取失败的原因（`null`/省略 = 读到了）。
+   *
+   * 失败时 `status` 是面板给的**占位值**（关闭且无令牌），而它看起来与真值
+   * 一模一样——不写明的话用户会以为自己真的关了外部 API。
+   */
+  statusError?: string | null;
+  /** 重新读取状态（失败态下的出口）。 */
+  onRetry?: () => void;
   onStatusChange: (next: ExternalApiStatus) => void;
   onError: (message: string) => void;
   onNotify?: (message: string) => void;
@@ -117,6 +142,8 @@ export function GatewayExternalCard({
   const [copied, setCopied] = useState("");
   /** 开关的请求在途（见 `SwitchPill` 的说明：不挡第二下就会把状态又翻回去）。 */
   const [toggling, setToggling] = useState(false);
+  /** 轮换的请求在途。**每一次轮换都会让上一个令牌立即失效**，因此不能连点。 */
+  const [rotating, setRotating] = useState(false);
 
   const copy = useCallback(
     async (key: string, text: string) => {
@@ -147,6 +174,10 @@ export function GatewayExternalCard({
   };
 
   const rotate = async () => {
+    // 在途时不再接第二次：每轮换一次旧令牌**立即失效**，连点两下会让界面上
+    // 展示的明文与后端最后生效的那个对不上（用户拿去更新客户端，仍然连不上）。
+    if (rotating) return;
+    setRotating(true);
     try {
       const result = await api.rotateExternalApiToken();
       // 令牌只在这里出现一次，界面必须留着它让用户复制。
@@ -157,6 +188,8 @@ export function GatewayExternalCard({
       onNotify?.("已生成新令牌；旧令牌立即失效。");
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRotating(false);
     }
   };
 
@@ -176,6 +209,25 @@ export function GatewayExternalCard({
         />
       }
     >
+      {/*
+        失败态写在最上面：下面的开关与令牌状态都是占位值，先说清楚再给人看数据。
+        重试入口放在这里而不是靠重新进入页面——一次读取失败不该让用户去别处绕一圈。
+      */}
+      {statusError != null && (
+        <Notice
+          message={
+            <>
+              外部网关状态读取失败，下面显示的是「关闭且无令牌」的占位值：
+              {statusError}
+            </>
+          }
+          actions={
+            <Button small onClick={onRetry}>
+              重新读取
+            </Button>
+          }
+        />
+      )}
       {/* 令牌区块：状态 + 说明 + 轮换。三者说的是同一件事，因此同框。 */}
       <div className="gateway-token-block">
         <div className="gateway-token-head">
@@ -199,8 +251,13 @@ export function GatewayExternalCard({
                   : "已配置令牌，但外部 API 处于关闭状态。"}
             </p>
           </div>
-          <Button small onClick={() => void rotate()}>
-            轮换令牌
+          <Button
+            small
+            disabled={rotating}
+            title="生成并启用新令牌；旧令牌立即失效"
+            onClick={() => void rotate()}
+          >
+            {rotating ? "轮换中…" : "轮换令牌"}
           </Button>
         </div>
 

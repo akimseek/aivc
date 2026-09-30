@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { EmptyState } from "../../components";
+import { Button, EmptyState } from "../../components";
 import { PanelHeader } from "../../features/settings/panel-header";
 import * as api from "../../ipc/commands";
-import type { ExternalApiStatus, GatewayPortStatus } from "../../types";
+import type { AiProviderSummary, ExternalApiStatus, GatewayPortStatus } from "../../types";
 import { GatewayInsights } from "../gateway-insights";
 import { GatewayExternalCard } from "./gateway-external-card";
 import { GatewayPortCard } from "./gateway-port-card";
@@ -33,15 +33,32 @@ import { SwitchPill } from "./gateway-switch-pill";
  * （导航里的「用量报表 / 异常诊断 / 请求日志」），这里只是扫一眼的那一份。
  */
 export function GatewayPanel({
+  providers,
   onError,
   onNotify
 }: {
+  /**
+   * 全部平台（后端 `label` 是唯一权威）。
+   *
+   * 规则表要把「按平台 · Codex」写成**侧栏逐字相同**的名字，而那份名字只有后端有；
+   * 可选是为了让测试与旧调用点少传一个参数时仍能退回本地那四个名字。
+   */
+  providers?: AiProviderSummary[];
   onError: (message: string) => void;
   /** 成功反馈。见 `SettingsCenter` 同名字段的说明。 */
   onNotify?: (message: string) => void;
 }) {
   const [status, setStatus] = useState<GatewayPortStatus | null>(null);
   const [external, setExternal] = useState<ExternalApiStatus | null>(null);
+  /**
+   * 两份状态各自的读取失败原因（`null` = 读到了）。
+   *
+   * 失败此前只在 `onError` 里报一次，界面上却没有任何痕迹：端口那份停在
+   * 「读取网关状态…」（看起来像还在读），外部那份静默退化成「关着且无令牌」
+   * （看起来与真值一模一样）。两者都必须**在界面上**说出来，并给出重试入口。
+   */
+  const [portError, setPortError] = useState<string | null>(null);
+  const [externalError, setExternalError] = useState<string | null>(null);
   /**
    * 总开关的请求在途。
    *
@@ -59,27 +76,36 @@ export function GatewayPanel({
     ]);
 
     // 端口状态是**整页的门面**（端口卡、三条阈值都靠它），读不到就真的没有页面
-    // 可渲染，只能停在等待态。假后端（外壳测试里那张按命令名给值的表）对没登记的
-    // 命令回 `null`，也走这里。
+    // 可渲染，只能停在失败态并给出重试入口。假后端（外壳测试里那张按命令名给值的表）
+    // 对没登记的命令回 `null`，那是「还没读到」而不是「读失败」，仍走等待态。
     if (port.status === "rejected") {
+      setPortError(describeFailure(port.reason));
       onError(describeFailure(port.reason));
       return;
     }
     if (!port.value) return;
+    setPortError(null);
     setStatus(port.value);
 
     /*
       外部状态读不到时**不能让整页一起停住**：它此前与端口状态捆在 `Promise.all`
       里，一失败整页就永远停在「读取网关状态…」——而端口与阈值那一团明明读得到、
       也用得上。现在退化成「关着且没有令牌」这一档继续渲染，失败本身仍然报出去
-      （否则没人知道看到的是退化值，而它看起来与真值没有区别）。
+      （否则没人知道看到的是退化值，而它看起来与真值没有区别），并且由卡片
+      在界面上写明「这是占位值」+ 重试。
     */
     if (externalStatus.status === "fulfilled" && externalStatus.value) {
+      setExternalError(null);
       setExternal(externalStatus.value);
       return;
     }
     if (externalStatus.status === "rejected") {
-      onError(describeFailure(externalStatus.reason));
+      const reason = describeFailure(externalStatus.reason);
+      setExternalError(reason);
+      onError(reason);
+    } else {
+      // 命令通了但没给状态（后端的异常形状）：同样是读不到。
+      setExternalError("后端没有返回外部网关状态。");
     }
     setExternal({ enabled: false, hasToken: false });
   }, [onError]);
@@ -108,6 +134,32 @@ export function GatewayPanel({
       setToggling(false);
     }
   }, [status, toggling, onNotify, onError]);
+
+  if (portError) {
+    return (
+      <>
+        {/* 头部先出现：失败状态下用户至少知道自己在哪一页。 */}
+        <PanelHeader
+          title="本地网关 & 路由"
+          description="控制本地反向代理端口、外部客户端接入、熔断器阈值与故障识别引擎。"
+        />
+        {/*
+          失败与「还在读」必须长得不一样：此前两种情况都是「读取网关状态…」，
+          用户只能一直等一个不会变的字。这里把原因写出来，并给出重试入口——
+          一次启动时的读失败不该逼用户去关掉重开整个应用。
+        */}
+        <EmptyState
+          message="读不到网关状态。"
+          hint={portError}
+          action={
+            <Button small onClick={() => void load()}>
+              重试
+            </Button>
+          }
+        />
+      </>
+    );
+  }
 
   if (!status || !external) {
     return (
@@ -148,11 +200,14 @@ export function GatewayPanel({
         // 界面自己拼只会拼出 `http://127.0.0.1:0`。
         baseUrl={status.baseUrl}
         status={external}
+        // 失败时给的是占位值，卡片要在界面上写明，并给出重试入口。
+        statusError={externalError}
+        onRetry={() => void load()}
         onStatusChange={setExternal}
         onError={onError}
         onNotify={onNotify}
       />
-      <GatewayRulesCard onError={onError} onNotify={onNotify} />
+      <GatewayRulesCard providers={providers} onError={onError} onNotify={onNotify} />
       <GatewayInsights onError={onError} />
     </div>
   );

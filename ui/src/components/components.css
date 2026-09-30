@@ -638,15 +638,18 @@
 }
 
 /* ── 对话框尺寸档 ──────────────────────────────────────
-   `md`（默认）就是基础档 `.dialog-panel` 的 420–560（定义在 app.css），不重复写；
-   `sm` 与基础档同值，仍然写死，是为了将来基础档放宽时它不会跟着变宽。 */
-.dialog-panel-sm {
-  min-width: 420px;
-  max-width: 560px;
+   选择器写成 `.dialog-panel.dialog-panel-{size}`（两个类）是有意的：基础档
+   `.dialog-panel`（420–560）定义在 app.css，而 app.css 在 main.tsx 里**后于**
+   components.css 引入。同为单类选择器时后写的基础档会赢（同名属性上），
+   尺寸档就会静默失效——所以在自身选择器上加重（0,2,0 > 0,1,0），不依赖导入顺序。
+   `md`（默认）就是基础档的 420–560，不重复写。 */
+.dialog-panel.dialog-panel-sm {
+  min-width: 360px;
+  max-width: 440px;
 }
 
-/* `lg` 只给高度上限：内容不够高时留出空白，比拉满 660px 更像「内容决定了尺寸」。 */
-.dialog-panel-lg {
+/* `lg`（设置这类大面板）另给高度上限：内容不够高时留出空白，比拉满 660px 更像「内容决定了尺寸」。 */
+.dialog-panel.dialog-panel-lg {
   min-width: min(1024px, 92vw);
   max-width: min(1024px, 92vw);
   max-height: min(660px, 90vh);

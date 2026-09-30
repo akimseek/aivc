@@ -40,7 +40,7 @@ export function Dialog({
   focusPanel?: boolean;
   /** 面板的附加类名（用于个别对话框的专属布局）。 */
   panelClassName?: string;
-  /** 宽度档：确认框用 `sm`，设置这类大面板用 `lg`。 */
+  /** 宽度档：确认框用 `sm`（360–440），设置这类大面板用 `lg`（≤1024/92vw）；`md` 就是基础档。 */
   size?: "sm" | "md" | "lg";
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -57,7 +57,10 @@ export function Dialog({
     if (focusPanel) panelRef.current?.focus();
   }, [focusPanel]);
 
-  const classes = ["dialog-panel", `dialog-panel-${size}`, panelClassName ?? ""].filter(Boolean).join(" ");
+  // `md` 不加类名：它就是基础档 `.dialog-panel`，多一个空动作的 `dialog-panel-md`
+  // 只会让人以为尺寸另有来源。
+  const sizeClass = size === "md" ? "" : `dialog-panel-${size}`;
+  const classes = ["dialog-panel", sizeClass, panelClassName ?? ""].filter(Boolean).join(" ");
 
   return (
     <div

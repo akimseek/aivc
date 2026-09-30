@@ -1,111 +1,137 @@
 import { describe, expect, it } from "vitest";
 
-import { activateSessionTab, deadTabsForSession, type WorkspaceTabLike } from "./workspace-tabs";
+import {
+  attachTerminal,
+  closeTab,
+  hasSessionTab,
+  openSessionTab,
+  tabSuffix,
+  type WorkspaceTabLike
+} from "./workspace-tabs";
 
 /**
- * 标签规则。
+ * 统一的会话标签模型（spec D3）。
  *
- * 最要紧的一条：**已经有标签挂着这个会话时不许再建一个**——
- * 否则点一次历史会话会同时冒出一个会话标签和一个终端标签（这是真实发生过的缺陷）。
+ * 三条最要紧的：**同一会话不建第二张标签**（点一次历史会话曾同时冒出两张）、
+ * **终端挂到已有标签上而不是新建**（恢复会话时复用）、
+ * **关闭激活标签后切到剩余最后一张**（不留空工作区）。
  */
-describe("activateSessionTab", () => {
+describe("openSessionTab", () => {
   const session = { id: "sess-1", title: "会话甲" };
 
-  it("没有相关标签时建一个会话标签", () => {
-    const { tabs, activeKey } = activateSessionTab<WorkspaceTabLike>([], session);
-    expect(tabs).toHaveLength(1);
-    expect(tabs[0]).toMatchObject({ key: "sess-1", kind: "session", sessionId: "sess-1" });
+  it("没有相关标签时建一个会话标签（key = 会话编号）", () => {
+    const { tabs, activeKey } = openSessionTab<WorkspaceTabLike>([], session);
+    expect(tabs).toEqual([{ key: "sess-1", sessionId: "sess-1", title: "会话甲" }]);
     expect(activeKey).toBe("sess-1");
   });
 
-  it("**终端标签挂着这个会话时直接切过去，不新建**", () => {
-    // 这就是那个缺陷的解药：点历史会话会先起终端（标签 key 是终端编号，
-    // 但 `sessionId` 指向这条会话），随后「选中会话」的 effect 不能再建一个。
+  it("已有挂着该会话的终端标签时直接切过去，不新建", () => {
     const tabs: WorkspaceTabLike[] = [
-      { key: "term-9", kind: "terminal", title: "终端", terminalId: "term-9", sessionId: "sess-1" }
+      { key: "term-9", sessionId: "sess-1", terminalId: "term-9", title: "会话甲" }
     ];
-    const result = activateSessionTab(tabs, session);
-
+    const result = openSessionTab(tabs, session);
     expect(result.tabs).toBe(tabs);
     expect(result.activeKey).toBe("term-9");
   });
 
-  it("已经有会话标签时切过去，不新建", () => {
-    const tabs: WorkspaceTabLike[] = [
-      { key: "sess-1", kind: "session", title: "会话甲", sessionId: "sess-1" }
-    ];
-    const result = activateSessionTab(tabs, session);
+  it("已有会话标签时切过去，不新建", () => {
+    const tabs: WorkspaceTabLike[] = [{ key: "sess-1", sessionId: "sess-1", title: "会话甲" }];
+    const result = openSessionTab(tabs, session);
     expect(result.tabs).toBe(tabs);
     expect(result.activeKey).toBe("sess-1");
   });
 
-  it("别的会话的标签不影响：仍然新建自己那条", () => {
-    const tabs: WorkspaceTabLike[] = [
-      { key: "sess-0", kind: "session", title: "会话零", sessionId: "sess-0" }
-    ];
-    const result = activateSessionTab(tabs, session);
+  it("别的会话的标签不影响，仍然新建自己那条", () => {
+    const tabs: WorkspaceTabLike[] = [{ key: "sess-0", sessionId: "sess-0", title: "会话零" }];
+    const result = openSessionTab(tabs, session);
     expect(result.tabs).toHaveLength(2);
-    expect(result.activeKey).toBe("sess-1");
-  });
-
-  it("用户名下的老标签（只有 key 没有 sessionId）也能认出来", () => {
-    // 早期建的会话标签可能只写了 `key === sessionId`，没有 `sessionId` 字段。
-    const tabs: WorkspaceTabLike[] = [
-      { key: "sess-1", kind: "session", title: "旧标签" }
-    ];
-    const result = activateSessionTab(tabs, session);
-    expect(result.tabs).toBe(tabs);
     expect(result.activeKey).toBe("sess-1");
   });
 });
 
-/**
- * 「再次进入被锁住」的第二层根因。
- *
- * 干净退出的标签会被收掉，但**异常退出的标签是故意留着的**（要让人看到报错）。
- * 于是再次进入这条会话时，`activateSessionTab` 会切到那一张**已经死掉的**终端标签上，
- * 用户看到的就是不能输入、不再产出的终端。
- *
- * 因此在进入之前要先找出这些死标签——判据是「终端不在了」，不是「标签存在」。
- */
-describe("deadTabsForSession", () => {
-  const running = (ids: string[]) => (id: string) => ids.includes(id);
-
-  it("终端已经不在跑的标签会被找出来", () => {
+describe("attachTerminal", () => {
+  it("会话已有标签时把终端挂上去，key 不变，并报告被替换的旧终端", () => {
     const tabs: WorkspaceTabLike[] = [
-      { key: "t1", kind: "terminal", title: "死掉的", terminalId: "t1", sessionId: "s1" }
+      { key: "sess-1", sessionId: "sess-1", terminalId: "term-old", title: "会话甲" }
     ];
-    expect(deadTabsForSession(tabs, "s1", running([]))).toEqual(["t1"]);
+    const result = attachTerminal(tabs, { terminalId: "term-new", sessionId: "sess-1", title: "会话甲" });
+    expect(result.activeKey).toBe("sess-1");
+    expect(result.tabs[0].terminalId).toBe("term-new");
+    expect(result.replacedTerminalId).toBe("term-old");
   });
 
-  it("终端还在跑的不算死", () => {
-    const tabs: WorkspaceTabLike[] = [
-      { key: "t1", kind: "terminal", title: "活的", terminalId: "t1", sessionId: "s1" }
-    ];
-    expect(deadTabsForSession(tabs, "s1", running(["t1"]))).toEqual([]);
+  it("会话还没有标签时用会话编号为 key 新建（带终端）", () => {
+    const result = attachTerminal<WorkspaceTabLike>([], {
+      terminalId: "term-1",
+      sessionId: "sess-2",
+      title: "会话乙"
+    });
+    expect(result.tabs).toEqual([
+      { key: "sess-2", sessionId: "sess-2", terminalId: "term-1", title: "会话乙" }
+    ]);
+    expect(result.activeKey).toBe("sess-2");
+    expect(result.replacedTerminalId).toBeUndefined();
   });
 
-  it("只是看正文的会话标签（没有终端）永远不算死", () => {
-    // 它本来就没有终端，清掉它会把用户正在看的正文也关掉。
-    const tabs: WorkspaceTabLike[] = [
-      { key: "s1", kind: "session", title: "会话", sessionId: "s1" }
-    ];
-    expect(deadTabsForSession(tabs, "s1", running([]))).toEqual([]);
+  it("全新会话（还没有会话编号）以终端编号为 key 新建", () => {
+    const result = attachTerminal<WorkspaceTabLike>([], { terminalId: "term-3", title: "新会话" });
+    expect(result.tabs).toEqual([{ key: "term-3", terminalId: "term-3", title: "新会话" }]);
+    expect(result.activeKey).toBe("term-3");
   });
 
-  it("别的会话的死标签不动手", () => {
+  it("同一终端重复挂载不产生第二张标签", () => {
     const tabs: WorkspaceTabLike[] = [
-      { key: "t9", kind: "terminal", title: "别人的", terminalId: "t9", sessionId: "s9" }
+      { key: "term-3", terminalId: "term-3", title: "新会话" }
     ];
-    expect(deadTabsForSession(tabs, "s1", running([]))).toEqual([]);
+    const result = attachTerminal(tabs, { terminalId: "term-3", title: "新会话" });
+    expect(result.tabs).toHaveLength(1);
+    expect(result.activeKey).toBe("term-3");
+  });
+});
+
+describe("closeTab", () => {
+  const tabs: WorkspaceTabLike[] = [
+    { key: "sess-1", sessionId: "sess-1", title: "甲" },
+    { key: "term-2", terminalId: "term-2", title: "乙" }
+  ];
+
+  it("关掉激活标签时切到剩余最后一张", () => {
+    const result = closeTab(tabs, "term-2", "term-2");
+    expect(result.tabs).toHaveLength(1);
+    expect(result.activeKey).toBe("sess-1");
   });
 
-  it("一条会话上多个死标签全都找出来", () => {
-    const tabs: WorkspaceTabLike[] = [
-      { key: "t1", kind: "terminal", title: "死一", terminalId: "t1", sessionId: "s1" },
-      { key: "t2", kind: "terminal", title: "活", terminalId: "t2", sessionId: "s1" },
-      { key: "t3", kind: "terminal", title: "死二", terminalId: "t3", sessionId: "s1" }
-    ];
-    expect(deadTabsForSession(tabs, "s1", running(["t2"]))).toEqual(["t1", "t3"]);
+  it("关掉非激活标签时激活键不变", () => {
+    const result = closeTab(tabs, "sess-1", "term-2");
+    expect(result.activeKey).toBe("term-2");
+  });
+
+  it("关掉最后一张时激活键清空", () => {
+    const result = closeTab([tabs[0]], "sess-1", "sess-1");
+    expect(result.tabs).toEqual([]);
+    expect(result.activeKey).toBe("");
+  });
+});
+
+describe("tabSuffix", () => {
+  it("运行中不加后缀", () => {
+    expect(tabSuffix({ running: true })).toBe("");
+    expect(tabSuffix(undefined)).toBe("");
+  });
+
+  it("异常退出带退出码——1 与 137 指向完全不同的原因", () => {
+    expect(tabSuffix({ running: false, exitedCleanly: false, exitCode: 137 })).toBe("（退出码 137）");
+    expect(tabSuffix({ running: false, exitedCleanly: false })).toBe("（退出码 ?）");
+  });
+
+  it("干净退出标「已退出」（正常路径下会被自动收掉，这是兜底）", () => {
+    expect(tabSuffix({ running: false, exitedCleanly: true })).toBe("（已退出）");
+  });
+});
+
+describe("hasSessionTab", () => {
+  it("只认挂着会话的标签", () => {
+    expect(hasSessionTab([{ key: "term-1", terminalId: "term-1", title: "x" }])).toBe(false);
+    expect(hasSessionTab([{ key: "sess-1", sessionId: "sess-1", title: "x" }])).toBe(true);
   });
 });

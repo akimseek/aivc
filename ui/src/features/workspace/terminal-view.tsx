@@ -66,7 +66,10 @@ export function TerminalView({
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
   resolvedTheme: "light" | "dark";
-  /** 递增即「打开查找栏」。计数器而不是事件总线：两个入口（按钮与 Ctrl+F）落在同一处。 */
+  /**
+   * 递增即「打开查找栏」。计数器而不是事件总线：两个入口（按钮与 Ctrl+F）落在同一处。
+   * **只有变化才算一次请求**——挂载时拿到的那个数不算，否则新建的终端会自弹查找栏（见 `TerminalPane`）。
+   */
   findSignal: number;
 }) {
   const activeTerminal = terminals.find((item) => item.id === activeTerminalId);

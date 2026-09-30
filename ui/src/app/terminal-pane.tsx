@@ -56,7 +56,11 @@ export function TerminalPane({
   onError,
   /** 当前解析出的主题。改它只换 xterm 的配色，不重建终端。 */
   resolvedTheme,
-  /** 递增即「打开查找栏」（标签栏那个查找按钮）。0 或不变都不触发。 */
+  /**
+   * 递增即「打开查找栏」（标签栏那个查找按钮）。
+   *
+   * **只有变化才算一次请求**：不变（包括挂载时拿到的那个数）都不触发。
+   */
   findSignal = 0
 }: {
   terminalId: string;
@@ -299,14 +303,25 @@ export function TerminalPane({
   }, [resolvedTheme]);
 
   /**
-   * 标签栏那个查找按钮：计数一变就打开查找栏。
+   * 标签栏那个查找按钮：计数**变化**就打开查找栏。
    *
    * 与下面的 Ctrl+F 是**同一处状态**的两个入口（都在本组件里），不需要事件总线。
    * 只在**前台**时响应：非前台的终端仍然挂着（不能卸载，会丢输出），
-   * 但打开一个看不见的查找栏没有意义。
+   * 但打开一个看不见的查找栏没有意义。信号被消费掉（不落账）是有意的——
+   * 否则切到前台时那一次「顺手」会把它弹出来。
+   *
+   * # 「变化」而不是「非零」
+   *
+   * 挂载本身不是一次点击。若只挡住 `0`，用户在点过一次查找（计数 ≥ 1）之后
+   * 新建的每一路终端都会在挂到前台的那一刻自弹查找栏，而
+   * `TerminalSearchBar` 打开即 `focus()` + `select()`——用户在新终端里敲的
+   * 第一串字会进搜索框，终端看起来「没反应」。因此把**已消费的计数**记在 ref 里，
+   * 只有它变了才是一次新请求；ref 的初值就是挂载时那个数（那次不算）。
    */
+  const consumedFindSignal = useRef(findSignal);
   useEffect(() => {
-    if (findSignal <= 0) return;
+    if (findSignal === consumedFindSignal.current) return;
+    consumedFindSignal.current = findSignal;
     if (active) setSearchOpen(true);
     // 只在计数变化时触发；`active` 不放依赖里——切前台不该顺手弹出查找栏。
     // eslint-disable-next-line react-hooks/exhaustive-deps

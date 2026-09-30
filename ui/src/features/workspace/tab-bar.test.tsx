@@ -120,6 +120,8 @@ describe("TabBar", () => {
     const first = setup();
     const plus = () => first.view.container.querySelector<HTMLButtonElement>('[aria-label="新建会话"]')!;
     expect(plus().disabled).toBe(false);
+    // 不承诺未实现的快捷键：全仓没有 Ctrl+T 的处理器，写了用户就会以为功能坏了。
+    expect(plus().getAttribute("title")).toBe("新建会话");
     fireEvent.click(plus());
     expect(first.onNewSession).toHaveBeenCalled();
 

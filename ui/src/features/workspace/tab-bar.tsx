@@ -126,7 +126,7 @@ export function TabBar({
         <button
           type="button"
           className="tab-bar-action"
-          title="新建会话 (Ctrl+T)"
+          title="新建会话"
           aria-label="新建会话"
           disabled={!canCreate}
           onClick={onNewSession}

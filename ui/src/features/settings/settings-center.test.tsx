@@ -2,7 +2,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AiTarget } from "../../types";
+import type { AiProviderId, AiProviderSummary, AiTarget } from "../../types";
 import { SettingsCenter } from "./settings-center";
 
 /**
@@ -75,7 +75,43 @@ const wslTarget: AiTarget = {
   available: true
 };
 
-function setup(overrides: { providerId?: ""; targetId?: string; version?: string } = {}) {
+const claudeWslTarget: AiTarget = {
+  id: "claude:wsl:Ubuntu",
+  provider: "claude",
+  label: "Ubuntu",
+  kind: "wsl",
+  distro: "Ubuntu",
+  available: true
+};
+
+/**
+ * 平台摘要（能力取值照后端 `ProviderId::capabilities()`）。
+ *
+ * 环境页的「WSL 会话目录」卡由**这一份数据**决定去留：claude 的
+ * `sessionSettings=false` 必须让它消失，codex 的 true 必须让它出现。
+ */
+const PROVIDERS: AiProviderSummary[] = [
+  {
+    id: "codex",
+    label: "Codex",
+    capabilities: { sessionSettings: true, customCwd: true, skills: true, export: true }
+  },
+  {
+    id: "claude",
+    label: "Claude Code",
+    capabilities: { sessionSettings: false, customCwd: true, skills: false, export: true }
+  }
+];
+
+function setup(
+  overrides: {
+    providerId?: AiProviderId | "";
+    targetId?: string;
+    version?: string;
+    providers?: AiProviderSummary[];
+    selectedTarget?: AiTarget | null;
+  } = {}
+) {
   fakeCore();
   const onClose = vi.fn();
   const onQuit = vi.fn();
@@ -84,10 +120,10 @@ function setup(overrides: { providerId?: ""; targetId?: string; version?: string
   const view = render(
     <SettingsCenter
       providerId={overrides.providerId ?? "codex"}
-      providers={[]}
+      providers={overrides.providers ?? PROVIDERS}
       targetId={overrides.targetId ?? "codex:wsl:Ubuntu"}
       targets={[wslTarget]}
-      selectedTarget={wslTarget}
+      selectedTarget={overrides.selectedTarget === undefined ? wslTarget : overrides.selectedTarget}
       version={overrides.version ?? "0.1.0"}
       onOpenSessionSettings={onOpenSessionSettings}
       onQuit={onQuit}
@@ -281,7 +317,7 @@ describe("SettingsCenter：关于与关闭", () => {
 });
 
 describe("SettingsCenter：环境面板的 WSL 会话目录入口", () => {
-  it("WSL 目标上打开环境页能拿到「设置会话目录…」，点了回传意图", async () => {
+  it("codex 的 WSL 目标上打开环境页能拿到「设置会话目录…」，点了回传意图", async () => {
     const { button, onOpenSessionSettings } = setup();
     await act(async () => {
       button("运行时环境")!.click();
@@ -291,6 +327,35 @@ describe("SettingsCenter：环境面板的 WSL 会话目录入口", () => {
       button("设置会话目录")!.click();
     });
     expect(onOpenSessionSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("**claude 的 WSL 目标不显示**——能力矩阵里 `sessionSettings=false`，保存会写 Codex 的全局设置", async () => {
+    // 这条走的是完整链路：`providers`（后端真实取值）→ 查询函数 → 面板条件。
+    // 门控（面板条件或这里的取值传递）去掉任何一处，卡片都会出现，这条即红。
+    const { button } = setup({
+      providerId: "claude",
+      targetId: "claude:wsl:Ubuntu",
+      selectedTarget: claudeWslTarget
+    });
+    await act(async () => {
+      button("运行时环境")!.click();
+    });
+    // 面板确实渲染了（检测结果已回），只是这张卡不该出现。
+    await waitFor(() => expect(button("重新检测")).toBeTruthy());
+    expect(button("设置会话目录")).toBeUndefined();
+  });
+
+  it("能力缺键时按不支持处理——同样不显示", async () => {
+    // `capabilities` 里少一个键（老后端 / 契约漂移）时不能默认放行：
+    // 缺键 = false 是 `provider-capabilities.ts` 的既有约定。
+    const { button } = setup({
+      providers: [{ id: "codex", label: "Codex", capabilities: { customCwd: true } }]
+    });
+    await act(async () => {
+      button("运行时环境")!.click();
+    });
+    await waitFor(() => expect(button("重新检测")).toBeTruthy());
+    expect(button("设置会话目录")).toBeUndefined();
   });
 
   it("环境页显示的应用版本来自 `version` prop（不再自己发 `app:get-version`）", async () => {

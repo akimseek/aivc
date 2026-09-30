@@ -9,6 +9,7 @@ export function EnvironmentPanel({
   providerId,
   targetId,
   selectedTarget,
+  supportsSessionSettings,
   version,
   onOpenSessionSettings,
   onError,
@@ -23,6 +24,14 @@ export function EnvironmentPanel({
    * 手动指定没有意义（后端也只认 WSL 的 `CODEX_HOME` 覆盖）。
    */
   selectedTarget?: AiTarget | null;
+  /**
+   * 当前平台是否支持会话设置（WSL 的 `CODEX_HOME` 覆盖）。
+   *
+   * 「WSL 会话目录」卡是**三重**条件之一：平台支持、目标是 WSL、入口被接上。
+   * 少了能力这一项，claude/qoder 的 WSL 目标也会出现这张卡——而后端对这两个平台
+   * `sessionSettings=false`，保存写的是 Codex 的全局设置，点了必然失败。
+   */
+  supportsSessionSettings: boolean;
   /**
    * 应用版本。
    *
@@ -246,9 +255,11 @@ export function EnvironmentPanel({
         </table>
       </Card>
 
-      {/* WSL 目标的会话目录入口。放在工具状态之后：它属于这台环境的一部分，
+      {/* WSL 目标的会话目录入口。三重条件缺一不可：**平台支持会话设置**
+          （claude/qoder 为假——放行保存写的是 Codex 的全局设置，点了必然失败）、
+          目标是 WSL、入口已接上。放在工具状态之后：它属于这台环境的一部分，
           但只有 WSL 目标才有——本机目标上出现它只会让人以为漏了什么。 */}
-      {selectedTarget?.kind === "wsl" && onOpenSessionSettings && (
+      {supportsSessionSettings && selectedTarget?.kind === "wsl" && onOpenSessionSettings && (
         <Card
           title="WSL 会话目录"
           description={`当前发行版：${selectedTarget.distro ?? "-"}（Codex 的 CODEX_HOME 覆盖）`}

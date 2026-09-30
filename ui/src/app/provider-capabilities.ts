@@ -16,8 +16,11 @@ import type { AiProviderSummary } from "../types";
  * | --- | --- | --- | --- |
  * | `skills` | ✅ | ❌ | ❌ |
  * | `branch` | ✅ | ✅ | ❌ |
+ * | `usage` | ✅ | ✅ | ✅ |
  * | `trash` | ✅ | ✅ | ✅ |
  * | `batchActions` | ✅ | ✅ | ✅ |
+ * | `customCwd` | ✅ | ✅ | ✅ |
+ * | `export` | ✅ | ✅ | ✅ |
  * | `sessionSettings` | ✅ | ❌ | ❌ |
  * | `duplicate` | ✅ | ✅ | ❌ |
  * | `vendorManagement` | ✅ | ✅ | ❌ |
@@ -60,4 +63,33 @@ export function supportsDuplicate(
 /** 支不支持「从此处分支」。 */
 export function supportsBranch(providers: AiProviderSummary[], providerId: string): boolean {
   return capability(providers, providerId, "branch");
+}
+
+/**
+ * 支不支持会话设置（WSL 的 `CODEX_HOME` 覆盖）。
+ *
+ * 只有 Codex 为真。**环境页的「WSL 会话目录」卡与「设置会话」对话框都吃它**：
+ * 对 claude/qoder 放行的话，保存写的是 Codex 的全局设置
+ * （`codex:set-wsl-codex-home`），点了必然失败。
+ */
+export function supportsSessionSettings(
+  providers: AiProviderSummary[],
+  providerId: string
+): boolean {
+  return capability(providers, providerId, "sessionSettings");
+}
+
+/** 支不支持自定义工作目录（新会话对话框里的「设置工作目录」一行）。 */
+export function supportsCustomCwd(providers: AiProviderSummary[], providerId: string): boolean {
+  return capability(providers, providerId, "customCwd");
+}
+
+/** 支不支持平台技能（Skills）管理。 */
+export function supportsSkills(providers: AiProviderSummary[], providerId: string): boolean {
+  return capability(providers, providerId, "skills");
+}
+
+/** 支不支持导出会话。 */
+export function supportsExport(providers: AiProviderSummary[], providerId: string): boolean {
+  return capability(providers, providerId, "export");
 }

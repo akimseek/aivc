@@ -3,6 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppOverlays, type OverlaysActions, type OverlaysState } from "./overlay-layer";
+import type { AiTarget } from "../types";
 
 /**
  * 弹层的**排布顺序**。
@@ -102,7 +103,14 @@ function fakeRuntime() {
   };
 }
 
-function renderOverlays(state: OverlaysState) {
+function renderOverlays(
+  state: OverlaysState,
+  over: {
+    canCustomCwd?: boolean;
+    canSessionSettings?: boolean;
+    selectedTarget?: AiTarget | null;
+  } = {}
+) {
   return render(
     <AppOverlays
       state={state}
@@ -112,8 +120,10 @@ function renderOverlays(state: OverlaysState) {
       appVersion="0.1.0"
       targetId=""
       targets={[]}
-      selectedTarget={null}
+      selectedTarget={over.selectedTarget ?? null}
       trash={false}
+      canCustomCwd={over.canCustomCwd ?? false}
+      canSessionSettings={over.canSessionSettings ?? false}
       canDuplicate={false}
       canBranch={false}
       resolveSession={() => undefined}
@@ -160,5 +170,63 @@ describe("AppOverlays 的排布顺序", () => {
     expect(layers).toHaveLength(2);
     expect(layers[0]!.className).toContain("settings-overlay");
     expect(layers[layers.length - 1]!.querySelector(".session-settings-dialog")).toBeTruthy();
+  });
+});
+
+/**
+ * 能力门控的**转发**。
+ *
+ * `supportsCustomCwd` 与 `supportsSessionSettings` 曾经是 JSX 布尔简写（恒真）——
+ * 于是 claude/qoder 的 WSL 目标也能打开「设置会话」，保存写的是 Codex 的全局设置。
+ * 下面每对「假 / 真」断言就是那两个简写的守卫：
+ * **写回简写（恒真）时「假」那几条必红；反过来恒假传死时「真」那几条必红。**
+ *
+ * 完整链路（providers 数据 → 查询函数 → 面板/对话框）另在
+ * `settings-center.test.tsx` 与 `environment-panel.test.tsx` 里钉住。
+ */
+describe("AppOverlays：能力布尔原样转发到对话框", () => {
+  const wslTarget: AiTarget = {
+    id: "codex:wsl:Ubuntu",
+    provider: "codex",
+    label: "Ubuntu",
+    kind: "wsl",
+    distro: "Ubuntu",
+    available: true
+  };
+  const draft = { cwd: "D:\\work", title: "", prompt: "", cliArgs: "" };
+
+  it("canCustomCwd=false：新会话对话框不出现「设置工作目录」", () => {
+    const view = renderOverlays(baseState({ newSession: draft }), { canCustomCwd: false });
+    expect(view.queryByText("设置工作目录")).toBeNull();
+  });
+
+  it("canCustomCwd=true：出现", () => {
+    const view = renderOverlays(baseState({ newSession: draft }), { canCustomCwd: true });
+    expect(view.getByText("设置工作目录")).toBeTruthy();
+  });
+
+  it("canSessionSettings=false：WSL 目标下「设置会话」的输入与两个按钮全部禁用", () => {
+    // 只有能力为假时整体禁用——isWsl 为真，禁用的原因只可能是能力。
+    const view = renderOverlays(
+      baseState({ sessionSettings: { distro: "Ubuntu", path: "~/.codex" } }),
+      { canSessionSettings: false, selectedTarget: wslTarget }
+    );
+    const input = view.container.querySelector<HTMLInputElement>(".session-settings-dialog input")!;
+    expect(input.disabled).toBe(true);
+    const byText = (label: string) =>
+      [...view.container.querySelectorAll("button")].find(
+        (item) => item.textContent?.trim() === label
+      ) as HTMLButtonElement;
+    expect(byText("保存").disabled).toBe(true);
+    expect(byText("恢复自动探测").disabled).toBe(true);
+  });
+
+  it("canSessionSettings=true：同样条件下可用", () => {
+    const view = renderOverlays(
+      baseState({ sessionSettings: { distro: "Ubuntu", path: "~/.codex" } }),
+      { canSessionSettings: true, selectedTarget: wslTarget }
+    );
+    const input = view.container.querySelector<HTMLInputElement>(".session-settings-dialog input")!;
+    expect(input.disabled).toBe(false);
   });
 });

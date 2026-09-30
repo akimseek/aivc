@@ -379,6 +379,8 @@ describe("EnvironmentPanel：装完 CLI 要说一声", () => {
       <EnvironmentPanel
         providerId="codex"
         targetId="codex:local"
+        // 本机目标用不到「WSL 会话目录」卡，能力给真即可——它在 `isWsl` 那一关就不成立。
+        supportsSessionSettings={true}
         // 版本由 `SettingsCenter` 传下来（面板自己不再取），这里给一个即可。
         version="0.1.0"
         onError={vi.fn()}

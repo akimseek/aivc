@@ -70,6 +70,11 @@ function setup(
     version?: string;
     /** 让检测**永远不返回**，用于钉住「检测中…」那个早返回分支。 */
     pending?: boolean;
+    /**
+     * 当前平台是否支持会话设置。默认 true（Codex 的取值）——
+     * 「不支持」那一条由专门的门控用例显式传 false。
+     */
+    supportsSessionSettings?: boolean;
   } = {}
 ) {
   const calls: { command: string; args: Record<string, unknown> }[] = [];
@@ -96,6 +101,7 @@ function setup(
       providerId="codex"
       targetId="codex:local"
       selectedTarget={props.selectedTarget}
+      supportsSessionSettings={props.supportsSessionSettings ?? true}
       onOpenSessionSettings={props.onOpenSessionSettings}
       version={props.version ?? "0.1.0"}
       onError={vi.fn()}
@@ -268,6 +274,30 @@ describe("EnvironmentPanel：WSL 会话目录入口", () => {
     const { button } = setup({}, { selectedTarget: target(), onOpenSessionSettings: vi.fn() });
     await waitFor(() => expect(button("重新检测")).toBeTruthy());
     expect(button("设置会话目录")).toBeUndefined();
+  });
+
+  it("**平台不支持会话设置时不显示**（claude/qoder 的 WSL 目标也不显示）", async () => {
+    // 后端对 claude/qoder `sessionSettings=false`：放行的话保存写的是 Codex 的全局
+    // 设置（`codex:set-wsl-codex-home`），点了必然失败——所以即便目标是 WSL、
+    // 入口也接上了，这张卡仍然不该出现。去掉面板里的能力条件这条必红。
+    const { button, view } = setup(
+      {},
+      {
+        supportsSessionSettings: false,
+        selectedTarget: target({
+          id: "claude:wsl:Ubuntu",
+          provider: "claude",
+          label: "Ubuntu",
+          kind: "wsl",
+          distro: "Ubuntu"
+        }),
+        onOpenSessionSettings: vi.fn()
+      }
+    );
+    // 面板确实渲染了（不是被早返回挡住），只是这张卡不该出现。
+    await waitFor(() => expect(button("重新检测")).toBeTruthy());
+    expect(button("设置会话目录")).toBeUndefined();
+    expect(view.container.textContent).not.toContain("WSL 会话目录");
   });
 
   it("没有接动作时不显示（缺入口就不渲染，而不是死按钮）", async () => {

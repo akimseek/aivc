@@ -11,7 +11,7 @@ import { StatusBar } from "../shell/status-bar";
 import { TitleBar } from "../shell/title-bar";
 import type { AiSession, AiTarget, ApiVendor } from "../types";
 import { AppOverlays } from "./overlay-layer";
-import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
+import { supportsBranch, supportsCustomCwd, supportsDuplicate, supportsSessionSettings } from "./provider-capabilities";
 import { planResume } from "./resume-session";
 import { SessionWorkspace, canStartCodex } from "./session-workspace";
 import { displayTitle } from "./session-display";
@@ -986,6 +986,10 @@ export function App() {
         selectedTarget={selectedTarget}
         trash={trash}
         // 能力判定只在这里算一次：`provider-capabilities.ts` 是唯一的判据来源。
+        // 恒真传入过一次（JSX 布尔简写），claude/qoder 的 WSL 目标因此也能打开
+        // 「设置会话」——那四项都从能力矩阵现算，本文件不读键名。
+        canCustomCwd={supportsCustomCwd(console.providers, console.providerId)}
+        canSessionSettings={supportsSessionSettings(console.providers, console.providerId)}
         canDuplicate={supportsDuplicate(console.providers, console.providerId)}
         canBranch={supportsBranch(console.providers, console.providerId)}
         resolveSession={sessionById}

@@ -9,6 +9,7 @@ import { VendorsPanel } from "../../app/config/vendors-panel";
 import { GatewayFailurePanel } from "../../app/gateway-failure-panel";
 import { GatewayLogPanel } from "../../app/gateway-log-panel";
 import { GatewayUsagePanel } from "../../app/gateway-usage-panel";
+import { supportsSessionSettings } from "../../app/provider-capabilities";
 import { Icon, hasLayerAbove } from "../../components";
 import type { AiProviderId, AiProviderSummary, AiTarget } from "../../types";
 import { AboutPanel } from "./panels/about-panel";
@@ -55,7 +56,7 @@ export function SettingsCenter({
   targetId: string;
   /** 全部目标：诊断页要把每个目标的状态列出来。 */
   targets: AiTarget[];
-  /** 当前选中的目标。环境面板的「WSL 会话目录」卡只在 WSL 上显示。 */
+  /** 当前选中的目标。环境面板的「WSL 会话目录」卡只在 WSL 且平台支持会话设置时显示。 */
   selectedTarget: AiTarget | null;
   initialTab?: SettingsTab;
   /**
@@ -179,6 +180,9 @@ export function SettingsCenter({
                 providerId={providerId}
                 targetId={targetId}
                 selectedTarget={selectedTarget}
+                // 能力从平台摘要**现算**：这一层是 `providers` 与 `providerId` 的最近
+                // 持有者，判定（含缺键 = 不支持）只由 `provider-capabilities.ts` 解释。
+                supportsSessionSettings={supportsSessionSettings(providers, providerId)}
                 // 版本由 `app.tsx` 取一次后传到这里，再交给需要它的两页（关于 / 环境）——
                 // 面板自己再取一次只是多一次 IPC，读到的还是同一个值。
                 version={version}

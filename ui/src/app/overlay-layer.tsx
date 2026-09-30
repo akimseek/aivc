@@ -142,6 +142,8 @@ export function AppOverlays({
   targets,
   selectedTarget,
   trash,
+  canCustomCwd,
+  canSessionSettings,
   canDuplicate,
   canBranch,
   resolveSession,
@@ -166,11 +168,17 @@ export function AppOverlays({
   /** 在回收站视图里时，删除项变成「彻底删除」。 */
   trash: boolean;
   /**
-   * 当前平台的能力。
+   * 当前平台的四项能力：自定义工作目录 / 会话设置 / 复制 / 分支。
    *
-   * 由调用方算好传进来，不在这里查：`AppOverlays` 拿不到 `providers` 与当前平台的
-   * 对应关系之外的东西，而且**能力判定只该有一处**（`provider-capabilities.ts`）。
+   * 由调用方按 `provider-capabilities.ts` 算好传进来，这里只做转发：
+   * 能力键名与「缺键 = 不支持」的约定只在那一个模块里解释一次。
+   *
+   * `canCustomCwd` 与 `canSessionSettings` 曾以 JSX 布尔简写恒真传入，
+   * 于是 claude/qoder 的 WSL 目标也能打开「设置会话」，而保存写的是 Codex 的
+   * 全局设置——恒真等于「入口在、点得动、必然失败」，正是本组件的类型层面要堵的事。
    */
+  canCustomCwd: boolean;
+  canSessionSettings: boolean;
   canDuplicate: boolean;
   canBranch: boolean;
   /** 按编号找会话——右键菜单要它的文件路径。 */
@@ -220,7 +228,7 @@ export function AppOverlays({
               ? { missingCwd: state.newSession.resume.missingCwd }
               : null
           }
-          supportsCustomCwd
+          supportsCustomCwd={canCustomCwd}
           cwd={state.newSession.cwd}
           title={state.newSession.title}
           prompt={state.newSession.prompt}
@@ -343,7 +351,7 @@ export function AppOverlays({
           currentPath={selectedTarget?.codexHome}
           wslPath={state.sessionSettings.path}
           isWsl={selectedTarget?.kind === "wsl"}
-          supportsSessionSettings
+          supportsSessionSettings={canSessionSettings}
           onChange={actions.changeSessionSettingsPath}
           onClose={actions.closeSessionSettings}
           onRestore={() => actions.restoreSessionSettings(state.sessionSettings!.distro)}

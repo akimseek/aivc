@@ -7,8 +7,10 @@ import { SessionSettingsDialog, type SessionSettingsDialogProps } from "./sessio
 /**
  * 「设置会话」对话框。
  *
- * 要紧的是**非 WSL 目标上必须整体禁用**：本机目标不需要手动设置会话目录，
- * 允许输入会让用户以为填了有效。旧平台就是 `disabled = !supportsSessionSettings || !isWsl`。
+ * 要紧的是两个条件的**各自禁用途**：非 WSL 目标上不需要手动设置会话目录
+ * （本机目录就是用户目录），平台不支持会话设置（claude/qoder）时放行保存写的是
+ * Codex 的全局设置。两处允许输入都会让用户以为填了有效。
+ * 旧平台就是 `disabled = !supportsSessionSettings || !isWsl`。
  */
 
 function setup(overrides: Partial<SessionSettingsDialogProps> = {}) {
@@ -53,10 +55,15 @@ describe("SessionSettingsDialog", () => {
     expect(view.container.textContent).toContain("设置会话");
   });
 
-  it("目标本身不支持时同样禁用（即便它是 WSL）", () => {
+  it("平台不支持会话设置时，即便目标是 WSL 也整体禁用（对话框开着时切换平台可达）", () => {
     // `supportsSessionSettings` 与 `isWsl` 是**两个**条件，缺一不可。
-    const { input } = setup({ isWsl: true, supportsSessionSettings: false });
+    // 环境页的卡已按平台能力隐藏，但对话框开着时切换平台/目标不会把它关掉——
+    // claude/qoder 在后端 `sessionSettings=false`，那一下重渲染就会走到这条分支；
+    // 放行保存写的是 Codex 的全局设置（`codex:set-wsl-codex-home`），必然失败。
+    const { input, byText } = setup({ isWsl: true, supportsSessionSettings: false });
     expect(input().disabled).toBe(true);
+    expect(byText("保存").disabled).toBe(true);
+    expect(byText("恢复自动探测").disabled).toBe(true);
   });
 
   it("改动会回传（受控组件，不自己保存）", () => {

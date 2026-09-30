@@ -145,9 +145,14 @@ export const exportSession = (
 export const openPath = (path: string, targetId?: string) =>
   invoke<unknown>("shell:open-path", { path, ...(targetId ? { targetId } : {}) });
 
-/** 在系统文件管理器里打开某个会话所在的目录。 */
+/**
+ * 在系统文件管理器里打开某个会话所在的目录。
+ *
+ * 命令名必须与后端注册表逐字一致（这里是 `shell:` 前缀，不是 `codex:`）：
+ * 两边都编译得过，调错只会得到一个运行时的「未知命令」。
+ */
 export const openSessionFolder = (targetId: string, sessionId: string) =>
-  invoke<unknown>("codex:open-session-folder", { targetId, sessionId });
+  invoke<unknown>("shell:open-session-folder", { targetId, sessionId });
 
 /** 单个会话移入回收站。 */
 export const deleteSession = (targetId: string, sessionId: string, filePath?: string) =>

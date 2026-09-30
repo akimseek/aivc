@@ -11,7 +11,7 @@ export function SkillsPanel({
 }: {
   targetId: string;
   onError: (message: string) => void;
-  /** 成功反馈。见 `ConfigOverlay` 同名字段的说明。 */
+  /** 成功反馈。见 `SettingsCenter` 同名字段的说明。 */
   onNotify?: (message: string) => void;
 }) {
   const [skills, setSkills] = useState<SkillEntry[]>([]);

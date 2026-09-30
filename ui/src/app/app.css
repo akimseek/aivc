@@ -1851,3 +1851,201 @@ select {
 .rule-test .tag {
   margin-left: 8px;
 }
+
+/* ── 设置中心（两栏：224px 分组导航 + 面板区）──────────
+   它比 `Dialog` 多一层结构，因此自绘外壳；遮罩与层级仍与弹层用同一批 token。
+   尺寸按 spec §10：1024×660。 */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ui-z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(2 6 23 / 55%);
+  padding: var(--ui-space-5);
+}
+.settings-panel {
+  width: min(1024px, calc(100vw - 48px));
+  height: min(660px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-bg-modal);
+  box-shadow: var(--ui-shadow);
+}
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-3);
+  padding: var(--ui-space-3) var(--ui-space-5);
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg-modal-nav);
+  flex: 0 0 auto;
+}
+.settings-head-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ui-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ui-accent);
+  color: #fff;
+}
+.settings-head-text h2 {
+  margin: 0;
+  font-size: var(--ui-text-lg);
+}
+.settings-head-text p {
+  margin: 2px 0 0;
+  font-size: var(--ui-text-xs);
+  color: var(--ui-faint);
+}
+.settings-head .icon-btn {
+  margin-left: auto;
+}
+.settings-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 0;
+}
+.settings-nav {
+  padding: var(--ui-space-3);
+  border-right: 1px solid var(--ui-border);
+  background: var(--ui-bg-modal-nav);
+  overflow-y: auto;
+}
+.settings-group {
+  margin-bottom: var(--ui-space-4);
+}
+.settings-group-label {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  padding: 0 var(--ui-space-2) var(--ui-space-1);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  color: var(--ui-faint);
+}
+.settings-nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--ui-space-2) var(--ui-space-3);
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.settings-nav-item:hover {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+.settings-nav-item.on {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+.settings-content {
+  padding: var(--ui-space-5) var(--ui-space-5) var(--ui-space-6);
+  overflow-y: auto;
+  background: var(--ui-bg-modal);
+}
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-space-4);
+  padding-bottom: var(--ui-space-3);
+  margin-bottom: var(--ui-space-4);
+  border-bottom: 1px solid var(--ui-border);
+}
+.panel-header h3 {
+  margin: 0;
+  font-size: var(--ui-text-lg);
+}
+.panel-header p {
+  margin: var(--ui-space-1) 0 0;
+  font-size: var(--ui-text-sm);
+  color: var(--ui-muted);
+}
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  flex: 0 0 auto;
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  color: var(--ui-muted);
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+/* ── 关于面板 ────────────────────────────────────────── */
+.about-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-4);
+  padding-bottom: var(--ui-space-4);
+  border-bottom: 1px solid var(--ui-border);
+}
+.about-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--ui-radius-xl);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: var(--ui-text-xl);
+  color: #fff;
+  background: linear-gradient(135deg, #059669, #14b8a6);
+}
+.about-brand h3 {
+  margin: 0;
+  font-size: var(--ui-text-lg);
+}
+.about-brand p {
+  margin: var(--ui-space-1) 0 0;
+  font-size: var(--ui-text-sm);
+  color: var(--ui-muted);
+}
+.about-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-space-3);
+  margin: var(--ui-space-4) 0;
+}
+.about-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-bg-sidebar);
+  font-size: var(--ui-text-xs);
+  color: var(--ui-muted);
+}
+.about-actions {
+  display: flex;
+  gap: var(--ui-space-2);
+}

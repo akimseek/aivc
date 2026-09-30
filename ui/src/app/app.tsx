@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, ToolbarSpacer, useToast, type TabItem } from "../components";
+import type { SettingsTab } from "../features/settings/settings-center";
 import * as api from "../ipc/commands";
 import type { AiSession, AiTarget, ApiVendor } from "../types";
 import { AppMenubar } from "./app-menubar";
-import type { ConfigTab } from "./config-overlay";
 import { AppOverlays } from "./overlay-layer";
 import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
@@ -58,7 +58,7 @@ export function App() {
    *
    * 现在分两层：
    * - `useConsole({ notify })` 报**会话与设置**类动作（它们都在那个 hook 里）；
-   * - `ConfigOverlay` 拿到 `onNotify` 往下传给各面板（供应商 / 技能 / 环境 / 网关）。
+   * - `SettingsCenter` 拿到 `onNotify` 往下传给各面板（供应商 / 技能 / 环境 / 网关）。
    *
    * 于是「做完一件事要说一声」只有一处实现，新加动作时也只需要调一次 `notify`。
    *
@@ -113,11 +113,24 @@ export function App() {
 
   /* ── 弹层 ─────────────────────────────────────────────── */
 
-  const [configOpen, setConfigOpen] = useState(false);
-  const [configTab, setConfigTab] = useState<ConfigTab>("vendors");
-  const [aboutOpen, setAboutOpen] = useState(false);
-  const [appVersion, setAppVersion] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("vendors");
   const [menu, setMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+
+  /**
+   * 应用版本。
+   *
+   * **只取一次**（挂载时）：版本是进程级常量，每个用到它的地方各取一次只是多几次
+   * IPC，还会让「读不到」的兜底分散在几处。读不到时写死一句「无法读取」——
+   * 界面上一片空白会被读成「这个产品没有版本号」。
+   */
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => {
+    void api
+      .getAppVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion("无法读取"));
+  }, []);
 
   /**
    * 「设置会话」对话框的草稿；`null` 表示没打开。
@@ -178,10 +191,36 @@ export function App() {
     resume?: { sessionId: string; missingCwd?: string };
   } | null>(null);
 
-  const openConfig = useCallback((tab: ConfigTab) => {
-    setConfigTab(tab);
-    setConfigOpen(true);
+  const openSettings = useCallback((tab: SettingsTab) => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
   }, []);
+
+  /**
+   * 打开「设置会话」对话框（WSL 的 CODEX_HOME 覆盖）。
+   *
+   * 两个入口共用这一处：菜单栏（Task 6 删除前）与环境面板的「WSL 会话目录」卡。
+   * 非 WSL 目标没有可写的东西，直接返回，而不是弹一个填不了任何东西的对话框。
+   */
+  const openSessionSettings = useCallback(() => {
+    if (selectedTarget?.kind !== "wsl") return;
+    setSessionSettings({
+      distro: selectedTarget.distro ?? "",
+      path: selectedTarget.codexHome ?? ""
+    });
+  }, [selectedTarget]);
+
+  /**
+   * 退出与打开日志目录。
+   *
+   * 各有两个入口（菜单栏 / 关于面板），因此各定义一次：
+   * - 退出走浏览器窗口关闭，与标题栏的关闭同一条路——**避免两套退出语义**，
+   *   后端因此仍然拦得住它并弹退出确认；
+   * - 打开日志目录交给后端按运行根算路径（`app:command` 的 `openLogDir`），
+   *   界面不需要知道它在哪。
+   */
+  const quit = useCallback(() => window.close(), []);
+  const openLogDirectory = useCallback(() => void api.appCommand("openLogDir"), []);
 
   /* ── 工作台要的数据 ───────────────────────────────────── */
 
@@ -490,30 +529,17 @@ export function App() {
         }}
         onDismissAttention={(terminalId) => terminals.clearAttention(terminalId)}
         actions={{
-          manageSkills: () => openConfig("skills"),
-          openGatewaySettings: () => openConfig("gateway"),
-          manageVendors: () => openConfig("vendors"),
+          manageSkills: () => openSettings("skills"),
+          openGatewaySettings: () => openSettings("gateway"),
+          manageVendors: () => openSettings("vendors"),
           // 「设置会话」：只有 WSL 目标有 `distro` 可写，因此这里也按 WSL 判定。
           openSessionSettings:
             selectedTarget?.kind === "wsl" && selectedTarget.distro
-              ? () =>
-                  setSessionSettings({
-                    distro: selectedTarget.distro ?? "",
-                    path: selectedTarget.codexHome ?? ""
-                  })
+              ? openSessionSettings
               : undefined,
-          installCli: () => openConfig("environment"),
+          installCli: () => openSettings("environment"),
           exportSession: (format) => void runExport(format),
-          showAbout: () => {
-            setAboutOpen(true);
-            void api
-              .getAppVersion()
-              .then(setAppVersion)
-              .catch(() => setAppVersion("无法读取"));
-          },
-          // 打开日志目录：后端按运行根算出 `log_dir()` 并在文件管理器里打开它
-          // （`app:command` 的 `openLogDir`）。界面不需要知道路径。
-          openLogDirectory: () => void api.appCommand("openLogDir"),
+          openLogDirectory,
           // 清理 Gateway 日志：做完要说一声，否则「静默完成」与「没执行」看起来一样。
           clearGatewayLogs: () => {
             void api
@@ -523,15 +549,12 @@ export function App() {
                 console.setError(error instanceof Error ? error.message : String(error))
               );
           },
-          // 退出走浏览器窗口关闭，与标题栏的关闭同一条路，避免两套退出语义。
-          quit: () => window.close()
+          quit
         }}
       />
 
       <AppOverlays
         state={{
-          aboutOpen,
-          appVersion,
           toastMessage: toast.message,
           exportedTo,
           sessionSettings,
@@ -540,17 +563,21 @@ export function App() {
           tabMenu,
           titleDialog,
           detailSession,
-          configOpen,
-          configTab
+          settingsOpen,
+          settingsTab
         }}
         actions={{
-          closeAbout: () => setAboutOpen(false),
           closeToast: toast.dismiss,
           closeExported: () => setExportedTo(""),
           openExported: () => void api.openPath(exportedTo),
           changeSessionSettingsPath: (path) =>
             setSessionSettings((current) => (current ? { ...current, path } : current)),
           closeSessionSettings: () => setSessionSettings(null),
+          // 环境面板的「WSL 会话目录」卡与菜单栏的「设置会话」共用这一个入口。
+          openSessionSettings,
+          // 关于面板承接的两个菜单动作（spec §11）：打开日志目录与退出。
+          quit,
+          openLogDirectory,
           // 恢复自动探测 = **清掉人工设置**，不是保存空值——这两件事不能合。
           restoreSessionSettings: (distro) => {
             setSessionSettings(null);
@@ -623,12 +650,13 @@ export function App() {
             if (selectedTarget) void beginResumeSession(selectedTarget, session);
           },
           branchFromMessage: (sourceLine) => void console.branchFromMessage(sourceLine),
-          closeConfig: () => setConfigOpen(false),
+          closeSettings: () => setSettingsOpen(false),
           reportError: console.setError,
           notify: toast.show
         }}
         providers={console.providers}
         providerId={console.providerId}
+        appVersion={appVersion}
         targetId={console.targetId}
         targets={console.targets}
         selectedTarget={selectedTarget}

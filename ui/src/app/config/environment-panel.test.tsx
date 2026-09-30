@@ -3,7 +3,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { EnvironmentPanel } from "./environment-panel";
-import type { CliEnvironmentStatus } from "../../types";
+import type { AiTarget, CliEnvironmentStatus } from "../../types";
 
 /**
  * CLI 环境面板。
@@ -49,7 +49,22 @@ function status(over: Partial<CliEnvironmentStatus> = {}): CliEnvironmentStatus 
   };
 }
 
-function setup(over: Partial<CliEnvironmentStatus> = {}) {
+/** 造一个目标。WSL 卡只在 `kind === "wsl"` 时出现，因此两种都要测。 */
+function target(over: Partial<AiTarget> = {}): AiTarget {
+  return {
+    id: "codex:local",
+    provider: "codex",
+    label: "本机",
+    kind: "local",
+    available: true,
+    ...over
+  };
+}
+
+function setup(
+  over: Partial<CliEnvironmentStatus> = {},
+  props: { selectedTarget?: AiTarget | null; onOpenSessionSettings?: () => void } = {}
+) {
   const calls: { command: string; args: Record<string, unknown> }[] = [];
   const current = status(over);
   window.__TAURI__ = {
@@ -65,7 +80,15 @@ function setup(over: Partial<CliEnvironmentStatus> = {}) {
     },
     event: { listen: async () => () => undefined }
   };
-  const view = render(<EnvironmentPanel providerId="codex" targetId="codex:local" onError={vi.fn()} />);
+  const view = render(
+    <EnvironmentPanel
+      providerId="codex"
+      targetId="codex:local"
+      selectedTarget={props.selectedTarget}
+      onOpenSessionSettings={props.onOpenSessionSettings}
+      onError={vi.fn()}
+    />
+  );
   const button = (label: string) =>
     [...view.container.querySelectorAll("button")].find(
       (item) => (item.textContent ?? "").trim().startsWith(label)
@@ -197,5 +220,47 @@ describe("EnvironmentPanel：安装入口与文案", () => {
       expect(view.container.textContent).toContain("未检测到 codex");
     });
     expect(button("安装")).toBeUndefined();
+  });
+});
+
+/**
+ * 「设置会话」的新入口（被移除的菜单栏那一项，spec §11）。
+ *
+ * 只有 WSL 目标有 `distro` 可写，因此卡片只对 WSL 目标出现；本机目标上出现它
+ * 只会让人以为漏配了什么。
+ */
+describe("EnvironmentPanel：WSL 会话目录入口", () => {
+  it("WSL 目标时显示「设置会话目录…」并回传意图", async () => {
+    const onOpenSessionSettings = vi.fn();
+    const { button, view } = setup(
+      {},
+      {
+        selectedTarget: target({
+          id: "codex:wsl:Ubuntu",
+          label: "Ubuntu",
+          kind: "wsl",
+          distro: "Ubuntu"
+        }),
+        onOpenSessionSettings
+      }
+    );
+    await waitFor(() => expect(button("设置会话目录")).toBeTruthy());
+    expect(view.container.textContent).toContain("Ubuntu");
+    await act(async () => {
+      button("设置会话目录")!.click();
+    });
+    expect(onOpenSessionSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("本机目标不显示", async () => {
+    const { button } = setup({}, { selectedTarget: target(), onOpenSessionSettings: vi.fn() });
+    await waitFor(() => expect(button("重新检测")).toBeTruthy());
+    expect(button("设置会话目录")).toBeUndefined();
+  });
+
+  it("没有接动作时不显示（缺入口就不渲染，而不是死按钮）", async () => {
+    const { button } = setup({}, { selectedTarget: target({ kind: "wsl", distro: "Ubuntu" }) });
+    await waitFor(() => expect(button("重新检测")).toBeTruthy());
+    expect(button("设置会话目录")).toBeUndefined();
   });
 });

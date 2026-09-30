@@ -1,19 +1,36 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, EmptyState, Field, Notice, Select } from "../../components";
+import { Button, Card, EmptyState, Field, Notice, Select } from "../../components";
 import * as api from "../../ipc/commands";
-import type { AiProviderId, CliEnvironmentStatus } from "../../types";
+import type { AiProviderId, AiTarget, CliEnvironmentStatus } from "../../types";
 
 export function EnvironmentPanel({
   providerId,
   targetId,
+  selectedTarget,
+  onOpenSessionSettings,
   onError,
   onNotify
 }: {
   providerId: AiProviderId | "";
   targetId: string;
+  /**
+   * 当前选中的目标。
+   *
+   * 「WSL 会话目录」卡只在 WSL 目标上出现：本机目标的会话目录就是用户目录，
+   * 手动指定没有意义（后端也只认 WSL 的 `CODEX_HOME` 覆盖）。
+   */
+  selectedTarget?: AiTarget | null;
+  /**
+   * 打开「设置会话」对话框。
+   *
+   * 这是被移除的菜单栏「设置会话」的新入口（spec §11）：自动探测受发行版、
+   * 用户、nvm/home 布局影响，探测不到时没有这个入口那台目标就等于用不了。
+   * 对话框本体不在这个面板里——它由 `app.tsx` 统一渲染，这里只回传意图。
+   */
+  onOpenSessionSettings?: () => void;
   onError: (message: string) => void;
-  /** 成功反馈。见 `ConfigOverlay` 同名字段的说明。 */
+  /** 成功反馈。见 `SettingsCenter` 同名字段的说明。 */
   onNotify?: (message: string) => void;
 }) {
   const [status, setStatus] = useState<CliEnvironmentStatus | null>(null);
@@ -187,6 +204,19 @@ export function EnvironmentPanel({
         <p className="field-hint">
           当前 Node 由 nvm 管理。切换版本会影响同一台机器上其他用 nvm 的项目。
         </p>
+      )}
+
+      {/* WSL 目标的会话目录入口。放在工具状态之后：它属于这台环境的一部分，
+          但只有 WSL 目标才有——本机目标上出现它只会让人以为漏了什么。 */}
+      {selectedTarget?.kind === "wsl" && onOpenSessionSettings && (
+        <Card
+          title="WSL 会话目录"
+          description={`当前发行版：${selectedTarget.distro ?? "-"}（Codex 的 CODEX_HOME 覆盖）`}
+        >
+          <Button small onClick={onOpenSessionSettings} title="手动指定 WSL 内的 Codex 目录">
+            设置会话目录…
+          </Button>
+        </Card>
       )}
 
       {/* 建议由后端算好，界面**直接显示**——在前后端各写一份判断逻辑，两份一定会分叉。 */}

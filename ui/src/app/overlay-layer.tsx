@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 
 import { Button } from "../components";
+import { SettingsCenter, type SettingsTab } from "../features/settings/settings-center";
 import type { AiProviderId, AiProviderSummary, AiSession, AiTarget } from "../types";
-import { AboutDialog } from "./about-dialog";
-import { ConfigOverlay, type ConfigTab } from "./config-overlay";
 import { ExitConfirm } from "./exit-confirm";
 import { NewSessionDialog } from "./new-session-dialog";
 import { SessionContextMenu } from "./session-context-menu";
@@ -24,9 +23,6 @@ export type NewSessionDraft = {
 
 /** 全部弹层的**状态**。收成一个对象，调用方一眼能看出这些是弹层的开关。 */
 export type OverlaysState = {
-  aboutOpen: boolean;
-  /** 版本号；还没读到是空串，对话框会显示「正在读取」。 */
-  appVersion: string;
   /** 菜单动作的一句话结果。空串表示不显示。 */
   toastMessage: string;
   /** 最近一次导出的落点。空串表示不显示。 */
@@ -37,8 +33,8 @@ export type OverlaysState = {
   tabMenu: { key: string; x: number; y: number } | null;
   titleDialog: { kind: "rename" | "duplicate"; session: AiSession } | null;
   detailSession: AiSession | null;
-  configOpen: boolean;
-  configTab: ConfigTab;
+  settingsOpen: boolean;
+  settingsTab: SettingsTab;
 };
 
 /**
@@ -51,7 +47,6 @@ export type OverlaysState = {
  * 因此这里的每一项都必填，漏接会被类型检查挡住。
  */
 export type OverlaysActions = {
-  closeAbout: () => void;
   closeToast: () => void;
   closeExported: () => void;
   openExported: () => void;
@@ -59,6 +54,12 @@ export type OverlaysActions = {
   closeSessionSettings: () => void;
   restoreSessionSettings: (distro: string) => void;
   saveSessionSettings: (distro: string, path: string) => void;
+  /** 打开「设置会话」对话框（WSL 的 CODEX_HOME 覆盖）。 */
+  openSessionSettings: () => void;
+  /** 退出控制台：走窗口关闭，后端的退出确认流程仍然拦得住。 */
+  quit: () => void;
+  /** 在文件管理器里打开日志目录（关于面板的入口）。 */
+  openLogDirectory: () => void;
   changeNewSession: (patch: Partial<NewSessionDraft>) => void;
   chooseNewSessionDirectory: () => void;
   closeNewSession: () => void;
@@ -82,7 +83,7 @@ export type OverlaysActions = {
   closeDetail: () => void;
   resumeSession: (session: AiSession) => void;
   branchFromMessage: (sourceLine: number) => void;
-  closeConfig: () => void;
+  closeSettings: () => void;
   reportError: (message: string) => void;
   /**
    * 一句话**成功**反馈。
@@ -116,6 +117,7 @@ export function AppOverlays({
   actions,
   providers,
   providerId,
+  appVersion,
   targetId,
   targets,
   selectedTarget,
@@ -131,6 +133,13 @@ export function AppOverlays({
   /** 全部平台：供应商页要用它显示厂商名。 */
   providers: AiProviderSummary[];
   providerId: AiProviderId | "";
+  /**
+   * 应用版本。
+   *
+   * 由 `app.tsx` 取一次后传下来（设置中心的关于面板要用它）：版本是进程级的常量，
+   * 在这里自己取只是多几次 IPC，还会让「读不到」的兜底分散在几处。
+   */
+  appVersion: string;
   targetId: string;
   targets: AiTarget[];
   selectedTarget: AiTarget | null;
@@ -155,8 +164,6 @@ export function AppOverlays({
 
   return (
     <>
-
-      {state.aboutOpen && <AboutDialog version={state.appVersion} onClose={actions.closeAbout} />}
 
       {/*
         两条一句话提示，形状相同：都要能被看见、也都能收掉。
@@ -293,14 +300,23 @@ export function AppOverlays({
         onError={actions.reportError}
       />
 
-      {state.configOpen && (
-        <ConfigOverlay
+      {/*
+        设置中心取代了旧的扁平九标签覆盖层。菜单栏被移除后，
+        「关于」「打开日志目录」「退出」「设置会话」这些动作都从这里进（spec §11）。
+      */}
+      {state.settingsOpen && (
+        <SettingsCenter
           providerId={providerId}
           providers={providers}
           targetId={targetId}
           targets={targets}
-          initialTab={state.configTab}
-          onClose={actions.closeConfig}
+          selectedTarget={selectedTarget}
+          initialTab={state.settingsTab}
+          version={appVersion}
+          onOpenSessionSettings={actions.openSessionSettings}
+          onQuit={actions.quit}
+          onOpenLogDirectory={actions.openLogDirectory}
+          onClose={actions.closeSettings}
           onError={actions.reportError}
           onNotify={actions.notify}
         />

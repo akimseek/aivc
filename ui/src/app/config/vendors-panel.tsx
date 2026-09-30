@@ -161,7 +161,7 @@ export function VendorsPanel({
   /** 全部平台。厂商的下拉与筛选都从它来——名称与侧栏逐字一致。 */
   providers: AiProviderSummary[];
   onError: (message: string) => void;
-  /** 成功反馈。见 `ConfigOverlay` 同名字段的说明。 */
+  /** 成功反馈。见 `SettingsCenter` 同名字段的说明。 */
   onNotify?: (message: string) => void;
 }) {
   const [vendors, setVendors] = useState<ApiVendor[]>([]);

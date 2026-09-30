@@ -204,6 +204,8 @@ export function formatJson(value: Record<string, unknown> | undefined): string {
  *
  * 与旧平台同一套状态机（`vendor-manager-dialog.tsx` 的 `renderVendorBalance`）：
  * 查询中… / 金额 / 查询失败 / 未获取，失败时留着上一次的数字并标「（已过期）」。
+ * 后端说 `isValid === false`（「密钥可能无效」）时在上述文案后追加一句——
+ * 旧平台的那个标签在重排时不能丢（它是唯一指向「去查密钥」的信号）。
  */
 export function balanceLabel(state: BalanceState | undefined): string {
   if (!state || state.status === "idle") return "未获取";
@@ -211,8 +213,16 @@ export function balanceLabel(state: BalanceState | undefined): string {
   const text = state.balance ? balanceText(state.balance) : "未提供";
   // 「上游不给余额」（未提供）与「这次查失败」都要说成查询失败：两者在界面上
   // 都需要用户再试一次或去看配置，而 `balanceText` 只管有没有数字。
-  if (text === "未提供") return "查询失败";
-  return state.status === "error" ? `${text}（已过期）` : text;
+  const label =
+    text === "未提供"
+      ? "查询失败"
+      : state.status === "error"
+        ? `${text}（已过期）`
+        : text;
+  // **`isValid === false` 是一句独立的话**（后端明确说「密钥可能无效」），
+  // 不是「查询失败」的同义词——数字查得到也会带上它。因此追加而不是并进上面那句；
+  // 丢掉它，用户就只会看到一个笼统的失败，不知道该去查密钥。
+  return state.balance?.isValid === false ? `${label}（密钥可能无效）` : label;
 }
 
 /** 健康状态 → 界面文案。四个取值照旧平台（`open` 是熔断中，不是「离线」）。 */
@@ -473,7 +483,10 @@ export function VendorsPanel({
   const defaultProvider = (): AiProviderId =>
     (providerId || providers[0]?.id || "codex") as AiProviderId;
 
-  const startNew = () =>
+  const startNew = () => {
+    // 表单开着时点「新增」会把草稿整个换掉——和删除一样是**不可逆**的（刚填的没了），
+    // 因此先问一次；取消则什么都不动。手法与删除确认一致（`window.confirm`）。
+    if (draft !== null && !window.confirm("正在编辑供应商，放弃当前修改并新建？")) return;
     setDraft({
       id: "",
       providerId: defaultProvider(),
@@ -494,6 +507,7 @@ export function VendorsPanel({
       balanceQuery: "",
       modelQuery: ""
     });
+  };
 
   /** 平台显示名。取后端给的 `label`（与侧栏逐字一致），查不到才退回编号。 */
   const labelOf = (id: string): string =>
@@ -775,6 +789,9 @@ export function VendorsPanel({
             <ChipGroup
               value={filter}
               onChange={(value) => setFilter(value as ProviderFilter)}
+              /* 这一组 chips 在无障碍树里要有名字：旧平台的筛选下拉有
+                 `aria-label="按平台筛选供应商"`，换成 chips 时不能丢。 */
+              ariaLabel="按厂商筛选供应商"
               options={[
                 { value: "all", label: `全部 (${vendors.length})` },
                 ...providers.map((item) => ({
@@ -815,7 +832,9 @@ export function VendorsPanel({
                   <th>费率 (输入/输出/M)</th>
                   <th>健康</th>
                   <th>候选池状态</th>
-                  <th>操作</th>
+                  {/* 这一格装着两样东西：余额状态机（含单家刷新）与三个操作按钮。
+                      列头如实写出来，用户才找得到「余额」在哪一列。 */}
+                  <th>操作 / 余额</th>
                 </tr>
               </thead>
               <tbody>

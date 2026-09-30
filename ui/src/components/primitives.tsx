@@ -58,14 +58,23 @@ export type ChipOption = {
 export function ChipGroup({
   value,
   options,
-  onChange
+  onChange,
+  ariaLabel
 }: {
   value: string;
   options: ChipOption[];
   onChange: (value: string) => void;
+  /**
+   * 这一组 chips 在无障碍树里的名字。
+   *
+   * `role="group"` 没有名字时，读屏只能念出一串孤立的按钮，说不出它们是干什么的；
+   * 一页上有多组 chips（例如供应商页的厂商筛选与表单里的模型厂商）时尤其分不清。
+   * 旧平台的筛选下拉带 `aria-label`，换成 chips 后那条信息不能丢。
+   */
+  ariaLabel?: string;
 }) {
   return (
-    <div className="chip-group" role="group">
+    <div className="chip-group" role="group" aria-label={ariaLabel}>
       {options.map((option) => (
         <button
           key={option.value}

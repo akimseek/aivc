@@ -99,8 +99,31 @@ export function EnvironmentPanel({
       .catch(() => undefined);
   }, [load]);
 
-  if (!providerId) return <EmptyState message="请先选择平台。" />;
-  if (!status) return <EmptyState message="检测中…" />;
+  // 两个早返回分支都要带面板头：它们都会真的出现（没选平台时、检测结果还没回来时），
+  // 只剩一句裸提示的话，用户会以为自己离开了设置中心。与 `gateway-panel.tsx` 的
+  // 「读取网关状态…」、`diagnostics-panel.tsx` 的空目标分支同一处理。
+  if (!providerId) {
+    return (
+      <>
+        <PanelHeader
+          title="运行时环境"
+          description="选择已集成的 AI 厂商，在当前目标环境执行 npm 全局安装。Node 缺失或版本不足时，会优先使用已安装的 nvm 安装 Node。"
+        />
+        <EmptyState message="请先选择平台。" />
+      </>
+    );
+  }
+  if (!status) {
+    return (
+      <>
+        <PanelHeader
+          title="运行时环境"
+          description="选择已集成的 AI 厂商，在当前目标环境执行 npm 全局安装。Node 缺失或版本不足时，会优先使用已安装的 nvm 安装 Node。"
+        />
+        <EmptyState message="检测中…" />
+      </>
+    );
+  }
 
   /**
    * 状态行。与旧平台 `cli-installer-dialog.tsx` 的五项一致：

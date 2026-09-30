@@ -63,7 +63,12 @@ function target(over: Partial<AiTarget> = {}): AiTarget {
 
 function setup(
   over: Partial<CliEnvironmentStatus> = {},
-  props: { selectedTarget?: AiTarget | null; onOpenSessionSettings?: () => void } = {}
+  props: {
+    selectedTarget?: AiTarget | null;
+    onOpenSessionSettings?: () => void;
+    /** 让检测**永远不返回**，用于钉住「检测中…」那个早返回分支。 */
+    pending?: boolean;
+  } = {}
 ) {
   const calls: { command: string; args: Record<string, unknown> }[] = [];
   const current = status(over);
@@ -72,7 +77,10 @@ function setup(
       invoke: async (_command: string, args?: unknown) => {
         const payload = args as { command?: string; args?: Record<string, unknown> };
         calls.push({ command: payload?.command ?? "", args: payload?.args ?? {} });
-        if (payload?.command === "cli:check-environment") return current;
+        if (payload?.command === "cli:check-environment") {
+          if (props.pending) return new Promise<never>(() => undefined);
+          return current;
+        }
         if (payload?.command === "cli:install") return {};
         if (payload?.command === "app:get-version") return "0.1.0";
         return null;
@@ -262,5 +270,13 @@ describe("EnvironmentPanel：WSL 会话目录入口", () => {
     const { button } = setup({}, { selectedTarget: target({ kind: "wsl", distro: "Ubuntu" }) });
     await waitFor(() => expect(button("重新检测")).toBeTruthy());
     expect(button("设置会话目录")).toBeUndefined();
+  });
+});
+
+describe("EnvironmentPanel：早返回分支也有面板头", () => {
+  it("**「检测中…」时不是一句裸提示**（检测结果没回来前，用户仍知道自己在哪一页）", () => {
+    const { view } = setup({}, { pending: true });
+    expect(view.container.querySelector(".panel-header")).toBeTruthy();
+    expect(view.container.textContent).toContain("检测中…");
   });
 });

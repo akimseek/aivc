@@ -71,7 +71,7 @@ const wslTarget: AiTarget = {
   available: true
 };
 
-function setup() {
+function setup(overrides: { providerId?: ""; targetId?: string } = {}) {
   fakeCore();
   const onClose = vi.fn();
   const onQuit = vi.fn();
@@ -79,9 +79,9 @@ function setup() {
   const onOpenSessionSettings = vi.fn();
   const view = render(
     <SettingsCenter
-      providerId="codex"
+      providerId={overrides.providerId ?? "codex"}
       providers={[]}
-      targetId="codex:wsl:Ubuntu"
+      targetId={overrides.targetId ?? "codex:wsl:Ubuntu"}
       targets={[wslTarget]}
       selectedTarget={wslTarget}
       version="0.1.0"
@@ -166,6 +166,29 @@ describe("SettingsCenter 导航", () => {
         expect((header!.textContent ?? "").trim().length, `「${label}」的标题是空的`).toBeGreaterThan(0);
       });
     }
+  });
+
+  it("**早返回分支也带面板头**：没有目标的技能页 / 没有平台的环境页", async () => {
+    // 这两个分支都会真的出现（没选目标、没选平台时导航仍然能点进来），而此前它们
+    // 只剩一句裸提示——与 `gateway-panel` 的等待态、`diagnostics-panel` 的空目标
+    // 分支处理不一致，用户会以为自己离开了设置中心。
+    const { view, button } = setup({ providerId: "", targetId: "" });
+
+    await act(async () => {
+      button("平台技能 (Skills)")!.click();
+    });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("请先选择目标。");
+    });
+    expect(view.container.querySelector(".settings-content .panel-header")).toBeTruthy();
+
+    await act(async () => {
+      button("运行时环境")!.click();
+    });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("请先选择平台。");
+    });
+    expect(view.container.querySelector(".settings-content .panel-header")).toBeTruthy();
   });
 });
 

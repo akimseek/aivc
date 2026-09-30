@@ -260,6 +260,18 @@ describe("VendorsPanel：跨平台列表与厂商过滤", () => {
     expect(rows()).toHaveLength(3);
   });
 
+  it("厂商筛选那一组在无障碍树里有名字（旧平台的下拉带同一个 aria-label）", async () => {
+    // chips 换掉了 `<select aria-label="按平台筛选供应商">`，这条信息不能跟着控件一起丢：
+    // `role="group"` 没有名字时读屏只念出一串孤立的按钮。
+    const { view } = setup({ existing: mixed });
+    const group = await waitFor(() => {
+      const found = view.container.querySelector('[role="group"][aria-label="按厂商筛选供应商"]');
+      if (!found) throw new Error("还没有带名字的 chips 组");
+      return found;
+    });
+    expect(group.textContent).toContain("全部 (3)");
+  });
+
   it("筛选结果为空时说清是**这个厂商**没有，而不是「一个都没有」", async () => {
     const { view, chip } = setup({ existing: mixed });
     await waitFor(() => expect(chip("Gemini (0)")).toBeTruthy());
@@ -341,6 +353,15 @@ describe("VendorsPanel：表格列", () => {
     expect(view.container.querySelectorAll("tbody tr")).toHaveLength(2);
   });
 
+  it("「操作 / 余额」列头如实说明这一格装着两样东西（余额不在列清单里）", async () => {
+    // 余额按行内状态机呈现 + 每行带单家刷新按钮，于是这一格里既有余额又有三个操作。
+    // 列头只写「操作」的话，用户找不到「余额」在哪一列。
+    const { view } = setup({ existing: [vendor()] });
+    await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
+    const heads = [...view.container.querySelectorAll("thead th")].map((item) => item.textContent);
+    expect(heads).toContain("操作 / 余额");
+  });
+
   it("**健康列不编造数据**：有快照才显示，没有就留空（后端根本不记延时）", async () => {
     const circuitUntil = new Date(Date.now() + 3 * 60_000).toISOString();
     const { view } = setup(
@@ -419,6 +440,21 @@ describe("VendorsPanel：余额行内状态", () => {
     ).toBe("3 USD（已过期）");
   });
 
+  it("**`isValid === false` 要单独说出来**（旧平台的「密钥可能无效」在重排里不能丢）", () => {
+    // 它**不是**「查询失败」的同义词：金额查得到时也会带上它，而两句指向的下一步动作
+    // 完全不同（一个去充值、一个去查密钥）。
+    expect(
+      balanceLabel({ status: "ok", balance: { remaining: 12.5, unit: "USD", isValid: false } })
+    ).toBe("12.5 USD（密钥可能无效）");
+    // 连数字都没有时，「查询失败」这句仍然要留着——两句话说的是两件事。
+    expect(balanceLabel({ status: "ok", balance: { isValid: false } })).toBe(
+      "查询失败（密钥可能无效）"
+    );
+    // 密钥验证过（`true`）或后端没发这个字段的，都不该多这一句。
+    expect(balanceLabel({ status: "ok", balance: { remaining: 1, isValid: true } })).toBe("1");
+    expect(balanceLabel({ status: "ok", balance: { remaining: 1 } })).toBe("1");
+  });
+
   it("单家刷新：点「刷新」拿到金额", async () => {
     const { view, byText } = setup(
       { existing: [vendor()] },
@@ -430,6 +466,20 @@ describe("VendorsPanel：余额行内状态", () => {
     });
     await waitFor(() => {
       expect(view.container.textContent).toContain("余额 12.5 USD");
+    });
+  });
+
+  it("**行内那格也要带「（密钥可能无效）」**（信号落到用户看得见的地方）", async () => {
+    const { view, byText } = setup(
+      { existing: [vendor()] },
+      { balance: { remaining: 0.5, unit: "USD", isValid: false } }
+    );
+    await waitFor(() => expect(byText("刷新")).toBeTruthy());
+    await act(async () => {
+      byText("刷新")!.click();
+    });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("余额 0.5 USD（密钥可能无效）");
     });
   });
 
@@ -500,6 +550,42 @@ describe("VendorsPanel：删除需要确认", () => {
       expect(runtime.calls.some((item) => item.command === "vendor:delete")).toBe(true);
       expect(onNotify).toHaveBeenCalledWith(expect.stringContaining("测试家"));
     });
+  });
+});
+
+describe("VendorsPanel：编辑中点「新增」先问一次", () => {
+  // `startNew` 会整体覆盖草稿，与删除同一类不可逆动作（刚填的东西直接没了）。
+  it("**取消时不丢草稿**——表单还停在原来那一条的编辑态", async () => {
+    const { byText } = setup({ existing: [vendor({ name: "官方" })] });
+    await waitFor(() => expect(byText("编辑")).toBeTruthy());
+    await act(async () => {
+      byText("编辑")!.click();
+    });
+    expect(byText("保存修改")).toBeTruthy();
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(String(confirmSpy.mock.calls[0]![0])).toContain("放弃当前修改并新建");
+    // 草稿没被换掉：按钮仍是「保存修改」而不是「创建」。
+    expect(byText("保存修改")).toBeTruthy();
+    expect(byText("创建")).toBeFalsy();
+  });
+
+  it("确认之后才换成一张新草稿", async () => {
+    const { byText } = setup({ existing: [vendor({ name: "官方" })] });
+    await waitFor(() => expect(byText("编辑")).toBeTruthy());
+    await act(async () => {
+      byText("编辑")!.click();
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    expect(byText("创建")).toBeTruthy();
+    expect(byText("保存修改")).toBeFalsy();
   });
 });
 

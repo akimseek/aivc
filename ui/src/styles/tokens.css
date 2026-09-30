@@ -1,98 +1,146 @@
 /*
- * 设计令牌。
+ * 设计令牌（双主题）。
  *
- * 整套界面只有**一个彩色**（青绿强调色），其余靠层次。
+ * 明亮值在 `:root`，暗黑值在 `:root[data-theme="dark"]`——**同一组名字、两套值**，
+ * 组件只引用语义名，不感知主题。`data-theme` 由 `index.html` 引导脚本在首帧前写好。
  *
- * 令牌单独成文件，是因为它被**组件层与应用层共用**：放在任一侧都会让另一侧
- * 变成「引用别人的私有变量」。
- *
- * # 这一版做了什么
- *
- * 补上**阶**：字号、间距、圆角、层级各有五档左右，此后新增样式只从阶里取值，
- * 不再逐处写 `13px`。这是「改一处、全局跟着走」的前提——没有阶，token 就只是个
- * 颜色表。
- *
- * **只做加法**：原有的每一个令牌都原样保留（`--radius` 与 `--radius-sm` 仍被
- * `app.css` / `components.css` 引用）。新阶是它们的别名与扩展，不是替换。
+ * 唯一强调色只用于「当前选中 / 主操作 / 焦点环」。等待确认走 `--ui-warn`、
+ * 错误走 `--ui-danger`，三者不混用。
  */
 
+:root,
+:root[data-theme="light"] {
+  /* 表面 */
+  --ui-bg: #f8fafc;
+  --ui-bg-header: #ffffff;
+  --ui-bg-activity: #f1f5f9;
+  --ui-bg-sidebar: #ffffff;
+  --ui-bg-card: #ffffff;
+  --ui-bg-card-hover: #f1f5f9;
+  --ui-bg-card-active: #e2e8f0;
+  --ui-bg-input: #ffffff;
+  --ui-bg-badge: #e2e8f0;
+  --ui-bg-tabbar: #f1f5f9;
+  --ui-bg-modal: #ffffff;
+  --ui-bg-modal-nav: #f8fafc;
+  --ui-bg-statusbar: #ffffff;
+
+  /* 边框 */
+  --ui-border: #e2e8f0;
+  --ui-border-strong: #cbd5e1;
+  --ui-divider: #e8edf3;
+
+  /* 文字 */
+  --ui-text: #0f172a;
+  --ui-text-soft: #334155;
+  --ui-muted: #475569;
+  --ui-faint: #64748b;
+
+  /* 强调色（唯一彩色） */
+  --ui-accent: #059669;
+  --ui-accent-strong: #047857;
+  --ui-accent-soft: #ecfdf5;
+  --ui-accent-border: #a7f3d0;
+  --ui-focus: rgba(5, 150, 105, 0.25);
+
+  /* 语义色 */
+  --ui-warn: #b45309;
+  --ui-warn-soft: #fffbeb;
+  --ui-warn-border: #fde68a;
+  --ui-danger: #dc2626;
+  --ui-danger-soft: #fef2f2;
+  --ui-danger-border: #fecaca;
+
+  /* 收藏星：刻意保留的第二色相——金色在极小面积上就能表达「已收藏」，
+     换成强调色会被当成「已选中」。 */
+  --ui-star: #d9a11a;
+
+  /* 终端（明亮 = 浅色终端主题） */
+  --term-bg: #f8fafc;
+  --term-border: #e2e8f0;
+  --term-text: #1e293b;
+  --term-prompt: #059669;
+  --term-card-bg: #ffffff;
+  --term-card-border: #cbd5e1;
+  --term-cursor: #0f172a;
+
+  /* 阴影：只给浮层用（平铺卡片靠边框与留白分层）。 */
+  --ui-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+  --ui-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.08);
+  --ui-shadow-xs: 0 1px 3px rgba(15, 23, 42, 0.06);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --ui-bg: #0b0d13;
+  --ui-bg-header: #11131c;
+  --ui-bg-activity: #0d0f16;
+  --ui-bg-sidebar: #131622;
+  --ui-bg-card: #181b29;
+  --ui-bg-card-hover: #1f2436;
+  --ui-bg-card-active: #262c42;
+  --ui-bg-input: #171a27;
+  --ui-bg-badge: #1f2436;
+  --ui-bg-tabbar: #0f121d;
+  --ui-bg-modal: #151824;
+  --ui-bg-modal-nav: #11131c;
+  --ui-bg-statusbar: #0d0f16;
+
+  --ui-border: #1f2537;
+  --ui-border-strong: #2f3750;
+  --ui-divider: #1a2032;
+
+  --ui-text: #f8fafc;
+  --ui-text-soft: #cbd5e1;
+  --ui-muted: #94a3b8;
+  --ui-faint: #64748b;
+
+  --ui-accent: #10b981;
+  --ui-accent-strong: #34d399;
+  --ui-accent-soft: rgba(16, 185, 129, 0.15);
+  --ui-accent-border: rgba(16, 185, 129, 0.35);
+  --ui-focus: rgba(16, 185, 129, 0.35);
+
+  --ui-warn: #fbbf24;
+  --ui-warn-soft: rgba(251, 191, 36, 0.12);
+  --ui-warn-border: rgba(251, 191, 36, 0.35);
+  --ui-danger: #f87171;
+  --ui-danger-soft: rgba(248, 113, 113, 0.12);
+  --ui-danger-border: rgba(248, 113, 113, 0.35);
+  --ui-star: #fbbf24;
+
+  --term-bg: #0d0f17;
+  --term-border: #1e2434;
+  --term-text: #e2e8f0;
+  --term-prompt: #10b981;
+  --term-card-bg: #141824;
+  --term-card-border: #232b3e;
+  --term-cursor: #10b981;
+
+  --ui-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --ui-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --ui-shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+  color-scheme: dark;
+}
+
 :root {
-  /* ── 中性色 ─────────────────────────────────────────── */
-  --ui-bg: #f4f6f8;
-  --ui-surface: #ffffff;
-  --ui-surface-subtle: #f8fafb;
-  --ui-border: #dfe5eb;
-  --ui-border-strong: #cbd5df;
-  --ui-divider: #edf0f4;
-  --ui-text: #17212b;
-  --ui-text-soft: #3d4855;
-  --ui-muted: #71808e;
-  --ui-faint: #93a0ad;
-
-  /* ── 强调色 ─────────────────────────────────────────────
-   *
-   * 用法约定：强调色**只**用于「当前选中 / 主操作 / 焦点环」。
-   * 等待确认走 `--ui-warn`，错误走 `--ui-danger`，三者不混用——
-   * 混用会让「哪个是重点」这件事失效。
-   */
-  --ui-accent: #168c78;
-  --ui-accent-strong: #0f7665;
-  --ui-accent-soft: #e5f4f0;
-  --ui-focus: rgba(22, 140, 120, 0.22);
-
-  /* ── 语义色 ─────────────────────────────────────────── */
-  --ui-warn: #9a6b12;
-  --ui-warn-soft: #fdf6e6;
-  --ui-warn-border: #f0dcb0;
-  --ui-danger: #a63838;
-  --ui-danger-soft: #fdeeee;
-  --ui-danger-border: #e3bcbc;
-
-  /* ── 终端 ───────────────────────────────────────────────
-   *
-   * 终端底色比界面正文色（`#17212b`）更深：它是**另一块屏幕**，不是同一张纸上的
-   * 一块区域。用同色会让终端看起来像被贴上去的。
-   */
-  --term-bg: #0f172a;
-
-  /* ── 排版 ───────────────────────────────────────────────
-   *
-   * # 字体栈是**有意选择**的，不是默认值
-   *
-   * 此前写的是 `Inter, ui-sans-serif, system-ui, …`，但**没有任何东西提供 Inter**
-   * （`ui/` 下没有字体文件，也没有 CDN 引用）——实际渲染成 Segoe UI。写了等于没写，
-   * 而且让人以为界面在用 Inter。
-   *
-   * 现在如实写成系统栈，并说明为什么这么排：
-   *
-   * - `Segoe UI Variable Text` 是 Windows 11 的界面字体，窄字重下比 Segoe UI 清晰；
-   *   没有它就退到 `Segoe UI`（Win10）。
-   * - 中文字体单独列出：**不列的话中文会由系统兜底**，在小字号下与拉丁字母的字重
-   *   对不齐（这是中文界面最容易看出「没调过」的地方）。
-   * - 等宽**不带 Windows 专属的 Consolas 打头**：先 Cascadia（Win 终端自带，
-   *   字形更现代），再退到 Consolas。
-   *
-   * **后续若要内置字体**（Geist 等），只改这两个令牌即可，不必碰任何组件——
-   * 这正是把它们抽出来的理由。
-   */
+  /* 排版：有意的系统栈（不内置字体、不引 CDN）。 */
   --ui-font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
     "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   --ui-font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
 
-  /* 字号阶：所有字号只从这五档里取 */
-  --ui-text-xs: 11px; /* 标签、徽章、状态栏小字 */
-  --ui-text-sm: 12px; /* 次要信息、表格、元数据 */
-  --ui-text-md: 13px; /* 正文（当前默认） */
-  --ui-text-lg: 15px; /* 标题 */
-  --ui-text-xl: 18px; /* 面板大标题 */
+  --ui-text-xs: 11px;
+  --ui-text-sm: 12px;
+  --ui-text-md: 13px;
+  --ui-text-base: 13.5px; /* 正文与终端（demo 基准） */
+  --ui-text-lg: 15px;
+  --ui-text-xl: 18px;
+  --ui-leading-tight: 1.35;
+  --ui-leading: 1.6;
 
-  --ui-leading-tight: 1.35; /* 标题、单行数据 */
-  --ui-leading: 1.6; /* 正文 */
-
-  /* ── 间距阶 ─────────────────────────────────────────────
-   *
-   * 4 的倍数。**不要**再写 `padding: 7px` 这类值——它们让「对齐」变成巧合。
-   */
+  /* 间距阶（4 的倍数） */
   --ui-space-1: 4px;
   --ui-space-2: 8px;
   --ui-space-3: 12px;
@@ -100,54 +148,28 @@
   --ui-space-5: 24px;
   --ui-space-6: 32px;
 
-  /* ── 圆角阶 ─────────────────────────────────────────────
-   *
-   * **内层更紧、外层更松**：输入框与按钮要显得「嵌在里面」，浮层要显得「浮在上面」。
-   * 全部用同一个圆角会让界面看起来扁。
-   */
-  --ui-radius-sm: 4px; /* 输入框、按钮、标签 */
-  --ui-radius-md: 8px; /* 面板、卡片 */
-  --ui-radius-lg: 12px; /* 浮层、对话框 */
+  /* 圆角阶：内层更紧、外层更松 */
+  --ui-radius-sm: 4px;
+  --ui-radius-md: 8px;
+  --ui-radius-lg: 12px;
+  --ui-radius-xl: 16px;
 
-  /* ── 层级阶 ─────────────────────────────────────────────
-   *
-   * 取代散落的 `z-index: 9999`。级与级之间留出空档，将来插一层不用重排全部。
-   */
+  /* 层级阶 */
   --ui-z-base: 0;
   --ui-z-sticky: 10;
   --ui-z-drawer: 40;
   --ui-z-overlay: 60;
   --ui-z-toast: 80;
 
-  /* ── 阴影 ───────────────────────────────────────────────
-   *
-   * 带冷色调（`29, 45, 58`）而不是纯黑低透明：纯黑阴影在浅灰底上会发脏。
-   *
-   * **只给浮层用**。卡片、面板用边框与留白分层，不用阴影——阴影是「浮在内容
-   * 之上」的意思，给平铺的卡片加阴影会让整个界面显得吵闹。
-   */
-  --ui-shadow: 0 16px 40px rgba(29, 45, 58, 0.12);
-  --ui-shadow-sm: 0 2px 8px rgba(29, 45, 58, 0.08);
-
-  /* ── 兼容别名（既有样式在用，勿删） ──────────────────────── */
-  --radius: var(--ui-radius-md);
-  --radius-sm: var(--ui-radius-sm);
-
-  color: var(--ui-text);
   background: var(--ui-bg);
+  color: var(--ui-text);
   font-family: var(--ui-font-sans);
   font-size: 14px;
   line-height: var(--ui-leading);
-  /* 界面上大量出现会话编号、端口、token 数；子像素抗锯齿在这种小字号下更清晰。 */
   -webkit-font-smoothing: antialiased;
 }
 
-/*
- * 数字对齐。
- *
- * 条数、token、端口、耗时这类值会上下成列出现。比例数字（默认）每个字形宽度不同，
- * 列与列之间就对不齐——那是一种「看得出来但说不出哪里不对」的廉价感，而修它只要一行。
- */
+/* 数字对齐：条数、token、端口、耗时成列出现，比例数字对不齐列。 */
 .ui-num,
 code,
 kbd,
@@ -156,7 +178,6 @@ samp {
   font-feature-settings: "tnum";
 }
 
-/* 等宽：终端与所有需要逐字符对齐的地方 */
 .ui-mono {
   font-family: var(--ui-font-mono);
 }

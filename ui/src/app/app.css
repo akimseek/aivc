@@ -81,7 +81,7 @@ select {
   min-height: 32px;
   padding: 0 var(--ui-space-3);
   border-bottom: 1px solid var(--ui-border);
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
   user-select: none;
 }
 
@@ -103,7 +103,7 @@ select {
 }
 
 .menubar button:hover {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
   color: var(--ui-text);
 }
 
@@ -127,7 +127,7 @@ select {
 }
 
 .app-menu-trigger.active {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
   color: var(--ui-text);
 }
 
@@ -139,8 +139,8 @@ select {
   padding: var(--ui-space-1);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-sm);
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-md, 0 8px 24px rgb(0 0 0 / 28%));
+  background: var(--ui-bg-card);
+  box-shadow: var(--ui-shadow);
 }
 
 .menu-dropdown {
@@ -171,7 +171,7 @@ select {
 }
 
 .menu-item:hover:not(:disabled) {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
 }
 
 /* **禁用必须看得出来。**
@@ -244,7 +244,7 @@ select {
   min-width: 0;
   min-height: 0;
   border-right: 1px solid var(--ui-border);
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
   overflow: hidden;
 }
 
@@ -391,7 +391,7 @@ select {
   padding: 2px;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-md);
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
 }
 
 .pane-nav .chip {
@@ -408,7 +408,7 @@ select {
 }
 
 .pane-nav .chip:hover {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
   color: var(--ui-text);
 }
 
@@ -464,7 +464,7 @@ select {
 
 /* 侧栏是浅灰底，悬停变白 = 浮起来。比「再深一点」更符合直觉。 */
 .row:hover {
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
 }
 
 /*
@@ -524,7 +524,7 @@ select {
  */
 .star:hover,
 .star.on {
-  color: #d9a11a;
+  color: var(--ui-star);
 }
 
 /*
@@ -590,7 +590,7 @@ select {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
   overflow: hidden;
 }
 
@@ -652,8 +652,8 @@ select {
   max-width: 42ch;
   padding: 0 8px;
   border: 1px solid var(--ui-accent);
-  border-radius: var(--radius-sm);
-  background: var(--ui-surface);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-card);
   color: var(--ui-text);
   font-weight: 600;
 }
@@ -728,14 +728,14 @@ select {
   min-width: 148px;
   padding: 5px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--radius);
-  background: var(--ui-surface);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-card);
   box-shadow: var(--ui-shadow);
 }
 
 .context-menu button {
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-sm);
   background: transparent;
   padding: 7px 10px;
   text-align: left;
@@ -786,7 +786,7 @@ select {
   height: min(660px, calc(100vh - 64px));
   border: 1px solid var(--ui-border);
   border-radius: 12px;
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
   box-shadow: var(--ui-shadow);
   overflow: hidden;
 }
@@ -918,7 +918,7 @@ select {
 }
 
 .tag.off {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
   color: var(--ui-muted);
 }
 
@@ -944,8 +944,8 @@ select {
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--radius);
-  background: var(--ui-surface-subtle);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-activity);
 }
 
 .editor code {
@@ -1064,8 +1064,8 @@ select {
   overflow: auto;
   padding: 10px 12px;
   border: 1px solid var(--ui-border);
-  border-radius: var(--radius);
-  background: var(--ui-surface-subtle);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-activity);
   font-family: var(--ui-font-mono);
   font-size: 11.5px;
   line-height: 1.5;
@@ -1369,7 +1369,7 @@ select {
   min-height: 28px;
   padding: 0 var(--ui-space-3);
   border-top: 1px solid var(--ui-divider);
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
   color: var(--ui-muted);
   font-size: var(--ui-text-xs);
   /* 状态栏是**单行**：允许换行会让窗口变窄时它长成两行，把工作区挤短。 */
@@ -1435,8 +1435,8 @@ select {
 .status-vendor.warn {
   border-radius: var(--ui-radius-sm);
   padding: 0 6px;
-  background: color-mix(in srgb, var(--ui-warning, #b8860b) 18%, transparent);
-  color: var(--ui-warning, #b8860b);
+  background: color-mix(in srgb, var(--ui-warn) 18%, transparent);
+  color: var(--ui-warn);
   font-weight: 600;
 }
 
@@ -1446,7 +1446,7 @@ select {
   padding: 0 var(--ui-space-1);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-sm);
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
   color: var(--ui-text-soft);
   font: inherit;
 }
@@ -1506,8 +1506,8 @@ select {
   padding: var(--ui-space-4);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-md, 8px);
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-lg, 0 16px 48px rgb(0 0 0 / 35%));
+  background: var(--ui-bg-card);
+  box-shadow: var(--ui-shadow);
 }
 
 .dialog-header {
@@ -1526,9 +1526,9 @@ select {
   flex-direction: column;
   gap: var(--ui-space-1);
   padding: var(--ui-space-2) var(--ui-space-3);
-  border: 1px solid var(--ui-warning, #b8860b);
+  border: 1px solid var(--ui-warn);
   border-radius: var(--ui-radius-sm);
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
   color: var(--ui-text);
 }
 
@@ -1559,7 +1559,7 @@ select {
   padding: var(--ui-space-2) var(--ui-space-3);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-sm, 6px);
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
   font-size: var(--ui-text-sm);
 }
 
@@ -1610,7 +1610,7 @@ select {
 }
 
 .branch-children button:hover {
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
 }
 
 .attention-center {
@@ -1651,8 +1651,8 @@ select {
   padding: var(--ui-space-2);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-sm);
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-lg, 0 16px 48px rgb(0 0 0 / 35%));
+  background: var(--ui-bg-card);
+  box-shadow: var(--ui-shadow);
 }
 
 .attention-heading {
@@ -1696,7 +1696,7 @@ select {
 }
 
 .attention-item:hover {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
 }
 
 .attention-open {
@@ -1791,7 +1791,7 @@ select {
   min-height: 240px;
   max-height: 60vh;
   overflow: auto;
-  background: var(--ui-surface-sunken, #0f172a);
+  background: var(--ui-bg-activity);
   border-radius: var(--ui-radius-md, 6px);
 }
 .composer-preview-stage img {
@@ -1822,7 +1822,7 @@ select {
   padding: 4px 8px;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-sm, 4px);
-  background: var(--ui-surface-sunken, #0f172a);
+  background: var(--ui-bg-activity);
 }
 
 /* ── 供应商的高级配置 ────────────────────────────────────
@@ -1833,7 +1833,7 @@ select {
 .vendor-advanced > summary {
   cursor: pointer;
   font-size: 12px;
-  color: var(--ui-text-muted, #8b949e);
+  color: var(--ui-muted);
 }
 .vendor-advanced textarea {
   width: 100%;

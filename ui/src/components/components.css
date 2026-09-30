@@ -17,8 +17,8 @@
   height: 32px;
   padding: 0 12px;
   border: 1px solid var(--ui-border-strong);
-  border-radius: var(--radius);
-  background: var(--ui-surface);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-card);
   color: var(--ui-text-soft);
   cursor: pointer;
   white-space: nowrap;
@@ -93,7 +93,7 @@
 }
 
 .chip:hover {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
 }
 
 .chip.on {
@@ -126,13 +126,13 @@
   height: 34px;
   padding: 0 10px;
   border: 1px solid var(--ui-border-strong);
-  border-radius: var(--radius);
-  background: var(--ui-surface);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-card);
   color: var(--ui-text);
 }
 
 .control:disabled {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
   color: var(--ui-faint);
 }
 
@@ -147,15 +147,15 @@
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--ui-border-strong);
-  border-radius: var(--radius);
-  background: var(--ui-surface-subtle);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-activity);
   color: var(--ui-text);
 }
 
 .search-input input:focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
 }
 
 .search-busy {
@@ -231,7 +231,7 @@
   gap: 9px;
   padding: 11px 12px;
   border: 1px solid var(--ui-warn-border);
-  border-radius: var(--radius);
+  border-radius: var(--ui-radius-md);
   background: var(--ui-warn-soft);
   color: var(--ui-warn);
   font-size: 12px;
@@ -267,7 +267,7 @@
   padding: 7px 12px;
   border: 1px solid transparent;
   border-bottom: 0;
-  border-radius: var(--radius) var(--radius) 0 0;
+  border-radius: var(--ui-radius-md) var(--ui-radius-md) 0 0;
   color: var(--ui-muted);
   cursor: pointer;
   white-space: nowrap;
@@ -275,13 +275,13 @@
 }
 
 .tab:hover {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-bg-activity);
 }
 
 .tab.on {
   margin-bottom: -1px;
   border-color: var(--ui-border);
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
   color: var(--ui-text);
   font-weight: 640;
 }
@@ -393,7 +393,7 @@
   padding: var(--ui-space-3) var(--ui-space-4);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-md);
-  background: var(--ui-surface);
+  background: var(--ui-bg-card);
 }
 
 .card-head {

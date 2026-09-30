@@ -3,7 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI 可视化控制台</title>
+    <title>AI Visual Console</title>
+    <script>
+      // 首帧就定好主题：暗色用户不会先看到一屏白色。
+      // 判据必须与 src/app/theme.ts 的 parseThemePreference 一致（改一处要改两处）。
+      (function () {
+        var pref = "system";
+        var dark = false;
+        try {
+          pref = localStorage.getItem("aivc.theme") || "system";
+          if (pref !== "light" && pref !== "dark" && pref !== "system") pref = "system";
+          dark =
+            pref === "dark" ||
+            (pref === "system" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+        } catch (error) {
+          pref = "system";
+          dark = false;
+        }
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.dataset.themePreference = pref;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -14,6 +14,7 @@ import { Sidebar } from "./sidebar";
 import { StatusBar } from "./status-bar";
 import { useConsole } from "./use-console";
 import { useTerminals } from "./use-terminals";
+import { useTheme } from "./use-theme";
 import { useWorkspaceTabs } from "./use-workspace-tabs";
 
 /**
@@ -39,6 +40,10 @@ import { useWorkspaceTabs } from "./use-workspace-tabs";
  * **动作**（开终端、导出、改配置）、**组装**。
  */
 export function App() {
+  // 主题：把偏好写到 <html data-theme>，所有 token 随之整套切换。
+  // 返回值这一轮还无人消费，裸调用即可。
+  useTheme();
+
   /**
    * 一句话反馈**唯一**的出口。
    *

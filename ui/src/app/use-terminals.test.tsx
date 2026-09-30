@@ -231,7 +231,11 @@ describe("useTerminals 的事件装配", () => {
       await expect(view.result.current.openTerminal(null)).rejects.toThrow();
     });
 
-    expect(view.result.current.terminals.at(-1)!.running).toBe(false);
+    const terminal = view.result.current.terminals.at(-1)!;
+    expect(terminal.running).toBe(false);
+    // 初值是**乐观**写进去的（见 `open`）：失败路径必须把它删干净，
+    // 否则状态栏会显示一路根本不存在的终端的输入模式。
+    expect(view.result.current.uiStates[terminal.id]).toBeUndefined();
   });
 
   it("关闭终端后不再收到它的输出", async () => {
@@ -447,6 +451,128 @@ describe("useTerminals 的事件装配", () => {
       );
     const payload = (start!.args as { args?: Record<string, string> }).args ?? {};
     expect(payload.sessionId).toBeUndefined();
+  });
+
+  /* ── 输入侧状态：状态栏读的那一份 ────────────────────────
+   *
+   * 这些状态从 `TerminalPane` 上收到了 `useTerminals`（spec §6：状态栏上的输入模式胶囊
+   * 讲的是**当前前台那一路**终端）。它们没有别的可见入口——写错了界面上只有一个
+   * 不出现/不消失的输入框，没有任何报错。
+   */
+
+  it("新会话：输入框一开始就可见，模式是自管输入", async () => {
+    // 新会话没有历史要重放，输入框一开始就该在——藏起来用户会以为终端没起来。
+    const view = await render(() => useTerminals());
+    await act(async () => {
+      await view.result.current.openTerminal(null);
+    });
+    const id = view.result.current.terminals.at(-1)!.id;
+
+    expect(view.result.current.uiStates[id]).toEqual({
+      inputMode: "composer",
+      composerVisible: true
+    });
+  });
+
+  it("恢复会话：输入框先藏着，第一段输出到达后由 noteOutput 放出", async () => {
+    // 恢复时终端正在重放历史，输入框会挡住输出，所以初值是藏着的；
+    // 而揭示它的时机**只有第一段输出**（旧平台也只在 `onTerminalData` 里 reveal）。
+    const view = await render(() => useTerminals());
+    await act(async () => {
+      await view.result.current.openTerminal(null, "D:\\work", undefined, undefined, "sess-123");
+    });
+    const id = view.result.current.terminals.at(-1)!.id;
+
+    expect(view.result.current.uiStates[id]).toEqual({
+      inputMode: "composer",
+      composerVisible: false
+    });
+
+    // 照 `TerminalPane` 的契约接上接收端：数据回调里报告「收到了输出」。
+    act(() => {
+      view.result.current.registerSink(id, () => view.result.current.noteOutput(id));
+    });
+    await act(async () => {
+      runtime.emit("terminal:data", { terminalId: id, data: [104, 105] });
+    });
+
+    expect(view.result.current.uiStates[id]!.composerVisible).toBe(true);
+  });
+
+  it("状态栏切到自管输入时，藏着的输入框一并放出", async () => {
+    // 状态栏胶囊那条路径。只改模式不放出输入框的话，用户看到的是
+    // 「切过去了但看不见框」——切了跟没切一样。
+    const view = await render(() => useTerminals());
+    await act(async () => {
+      await view.result.current.openTerminal(null, "D:\\work", undefined, undefined, "sess-123");
+    });
+    const id = view.result.current.terminals.at(-1)!.id;
+    expect(view.result.current.uiStates[id]!.composerVisible).toBe(false);
+
+    act(() => {
+      view.result.current.setInputMode(id, "composer");
+    });
+
+    expect(view.result.current.uiStates[id]).toEqual({
+      inputMode: "composer",
+      composerVisible: true
+    });
+
+    // 反向不成立：切到「终端原生输入」只是把键盘交给终端，输入框不该消失
+    // （用户还要靠它看草稿、贴图）。
+    act(() => {
+      view.result.current.setInputMode(id, "terminal");
+    });
+    expect(view.result.current.uiStates[id]).toEqual({
+      inputMode: "terminal",
+      composerVisible: true
+    });
+  });
+
+  it("输出早于启动返回时也不丢揭示（R20 竞态）", async () => {
+    // `start` 的 IPC 往返与第一段输出的到达是**两条独立的路**。输出先到、且此后
+    // 不再有输出时，揭示的机会只有那一次——初值若等启动落定才写，
+    // `noteOutput` 会扑空，输入框永远藏着。
+    const view = await render(() => useTerminals());
+
+    // 让 `terminal:start` 一直悬着，由测试决定它什么时候返回。
+    let settle: (value: unknown) => void = () => undefined;
+    window.__TAURI__!.core!.invoke = vi.fn(
+      () => new Promise((resolve) => {
+        settle = resolve;
+      })
+    );
+
+    let opening!: Promise<string>;
+    await act(async () => {
+      opening = view.result.current.openTerminal(null, "D:\\work", undefined, undefined, "sess-123");
+      await Promise.resolve();
+    });
+    const id = view.result.current.terminals.at(-1)!.id;
+
+    // 初值必须在启动返回**之前**就位，否则下面那一次揭示无事可做。
+    expect(view.result.current.uiStates[id]).toEqual({
+      inputMode: "composer",
+      composerVisible: false
+    });
+
+    act(() => {
+      view.result.current.registerSink(id, () => view.result.current.noteOutput(id));
+    });
+    await act(async () => {
+      runtime.emit("terminal:data", { terminalId: id, data: [104] });
+    });
+    expect(view.result.current.uiStates[id]!.composerVisible).toBe(true);
+
+    // 启动随后成功返回，也不能把已经放出来的输入框盖回去。
+    await act(async () => {
+      settle({});
+      await opening;
+    });
+    expect(view.result.current.uiStates[id]).toEqual({
+      inputMode: "composer",
+      composerVisible: true
+    });
   });
 
   it("启动提示词要等**第一段输出**之后才发，不能早发", async () => {

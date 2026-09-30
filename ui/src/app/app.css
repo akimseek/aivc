@@ -1940,6 +1940,13 @@ select {
 .workarea {
   display: flex;
   flex-direction: column;
+  /* **吃满内容列这件事得自己声明。** `.app-main` 是列向 flex 容器，唯一子元素不写
+     `flex` 时 `flex-basis: auto` 退化为内容高——旧布局里它是 `.main`（grid）的网格项，
+     默认 stretch 才撑得满，那条路随 `.main` 一起没了。断了这一环的后果分两种：
+     终端阶段 `.terminal-slot` 是 `position: absolute; inset: 0`，不贡献任何高度，
+     主区就剩标签条约 36px；历史阶段 `.thread` 会长到内容全高，被 `.app-shell` 的
+     `overflow: hidden` 裁掉且没有滚动条。 */
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;

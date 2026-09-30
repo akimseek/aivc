@@ -352,6 +352,23 @@ export function useTerminals() {
       // 先入列表再启动：启动失败时用户至少能看到这一路的存在与失败原因，
       // 而不是「点了没反应」。
       setTerminals((current) => [...current, { id, title, running: true, providerId }]);
+      /**
+       * 输入侧界面的初值**与列表项一起写**（乐观），不等 `start` 返回。
+       *
+       * # 为什么不能等启动落定
+       *
+       * `start` 的 IPC 往返与第一段输出的到达是**两条独立的路**：PTY 起得比往返快时，
+       * 输出会先到。而揭示输入框的时机**只有那一段输出**——[`noteOutput`] 要求这里
+       * 已经有状态，晚写就等于把唯一一次揭示丢掉，此后不再有输出的话输入框永远藏着
+       * （用户看不出哪里错，只是打不了字）。
+       *
+       * 启动失败时在 `catch` 里把这一份删掉：失败的那一路没有终端可输入，
+       * 留着只会让状态栏显示一个不存在的模式。
+       */
+      setUiStates((current) => ({
+        ...current,
+        [id]: { inputMode: "composer", composerVisible: initialComposerVisible(sessionId) }
+      }));
       if (prompt?.trim()) {
         pendingPrompts.current.set(id, prompt.trim());
       }
@@ -367,19 +384,17 @@ export function useTerminals() {
             current.map((item) => (item.id === id ? { ...item, vendorId, vendorMode } : item))
           );
         }
-        /**
-         * 输入侧界面的初值。
-         *
-         * **启动成功之后才写**：启动失败的那一路没有终端可输入，写一份状态只会让
-         * 状态栏显示一个不存在的模式。
-         */
-        setUiStates((current) => ({
-          ...current,
-          [id]: { inputMode: "composer", composerVisible: initialComposerVisible(sessionId) }
-        }));
+        // 这里**不再重写** `uiStates[id]`：初值上面已经写了，而启动这段窗口里
+        // `noteOutput` 可能已经把输入框揭示出来——重写会把那次揭示盖掉。
       } catch (error) {
         // 启动失败就别再把提示词留在队里：这路终端不会有输出了。
         pendingPrompts.current.delete(id);
+        setUiStates((current) => {
+          if (!(id in current)) return current;
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
         setTerminals((current) =>
           current.map((item) => (item.id === id ? { ...item, running: false } : item))
         );

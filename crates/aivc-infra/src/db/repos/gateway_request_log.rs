@@ -93,12 +93,13 @@ pub struct LogEntry {
 
 /// 清理候选项的一页。
 ///
-/// 形状与 [`aivc_core::gateway_usage::FailureDiagnosticsPage`] 一致（条目 + 总数 +
-/// 页码 + 每页条数），只有条目字段名不同：那边叫 `items`，这里叫 `entries`。
+/// 形状与 [`aivc_core::gateway_usage::FailureDiagnosticsPage`] **逐字同形**
+/// （条目 `items` + 总数 + 页码 + 每页条数）：日志与异常是同一类分页表，
+/// 字段名不该有第二套。命令面按这里的 `items` 映射线上 JSON，改要一起改。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogEntryPage {
     /// 本页条目（按时间倒序）。
-    pub entries: Vec<LogEntry>,
+    pub items: Vec<LogEntry>,
     /// 满足筛选条件的总数（**不是**本页条数）。
     pub total: u64,
     /// 当前页码（1 起，已钳制）。
@@ -228,12 +229,12 @@ impl GatewayRequestLogRepo {
                     .query_map(rusqlite::params_from_iter(values.iter()), row_to_log_entry)
                     .map_err(sqlite_error)?;
 
-                let mut entries = Vec::new();
+                let mut items = Vec::new();
                 for row in rows {
-                    entries.push(row.map_err(sqlite_error)?);
+                    items.push(row.map_err(sqlite_error)?);
                 }
                 Ok(LogEntryPage {
-                    entries,
+                    items,
                     total: u64::try_from(total).unwrap_or(0),
                     page: safe_page,
                     page_size: safe_size,
@@ -1134,27 +1135,27 @@ mod tests {
             .cleanup_entries_page(&LogFilter::default(), 1, 3)
             .await
             .expect("page 1");
-        assert_eq!(first.entries.len(), 3);
+        assert_eq!(first.items.len(), 3);
         assert_eq!(first.total, 7);
         assert_eq!(first.page, 1);
         assert_eq!(first.page_size, 3);
         // 排序与不分页那条路一致：最新的在最前。
-        assert_eq!(first.entries[0].request_id, "r6");
+        assert_eq!(first.items[0].request_id, "r6");
 
         // 末页：只剩下最后一条。
         let last = repo
             .cleanup_entries_page(&LogFilter::default(), 3, 3)
             .await
             .expect("page 3");
-        assert_eq!(last.entries.len(), 1);
-        assert_eq!(last.entries[0].request_id, "r0");
+        assert_eq!(last.items.len(), 1);
+        assert_eq!(last.items[0].request_id, "r0");
 
         // 越界页：空页，但 `total` 照旧——界面据此知道「只是翻过头了」而不是「没有数据」。
         let beyond = repo
             .cleanup_entries_page(&LogFilter::default(), 9, 3)
             .await
             .expect("page 9");
-        assert!(beyond.entries.is_empty());
+        assert!(beyond.items.is_empty());
         assert_eq!(beyond.total, 7);
 
         // 超大页码：偏移在 `i64` 里算，不会截断成一个很小的偏移而给出**错误的一页**。
@@ -1162,7 +1163,7 @@ mod tests {
             .cleanup_entries_page(&LogFilter::default(), u32::MAX, LOGS_PAGE_SIZE_MAX)
             .await
             .expect("huge");
-        assert!(huge.entries.is_empty());
+        assert!(huge.items.is_empty());
         assert_eq!(huge.total, 7);
 
         // 筛选在分页**之前**生效：总数跟着筛选走。
@@ -1178,7 +1179,7 @@ mod tests {
             .await
             .expect("errors");
         assert_eq!(errors.total, 2);
-        assert_eq!(errors.entries.len(), 2);
+        assert_eq!(errors.items.len(), 2);
 
         // 页码与每页条数都被钳制（与异常诊断同一处规则）。
         let clamped = repo

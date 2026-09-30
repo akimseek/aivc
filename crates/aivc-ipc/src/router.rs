@@ -1196,7 +1196,7 @@ mod tests {
         assert_eq!(page["total"], 0);
         assert_eq!(page["page"], 1);
         assert_eq!(page["pageSize"], 20);
-        assert!(page["entries"].as_array().expect("数组").is_empty());
+        assert!(page["items"].as_array().expect("数组").is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread")]

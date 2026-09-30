@@ -303,8 +303,9 @@ impl GatewayLogs {
     ///
     /// - 都不给：返回**全量数组**——与加这组参数之前完全一致，界面上「最近请求」那类
     ///   旧调用（只带筛选条件）拿到的形状不变；
-    /// - 都给：返回 `{ entries, total, page, pageSize }`
-    ///   （[`aivc_infra::db::LogEntryPage`] 的线上形状）。
+    /// - 都给：返回 `{ items, total, page, pageSize }`——与先例
+    ///   `get-failure-diagnostics`（[`FailureDiagnosticsPage`]）**逐字同形**，
+    ///   条目字段名也是 `items`（旧平台 Electron 版同名命令同样是 `items`）。
     ///
     /// 只给一个时报「参数无效」而不是**静默忽略**：这条命令此前就吃过一次亏——
     /// 前端传的是 `{page, pageSize}`，而这里读的是另一套筛选参数名，于是两个参数被吃掉，
@@ -338,7 +339,7 @@ impl GatewayLogs {
             .cleanup_entries_page(&filter, page, page_size)
             .await?;
         Ok(serde_json::json!({
-            "entries": result.entries.iter().map(log_entry_value).collect::<Vec<Value>>(),
+            "items": result.items.iter().map(log_entry_value).collect::<Vec<Value>>(),
             "total": result.total,
             "page": result.page,
             "pageSize": result.page_size,
@@ -938,21 +939,21 @@ mod tests {
         assert_eq!(first["total"], 5, "total 是匹配总数，不是本页条数");
         assert_eq!(first["page"], 1);
         assert_eq!(first["pageSize"], 2);
-        let entries = first["entries"].as_array().expect("数组");
-        assert_eq!(entries.len(), 2);
+        let items = first["items"].as_array().expect("数组");
+        assert_eq!(items.len(), 2);
         // 排序与不分页那条路一致：最新的在最前。
-        assert_eq!(entries[0]["requestId"], "r4");
+        assert_eq!(items[0]["requestId"], "r4");
 
         let last = GatewayLogs::query_logs(&ctx, &json!({ "page": 3, "pageSize": 2 }))
             .await
             .expect("page 3");
-        assert_eq!(last["entries"].as_array().expect("数组").len(), 1);
+        assert_eq!(last["items"].as_array().expect("数组").len(), 1);
 
         // 越界页：空数组 + 原样的总数——界面据此判断是「翻过头了」而不是「没数据」。
         let beyond = GatewayLogs::query_logs(&ctx, &json!({ "page": 9, "pageSize": 2 }))
             .await
             .expect("page 9");
-        assert!(beyond["entries"].as_array().expect("数组").is_empty());
+        assert!(beyond["items"].as_array().expect("数组").is_empty());
         assert_eq!(beyond["total"], 5);
 
         // 不带分页参数：裸数组（旧调用形状不变），且是全量。
@@ -986,7 +987,7 @@ mod tests {
             .await
             .expect("page");
         assert!(value["pageSize"].as_u64().expect("数字") <= u64::from(LOGS_PAGE_SIZE_MAX));
-        assert!(value["entries"].is_array());
+        assert!(value["items"].is_array());
     }
 
     #[tokio::test(flavor = "multi_thread")]

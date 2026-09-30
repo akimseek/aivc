@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from "@testing-library/react";
+import { createEvent, fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ListRow } from "./list";
@@ -41,5 +41,36 @@ describe("ListRow", () => {
     const row = view.container.querySelector<HTMLElement>(".row")!;
     expect(row.getAttribute("role")).toBeNull();
     expect(row.tabIndex).toBe(-1);
+  });
+
+  it("行内控件自己吃 Enter / Space：行**让位**，既不触发行点击也不取消它的激活", () => {
+    // 潜伏项：今天的调用方（快捷访问 / 全局搜索）没往 `leading` / `trailing` 插槽里
+    // 放可聚焦元素，所以没有真实症状；但少了守卫，将来一放就会复现会话卡片那类劫持
+    // ——点勾选顺带触发行点击，而且 `preventDefault()` 还会让勾选框勾不动。
+    const onClick = vi.fn();
+    const onToggle = vi.fn();
+    const view = render(
+      <ListRow
+        title="一条结果"
+        leading={<input type="checkbox" aria-label="选择这一条" onChange={onToggle} />}
+        onClick={onClick}
+      />
+    );
+    const box = view.container.querySelector<HTMLInputElement>("input")!;
+
+    for (const key of [" ", "Enter"]) {
+      const event = createEvent.keyDown(box, { key });
+      fireEvent(box, event);
+      // 行不抢键：既不该自己触发点击，也不该取消勾选框自己的激活。
+      expect(event.defaultPrevented).toBe(false);
+      expect(onClick).not.toHaveBeenCalled();
+    }
+
+    // jsdom **不实现**原生控件的键盘激活（按 Space 不会真的变成 click），这里补上
+    // 浏览器随后会合成的那一步，证明勾选这一路仍然有效。行自己的 `onClick` 会不会
+    // 被这次点击冒泡上来，取决于调用方给插槽控件加了什么——不在这个「按键让位」
+    // 守卫的范围里。
+    fireEvent.click(box);
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });

@@ -225,6 +225,19 @@ export function SessionsSidebar({
       ? items.filter((item) => matchesQuickQuery(item.session, state.query))
       : items;
 
+  /**
+   * 平台下拉的取值防御。
+   *
+   * 下拉里有两种**不是平台**的项：占位项（`""`）与加载提示。合法的取值只有
+   * 前者的空值，以及**清单里真实存在**的编号——加载提示那一项虽然已 `disabled`，
+   * 也不该把「用户没点、代码却写进去」这条路留着：脏值一旦落进 `providerId`，
+   * 目标会被清空、下拉里又没有匹配项，用户必须重选一次真实平台才能恢复。
+   */
+  const chooseProvider = (value: string) => {
+    if (value !== "" && !state.providers.some((item) => item.id === value)) return;
+    state.selectProvider(value as AiProviderId | "");
+  };
+
   /** 底部摘要的数：说的是**眼前这批**，不是当前目标的会话总数。 */
   const visibleCount =
     mode.kind === "global"
@@ -297,7 +310,7 @@ export function SessionsSidebar({
           <Select
             value={state.providerId}
             aria-label="平台"
-            onChange={(event) => state.selectProvider(event.target.value as AiProviderId | "")}
+            onChange={(event) => chooseProvider(event.target.value)}
           >
             {/*
               **占位项：没有选中时显示「请选择平台」。**
@@ -315,8 +328,12 @@ export function SessionsSidebar({
               两个 `value=""` 的 option 会让「哪一条是占位」变得有歧义（原生 select 只
               认第一个匹配项，第二条永远选不中）。不给 value 时它的值退化成文字，
               与空值不再相撞，显示的仍是占位项。
+
+              另外它必须 `disabled`：值退化成文字之后它就是**一个可被选中的脏值**
+              （`"加载中…"`）——用户加载期顺手选它一下，`providerId` 就被写成这串文字，
+              目标被清空、下拉里又没有这一项，得重选一次真实平台才恢复。
             */}
-            {state.providers.length === 0 && <option>加载中…</option>}
+            {state.providers.length === 0 && <option disabled>加载中…</option>}
             {state.providers.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}

@@ -470,14 +470,20 @@ export function App() {
    *
    * 本批次的一处行为变化：单击的意图多半是「看一下这条会话」，而起一路 CLI
    * 进程既慢又意外；恢复终端改成显式动作（标签栏的「继续会话」）。
-   * 选中态一改，标签就由 `useWorkspaceTabs` 里那个 effect 打开——这里不重复实现它。
+   *
+   * 这里**显式**激活一次（`selectSession`），不再只依赖「选中项编号变了」那个
+   * effect：点一条**本来就被选中**的会话（活动标签是一路没有会话编号的新会话
+   * 终端）时，编号没变、effect 不跑，只写选中态的话标签不会被切过来——点击
+   * 看起来毫无反应。effect 仍然保留，供列表刷新、搜索跳转等其它路径。
    */
   const openSessionById = useCallback(
     (target: AiTarget, sessionId: string) => {
       const session = sessionForAction(sessionId);
-      if (session) console.openAt(target, session);
+      if (!session) return;
+      console.openAt(target, session);
+      workspace.selectSession(session);
     },
-    [sessionForAction, console.openAt]
+    [sessionForAction, console.openAt, workspace.selectSession]
   );
 
   /**

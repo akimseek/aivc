@@ -200,7 +200,29 @@ export function useWorkspaceTabs(
   }, []);
 
   /**
-   * 选中会话 → 打开/激活它的标签（列表点击、搜索跳转、批量后刷新都汇到这一处）。
+   * 打开 / 激活一条会话的标签，并把激活键移过去。
+   *
+   * 两条路径共用这一处：下面那个「选中会话」的 effect（列表刷新、搜索跳转等），
+   * 以及对外暴露的 [`selectSession`](#selectsession)（点击会话行）。
+   *
+   * # 为什么除了 effect 还需要一个显式入口
+   *
+   * effect 的触发条件是**会话编号变了**，而有一个合法状态满足「编号没变、却要切
+   * 标签」：活动标签是一路**没有会话编号**的新会话终端（刚起的新会话），选中项仍
+   * 指着 X，而 X 的标签已经在标签栏上（非激活）。此时点 X 的卡片只写了一次同值的
+   * `setSelectedId(X)`——依赖不变、effect 不跑，标签因此不被激活，点击看起来无效。
+   */
+  const selectSession = useCallback(
+    (session: AiSession) => {
+      const id = session.id;
+      const title = displayTitle(session);
+      update((current) => ({ next: openSessionTab(current.tabs, { id, title }) }));
+    },
+    [update]
+  );
+
+  /**
+   * 选中会话 → 打开/激活它的标签（列表刷新、搜索跳转、批量后刷新都汇到这一处）。
    *
    * **不再起终端**：单击的意图多半是看历史，拉起一个 CLI 进程既慢又意外；
    * 恢复终端改成显式动作（标签栏的「继续会话」）。
@@ -214,13 +236,13 @@ export function useWorkspaceTabs(
    * 不绑 `state`：把 `state` 也绑上，任何一次标签变化（刚起了终端、刚切了标签）
    * 都会让它重跑，把激活键抢回选中会话那张标签——用户手动切走的标签会被弹回去。
    * 最新标签从更新函数的当前值里取，不需要额外的 ref。
+   *
+   * 命中不了的那一角（编号没变、标签却要切）由点击处显式调用 `selectSession`。
    */
   useEffect(() => {
     if (!selectedSession) return;
-    const id = selectedSession.id;
-    const title = displayTitle(selectedSession);
-    update((current) => ({ next: openSessionTab(current.tabs, { id, title }) }));
-  }, [selectedSession?.id, update]);
+    selectSession(selectedSession);
+  }, [selectedSession?.id, selectSession]);
 
   /**
    * **干净退出的终端：收掉它的标签。**
@@ -289,6 +311,13 @@ export function useWorkspaceTabs(
     tabs,
     activeKey,
     setActiveKey: selectTab,
+    /**
+     * 点击会话行的**显式**激活入口：不靠「会话编号变了」这条副作用。
+     *
+     * 只写激活键是不够的——那一角里同值写入会被 `selectTab` 挡掉（键没变），
+     * 所以这里复用 effect 那份 `openSessionTab`，它同时负责「标签不存在就建」。
+     */
+    selectSession,
     tabItems,
     activeTab,
     attachTerminalTab,

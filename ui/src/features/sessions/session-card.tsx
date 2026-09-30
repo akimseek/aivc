@@ -90,6 +90,11 @@ export function SessionCard({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(event) => {
+        // 焦点在**卡内的控件**上时整个让给它：勾选框与动作按钮自己就认 Enter / Space。
+        // 不让的话会同时发生两件坏事——`onOpen` 被多调一次（想勾一条却把会话开了），
+        // 而且 `preventDefault()` 会把内层控件自己的激活一并取消（按钮按不动）。
+        // 「点勾选框/动作按钮不打开会话」这条契约必须在**键盘路径**上同样成立。
+        if (event.target !== event.currentTarget) return;
         if (event.key !== "Enter" && event.key !== " ") return;
         // Space 默认会滚动页面；Enter 在个别控件上会触发默认行为。
         event.preventDefault();

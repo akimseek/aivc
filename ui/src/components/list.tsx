@@ -37,6 +37,11 @@ export type ListRowProps = {
  * 有 `onClick` 才渲染成可交互元素（`role="button"` + `tabIndex` + Enter/Space）：
  * 行本身是 `<div>`，只挂 `onClick` 的话键盘用户**完全够不着**它——快捷访问与全局
  * 搜索的结果行都会因此变成鼠标专属。没有 `onClick` 的行保持纯展示，不该进 Tab 序。
+ *
+ * 键处理开头那条 `event.target !== event.currentTarget` 是**让位**：焦点落在
+ * `leading` / `trailing` 插槽里的控件上时，那个控件自己就认 Enter / Space。今天
+ * 没有调用方往插槽里放可聚焦元素，但少了这一句，将来一放就会复现会话卡片那类劫持
+ * （点勾选/按钮顺带触发行点击，而且 `preventDefault()` 还会让内层控件按不动）。
  */
 export function ListRow({
   leading,
@@ -57,6 +62,7 @@ export function ListRow({
             role: "button",
             tabIndex: 0,
             onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+              if (event.target !== event.currentTarget) return;
               if (event.key !== "Enter" && event.key !== " ") return;
               // Space 默认滚动页面；Enter 的默认行为在个别嵌入元素里也可能触发。
               event.preventDefault();

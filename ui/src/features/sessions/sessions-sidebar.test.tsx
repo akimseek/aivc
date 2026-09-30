@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -307,6 +307,39 @@ describe("保留的既有语义", () => {
     expect(empties).toHaveLength(1);
     expect(empties[0]!.textContent).toBe("请选择平台");
     expect(select.textContent).toContain("加载中…");
+  });
+
+  it("加载期的「加载中…」是**禁用项**：选中它等于把 `providerId` 写成一句提示文字", () => {
+    // 它不带 `value`（值退化成文字），所以不禁用就是一个可被选中的脏值：
+    // 写进去之后目标被清空、下拉里又没有这一项，用户得重选一次真实平台才能恢复。
+    const { view } = setup({ providers: [], providerId: "" });
+    const select = [...view.container.querySelectorAll("select")][0]!;
+    const loading = [...select.querySelectorAll("option")].find(
+      (option) => option.textContent === "加载中…"
+    )!;
+    expect(loading.disabled).toBe(true);
+    // 但这一项要**留着**：下拉空着而不说明原因，用户分不清「没有平台」与「还在加载」。
+    expect(loading.textContent).toBe("加载中…");
+  });
+
+  it("未知值不进 `providerId`：换平台的入口只放行空值与清单里的真实编号", () => {
+    // 禁用项挡不住所有来路（这个值本来就存在，只是不该被当成平台编号收下），
+    // 所以 `onChange` 里还有一层防御：不在清单里的值一律丢弃。
+    const { view, state } = setup({ providers: [], providerId: "" });
+    const select = [...view.container.querySelectorAll("select")][0]!;
+    fireEvent.change(select, { target: { value: "加载中…" } });
+    expect(state.selectProvider).not.toHaveBeenCalled();
+  });
+
+  it("防御不挡正常路径：选中真实平台照常换平台", () => {
+    const { view, state } = setup();
+    const select = [...view.container.querySelectorAll("select")][0]!;
+    fireEvent.change(select, { target: { value: "qoder" } });
+    expect(state.selectProvider).toHaveBeenCalledWith("qoder");
+
+    // 占位项的空值也是合法取值（用户把平台清回「请选择平台」）。
+    fireEvent.change(select, { target: { value: "" } });
+    expect(state.selectProvider).toHaveBeenLastCalledWith("");
   });
 
   it("目标下拉两态文案：「暂无可用目标」与「请选择目标」", () => {

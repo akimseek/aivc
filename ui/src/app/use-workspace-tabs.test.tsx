@@ -95,6 +95,38 @@ describe("useWorkspaceTabs 的接线", () => {
     expect(view.result.current.activeKey).toBe("term-new");
   });
 
+  it("活动标签是没有会话编号的新会话终端时，点**已选中的**那条会话仍能切到它的标签", () => {
+    /*
+      把 effect 的依赖收窄成会话编号（R31「选中项抢标签」）漏掉了这一角：
+      活动标签 = 一路没有会话编号的新会话终端，而选中项已经指着 X（X 的标签在、
+      但非激活）。此时点 X 的卡片只写一次**同值**的 `setSelectedId(X)`——依赖没变、
+      effect 不跑，标签因此不被激活，用户看到的是「点了没反应」。
+
+      所以点击处必须有一条**显式**激活入口，不能只靠「编号变了」这条副作用。
+    */
+    const { fake } = fakeTerminals();
+    const view = renderHook(({ selected }) => useWorkspaceTabs(fake, selected), {
+      initialProps: { selected: null as AiSession | null }
+    });
+
+    // X 先被选中：它的标签就此存在。
+    view.rerender({ selected: session("sess-x") });
+    expect(view.result.current.activeKey).toBe("sess-x");
+
+    // 起一路新会话终端（还没有会话编号）并切到它上面——这就是那个合法状态。
+    act(() => view.result.current.attachTerminalTab("term-new", undefined, "新会话"));
+    expect(view.result.current.activeKey).toBe("term-new");
+
+    // 选中项仍是 X（同一条会话，编号没变）：effect 不跑，画布停在终端上。
+    view.rerender({ selected: session("sess-x") });
+    expect(view.result.current.activeKey).toBe("term-new");
+
+    // 点 X 的卡片 = 显式激活：不新建第二张标签，激活键切回 X 那张。
+    act(() => view.result.current.selectSession(session("sess-x")));
+    expect(view.result.current.activeKey).toBe("sess-x");
+    expect(view.result.current.tabs.map((tab) => tab.key)).toEqual(["sess-x", "term-new"]);
+  });
+
   it("同一会话再挂终端：复用同一张标签，并收掉被替换的旧终端", () => {
     // 不收旧终端就是「再次进入会话被锁住」：标签没了，进程与 xterm 还在。
     const { fake, closeTerminal } = fakeTerminals();

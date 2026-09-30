@@ -67,161 +67,200 @@ select {
   outline-offset: 1px;
 }
 
-.shell {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.menubar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-height: 32px;
-  padding: 0 var(--ui-space-3);
-  border-bottom: 1px solid var(--ui-border);
-  background: var(--ui-bg-card);
-  user-select: none;
-}
-
-.menubar .brand {
-  margin-right: var(--ui-space-3);
-  font-size: var(--ui-text-md);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--ui-accent-strong);
-}
-
-.menubar button {
-  border: 0;
-  border-radius: var(--ui-radius-sm);
-  background: transparent;
-  padding: var(--ui-space-1) 9px;
-  color: var(--ui-muted);
-  cursor: pointer;
-}
-
-.menubar button:hover {
-  background: var(--ui-bg-activity);
-  color: var(--ui-text);
-}
-
-.menubar .hint {
-  color: var(--ui-faint);
-  font-size: var(--ui-text-sm);
-}
-
-/* ── 分组菜单（AppMenuBar） ──────────────────────────────
-   菜单栏本身的样式在上面（`.menubar`）。这里只是它的下拉部分。
-   下拉必须是**绝对定位**并盖在下面内容之上，否则展开时会把布局顶开。 */
-
-.app-menu-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.app-menu {
-  position: relative;
-}
-
-.app-menu-trigger.active {
-  background: var(--ui-bg-activity);
-  color: var(--ui-text);
-}
-
-.menu-dropdown,
-.menu-submenu {
-  position: absolute;
-  z-index: 40;
-  min-width: 190px;
-  padding: var(--ui-space-1);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-sm);
-  background: var(--ui-bg-card);
+/* 提示条是**浮层**，不是布局的一部分。
+   外壳是 100vh 的网格（40px / 1fr / 28px），正文里插进一条提示会把状态栏挤到屏幕外
+   （它此前是 `.shell` 的网格行，改造后那些行是固定高度）。固定在标题栏下方，
+   几秒后自己消失。 */
+.hint-float {
+  position: fixed;
+  top: calc(40px + var(--ui-space-2));
+  right: var(--ui-space-3);
+  z-index: var(--ui-z-toast);
+  max-width: min(560px, calc(100vw - 48px));
+  border: 1px solid var(--ui-accent-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-bg-modal);
   box-shadow: var(--ui-shadow);
 }
 
-.menu-dropdown {
-  top: calc(100% + 4px);
-  left: 0;
-}
+/* ── 外壳（标题栏 /〔活动栏 + 侧栏 + 主区〕/ 状态栏）─────────
+   行高与列宽是**这个壳的契约**（spec §6）：40 / 28 与 50 / auto / 1fr。
+   写死是有意的——三级窄窗降级都按这些数字算。 */
 
-/* 子菜单开在父项右侧。 */
-.menu-submenu {
-  top: calc(-1 * var(--ui-space-1));
-  left: calc(100% - 2px);
-}
-
-.menu-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ui-space-4);
-  border: 0;
-  border-radius: var(--ui-radius-sm);
-  background: transparent;
-  padding: 6px 10px;
-  color: var(--ui-text);
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.menu-item:hover:not(:disabled) {
-  background: var(--ui-bg-activity);
-}
-
-/* **禁用必须看得出来。**
-   这个应用里死按钮（点了没反应）是踩过的坑，因此面未实现的项一律走禁用态，
-   样式上要明确表达「现在不能用」，而不是让它看起来可点。 */
-.menu-item:disabled {
-  color: var(--ui-faint);
-  cursor: default;
-  opacity: 0.6;
-}
-
-.menu-item.danger {
-  color: var(--ui-danger, #e5534b);
-}
-
-.menu-item-wrap {
-  position: relative;
-}
-
-.menu-shortcut {
-  color: var(--ui-faint);
-  font-size: var(--ui-text-sm);
-}
-
-.menu-separator {
-  height: 1px;
-  margin: var(--ui-space-1) 6px;
-  background: var(--ui-border);
-}
-
-.main {
+.app-shell {
   display: grid;
-  /*
-   * 列宽由**侧栏自己的状态**决定，而不是 `.main` 上再挂一个类。
-   *
-   * 挂类的话「折叠」这个事实会同时活在两处（侧栏知道、`.main` 也知道），
-   * 迟早会出现「侧栏折了但列还是 360px」这种半截状态。
-   * `:has()` 让列宽直接跟着侧栏走，只有一处真相。
-   */
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-rows: 40px minmax(0, 1fr) 28px;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--ui-bg);
+}
+
+.app-body {
+  display: grid;
+  /* 侧栏列是 `auto`：宽度由侧栏自己（310px / 折叠后的窄边）决定，只有一处真相。 */
+  grid-template-columns: 50px auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
 
-/* 侧栏折起来时只留一条能放按钮的竖边——`0px` 会让按钮也没地方站。 */
-.main:has(.sidebar.collapsed) {
-  grid-template-columns: 36px minmax(0, 1fr);
+.app-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
+/* ── 标题栏 ──────────────────────────────────────────── */
+
+.title-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-3);
+  padding: 0 var(--ui-space-3);
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg-header);
+  flex: 0 0 auto;
+  user-select: none;
+}
+
+.title-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  font-weight: 600;
+}
+
+.title-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ui-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--ui-text-xs);
+  font-weight: 700;
+  color: var(--ui-on-accent);
+  background: var(--ui-brand-gradient);
+}
+
+.title-name {
+  font-size: var(--ui-text-md);
+  letter-spacing: -0.01em;
+}
+
+/* 拖拽留白：`-webkit-app-region: drag` 由内联样式给（见 `title-bar.tsx`），
+   这里只负责让它撑满中间那一段。 */
+.title-drag {
+  flex: 1;
+  align-self: stretch;
+}
+
+.title-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+}
+
+.title-theme {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-card);
+  color: var(--ui-text-soft);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.title-theme:hover {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+/* ── 活动栏 ──────────────────────────────────────────── */
+
+.activity-bar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--ui-space-3) 0;
+  border-right: 1px solid var(--ui-border);
+  background: var(--ui-bg-activity);
+}
+
+.activity-top,
+.activity-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  align-items: center;
+}
+
+.activity-item {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--ui-muted);
+  cursor: pointer;
+}
+
+.activity-item:hover {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+.activity-item.on {
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent-border);
+  color: var(--ui-accent);
+}
+
+/* 选中态的左侧指示条：活动栏只有图标，光靠底色在窄栏里不够显眼。 */
+.activity-item.on::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  width: 3px;
+  height: 16px;
+  border-radius: 0 3px 3px 0;
+  background: var(--ui-accent);
+}
+
+/*
+ * 侧栏宽度。
+ *
+ * 310px（spec §6）：会话行的标题 + 时间 + 预览一行要有地方落。
+ * **宽度写在侧栏自己身上**（`.app-body` 那一列是 `auto`）：折叠与展开是侧栏的状态，
+ * 让网格列也跟着写一遍就会有两处真相。
+ *
+ * 折叠仍是**旧形态**（36px 竖边 + 一个展开按钮）。收进活动栏的新形态随
+ * 会话侧栏的重做一起做（T7），此刻改它会白做——那一整块马上要被替换。
+ */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 310px;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--ui-border);
+  background: var(--ui-bg-activity);
+  overflow: hidden;
+}
+
+/* 侧栏折起来时只留一条能放按钮的竖边——`0px` 会让按钮也没地方站。 */
 .sidebar.collapsed {
+  width: 36px;
   align-items: center;
   padding-top: var(--ui-space-3);
   gap: var(--ui-space-2);
@@ -235,18 +274,9 @@ select {
  * 两者此前都是 `--ui-surface`（纯白），于是整屏是一张纸，分区只能靠一条细线——
  * 这是界面「像没做完」最主要的原因。
  *
- * 让**侧栏后退一层**（`--ui-surface-subtle`）、内容留在纯白上，是桌面应用的通行做法：
+ * 让**侧栏后退一层**（`--ui-bg-activity`）、内容留在卡片色上，是桌面应用的通行做法：
  * 用户的眼睛应当落在内容上，导航是「背景」。基底差比任何边框都更能表达分区。
  */
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  border-right: 1px solid var(--ui-border);
-  background: var(--ui-bg-activity);
-  overflow: hidden;
-}
 
 .sidebar-head {
   display: flex;
@@ -753,6 +783,17 @@ select {
 .context-menu button.danger:hover {
   background: var(--ui-danger-soft);
   color: var(--ui-danger);
+}
+
+/* 菜单里的小标题（现在只有「导出」一组）。
+   它**不可点**：分隔组的同时把这一组的名字说出来，否则三项「导出 X」挤在
+   「复制文件路径」下面会被读成第四条复制项。 */
+.context-menu-label {
+  padding: 6px 10px 2px;
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 /* ── WSL 目录手动指定 ────────────────────────────────── */
@@ -1365,15 +1406,44 @@ select {
 .statusbar {
   display: flex;
   align-items: center;
-  gap: var(--ui-space-4);
-  min-height: 28px;
+  gap: var(--ui-space-3);
   padding: 0 var(--ui-space-3);
-  border-top: 1px solid var(--ui-divider);
-  background: var(--ui-bg-card);
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-bg-statusbar);
   color: var(--ui-muted);
-  font-size: var(--ui-text-xs);
+  font-size: var(--ui-text-sm);
   /* 状态栏是**单行**：允许换行会让窗口变窄时它长成两行，把工作区挤短。 */
   white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 会话编号：点击复制。做成按钮但仍要像一段文字——它是**状态**，不是操作区。 */
+.status-session {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ui-space-1);
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  padding: 0 var(--ui-space-1);
+  color: var(--ui-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-session:hover:not(:disabled) {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+.status-session:disabled {
+  cursor: default;
+  color: var(--ui-faint);
+}
+
+.status-session code {
+  color: var(--ui-text-soft);
+  font-weight: 600;
 }
 
 /* 目录可能很长。不设上限时它会把右边的网关信息整个挤出屏幕。 */
@@ -1386,12 +1456,13 @@ select {
 /*
  * 窄窗口降级（L7）：状态栏的信息**有优先级**。
  *
- * 变窄时先丢「计数」——那些数字在别处也看得到；**保住「我在哪个会话、哪个目录」**，
- * 那才是状态栏存在的理由。最小窗口是 980×640，所以 980 这一档必须已经丢掉了
- * 低优先级项。
+ * 变窄时按「更新（时间戳）→ 目标（侧栏选择器里也看得到）→ 目录」的顺序丢，
+ * **保住「我在哪个会话」与供应商**——会话编号是定位一条会话的唯一稳定标识，
+ * 供应商只有这里显示（走网关之后它可能被自动换掉）。
+ * 最小窗口是 980×640，所以 980 这一档必须已经丢掉了低优先级项。
  */
 @media (max-width: 1180px) {
-  .status-terminals {
+  .status-updated {
     display: none;
   }
 }
@@ -1403,7 +1474,7 @@ select {
 }
 
 @media (max-width: 900px) {
-  .status-updated {
+  .status-cwd {
     display: none;
   }
 }
@@ -1440,35 +1511,123 @@ select {
   font-weight: 600;
 }
 
-.vendor-pick {
-  /* 供应商名通常很短；给个上限是为了防止用户起了一个超长名字把网关信息挤出去。 */
-  max-width: 18ch;
-  padding: 0 var(--ui-space-1);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-sm);
-  background: var(--ui-bg-card);
-  color: var(--ui-text-soft);
-  font: inherit;
-}
-
-.vendor-pick:disabled {
-  opacity: 0.6;
-}
-
-/* 路由模式是个开关而不是按钮：它显示的是**当前状态**，点击切换。 */
-.vendor-mode {
-  padding: 0 var(--ui-space-1);
-  border: 1px solid var(--ui-border);
+/* 浮层的触发按钮。看起来仍是状态栏上的一段文字，可点。 */
+.vendor-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  border: 1px solid transparent;
   border-radius: var(--ui-radius-sm);
   background: transparent;
+  padding: 0 var(--ui-space-1);
   color: var(--ui-muted);
   font: inherit;
   cursor: pointer;
+  /* 供应商名通常很短；给个上限是为了防止用户起了一个超长名字把网关信息挤出去。 */
+  max-width: 24ch;
+  overflow: hidden;
 }
 
-.vendor-mode:hover {
+.vendor-trigger b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vendor-trigger:hover,
+.vendor-trigger.on {
+  border-color: var(--ui-border);
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+/* ── 供应商浮层 ──────────────────────────────────────── */
+
+.vendor-popover {
+  width: 300px;
+}
+
+.vendor-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+  padding-bottom: var(--ui-space-2);
+  border-bottom: 1px solid var(--ui-divider);
+  margin-bottom: var(--ui-space-2);
+  font-size: var(--ui-text-sm);
+}
+
+.vendor-pop-net {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  color: var(--ui-accent);
+  font-weight: 600;
+  font-size: var(--ui-text-xs);
+}
+
+.vendor-pop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* 一项供应商：状态点 + 名字 + 若干徽章（活跃 / 候选 / 已停用 / 熔断中）。
+   名字吃掉剩余宽度，超长时省略——名字长不该把徽章挤出去。 */
+.vendor-option {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  padding: 6px var(--ui-space-2);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vendor-option:hover:not(:disabled) {
+  background: var(--ui-bg-card-hover);
+}
+
+.vendor-option.on {
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent-border);
+}
+
+.vendor-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.vendor-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* 锁定开关是**复选框**：它表达的是一个开关状态，按钮表达不了「现在是锁的」。 */
+.vendor-lock {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  margin-top: var(--ui-space-2);
+  padding-top: var(--ui-space-2);
+  border-top: 1px solid var(--ui-divider);
+  font-size: var(--ui-text-xs);
   color: var(--ui-text-soft);
-  border-color: var(--ui-accent);
+  cursor: pointer;
 }
 
 /* 自动切换必须**显眼**：用户没有做任何操作，界面却换了一家供应商。 */
@@ -1485,6 +1644,33 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 输入模式胶囊。它显示**当前在哪**（自管输入 / 终端原生输入），点一下切换。 */
+.input-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  padding: 2px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-badge);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.input-mode-pill.on {
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent-border);
+  color: var(--ui-accent);
+}
+
+/* 没有前台终端时不能切——切了也没有对象。 */
+.input-mode-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dialog-overlay {
@@ -1636,7 +1822,7 @@ select {
   min-width: 15px;
   border-radius: 8px;
   background: var(--ui-danger, #e5534b);
-  color: #fff;
+  color: var(--ui-on-accent);
   font-size: 10px;
   line-height: 15px;
   text-align: center;
@@ -1745,7 +1931,8 @@ select {
   cursor: not-allowed;
 }
 /* ══ 工作区 ═════════════════════════════════════════════════
-   .main 是「侧栏 | 内容」的两列网格；内容那一列是工作区。
+   `.app-main` 是外壳里的内容列（活动栏 + 侧栏 + 主区那一行的最后一格），
+   工作区吃满它的高度。
 
    这里原来还有底部**系统终端**停靠面板的一整套样式（`.system-dock*`）。
    那个功能已按用户要求整体移除，因此这些规则也删掉了——
@@ -1862,7 +2049,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(2 6 23 / 55%);
+  background: var(--ui-scrim);
   padding: var(--ui-space-5);
 }
 .settings-panel {
@@ -1893,7 +2080,7 @@ select {
   align-items: center;
   justify-content: center;
   background: var(--ui-accent);
-  color: #fff;
+  color: var(--ui-on-accent);
 }
 .settings-head-text h2 {
   margin: 0;
@@ -2016,8 +2203,8 @@ select {
   justify-content: center;
   font-weight: 700;
   font-size: var(--ui-text-xl);
-  color: #fff;
-  background: linear-gradient(135deg, #059669, #14b8a6);
+  color: var(--ui-on-accent);
+  background: var(--ui-brand-gradient);
 }
 .about-brand h3 {
   margin: 0;

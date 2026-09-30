@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, ToolbarSpacer, useToast, type TabItem } from "../components";
+import { ToolbarSpacer, useToast, type TabItem } from "../components";
 import type { SettingsTab } from "../features/settings/settings-center";
 import * as api from "../ipc/commands";
+import { ActivityBar } from "../shell/activity-bar";
+import { AppShell } from "../shell/app-shell";
+import { StatusBar } from "../shell/status-bar";
+import { TitleBar } from "../shell/title-bar";
 import type { AiSession, AiTarget, ApiVendor } from "../types";
-import { AppMenubar } from "./app-menubar";
 import { AppOverlays } from "./overlay-layer";
 import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
@@ -12,18 +15,16 @@ import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-wo
 import { displayTitle } from "./session-display";
 import { Sidebar } from "./sidebar";
 import { resolveStageContent } from "./stage-content";
-import { StatusBar } from "./status-bar";
+import { nextPreference } from "./theme";
 import { useConsole } from "./use-console";
 import { useTerminals } from "./use-terminals";
 import { useTheme } from "./use-theme";
 import { useWorkspaceTabs } from "./use-workspace-tabs";
-// 纯函数直接从规则模块取：hook 只负责接线，不再转出判定（R16）。
-import { hasSessionTab } from "./workspace-tabs";
 
 /**
  * 应用外壳。
  *
- * 布局沿用旧平台的形状：**菜单栏 /〔侧栏 + 工作区〕/ 状态栏**。
+ * 布局是**标题栏 /〔活动栏 + 侧栏 + 工作区〕/ 状态栏**（spec §6）。
  *
  * # 这个文件只负责「接线」
  *
@@ -33,9 +34,12 @@ import { hasSessionTab } from "./workspace-tabs";
  *
  * | 内容 | 位置 |
  * | --- | --- |
+ * | 骨架网格 | [`AppShell`](../shell/app-shell.tsx) |
+ * | 标题栏（品牌 / 主题 / 铃铛） | [`TitleBar`](../shell/title-bar.tsx) |
+ * | 活动栏（会话 / 工作台 / 设置） | [`ActivityBar`](../shell/activity-bar.tsx) |
+ * | 状态栏 | [`StatusBar`](../shell/status-bar.tsx) |
  * | 侧栏（平台/目标/两级导航/三种列表） | [`Sidebar`](./sidebar.tsx) |
  * | 工作区（标签 + 终端栈 + 会话正文） | [`SessionWorkspace`](./session-workspace.tsx) |
- * | 状态栏 | [`StatusBar`](./status-bar.tsx) |
  * | 右键菜单 | [`SessionContextMenu`](./session-context-menu.tsx) |
  * | 标签的增删与竞态 | [`useWorkspaceTabs`](./use-workspace-tabs.ts) |
  *
@@ -44,8 +48,8 @@ import { hasSessionTab } from "./workspace-tabs";
  */
 export function App() {
   // 主题：把偏好写到 <html data-theme>，所有 token 随之整套切换。
-  // 返回值这一轮还无人消费，裸调用即可。
-  useTheme();
+  // 偏好与解析结果都要给标题栏（按钮上写的字与图标分别来自两者）。
+  const theme = useTheme();
 
   /**
    * 一句话反馈**唯一**的出口。
@@ -488,10 +492,17 @@ export function App() {
 
   /* ── 导出 ─────────────────────────────────────────────── */
 
-  /** 导出：后端决定落点，这里只负责把「去了哪」告诉用户。 */
+  /**
+   * 导出：后端决定落点，这里只负责把「去了哪」告诉用户。
+   *
+   * `session` 是**明确要导出的那一条**（会话右键菜单）。不传时导出当前选中项——
+   * 菜单栏那个入口就是这样。带明确编号的那条路不能省：右键菜单在同一个事件里
+   * 先调 `setSelectedId` 再导出，`setState` 要等下一次渲染才生效，只读选中值会
+   * 导出**上一条**（什么都没选时则静默不导，那是最糟的一种「点了没反应」）。
+   */
   const runExport = useCallback(
-    async (format: "markdown" | "json" | "html") => {
-      const result = await console.exportCurrent(format);
+    async (format: "markdown" | "json" | "html", session?: AiSession) => {
+      const result = await console.exportCurrent(format, session?.id);
       if (result) setExportedTo(result.filePath);
     },
     [console]
@@ -501,56 +512,177 @@ export function App() {
 
   const trash = console.view === "trash";
 
+  /**
+   * 输入模式与输入框可见性都在 `useTerminals` 里（状态栏也要读它）。
+   * 状态栏讲的是**前台那一路**，因此先按活动标签的终端编号取。
+   */
+  const activeTerminalId = workspace.activeTab?.terminalId;
+  const activeUi = terminals.uiStates[activeTerminalId ?? ""];
+
+  /**
+   * 活动栏当前亮着哪一个。
+   *
+   * **不另存一份状态**：它与侧栏说的是同一件事（`console.pane`）。存两份的话，
+   * 用侧栏里的「工作台 / 会话」切过之后活动栏就会亮错——同一件事只有一处能是真相。
+   */
+  const activity: "sessions" | "workbench" =
+    console.pane === "workbench" ? "workbench" : "sessions";
+
   return (
-    <div className="shell">
-      <AppMenubar
-        selectedTarget={selectedTarget}
-        hasActiveSession={hasSessionTab(workspace.tabs)}
-        attentionEntries={terminals.terminals
-          .filter((item) => terminals.attention[item.id])
-          .map((item) => {
-            const attention = terminals.attention[item.id]!;
-            return {
-              terminalId: item.id,
-              title: item.title,
-              provider: item.providerId,
-              kind: attention.kind,
-              detail: attention.detail,
-              updatedAt: attention.updatedAt
-            };
-          })}
-        onSelectAttention={(terminalId) => {
-          // 标签的 key 在统一模型里**优先是会话编号**，所以要按 terminalId 反查
-          // 标签——直接拿 terminalId 当 key 会切到一张不存在的标签上。
-          const tab = workspace.tabs.find((item) => item.terminalId === terminalId);
-          workspace.setActiveKey(tab?.key ?? terminalId);
-          // 切过去就算看过了，清掉标记——否则铃铛上的数字一直不减。
-          terminals.clearAttention(terminalId);
-        }}
-        onDismissAttention={(terminalId) => terminals.clearAttention(terminalId)}
-        actions={{
-          manageSkills: () => openSettings("skills"),
-          openGatewaySettings: () => openSettings("gateway"),
-          manageVendors: () => openSettings("vendors"),
-          // 「设置会话」：只有 WSL 目标有 `distro` 可写，因此这里也按 WSL 判定。
-          openSessionSettings:
-            selectedTarget?.kind === "wsl" && selectedTarget.distro
-              ? openSessionSettings
-              : undefined,
-          installCli: () => openSettings("environment"),
-          exportSession: (format) => void runExport(format),
-          openLogDirectory,
-          // 清理 Gateway 日志：做完要说一声，否则「静默完成」与「没执行」看起来一样。
-          clearGatewayLogs: () => {
-            void api
-              .clearGatewayLogs()
-              .then((removed) => toast.show(`已清理 ${removed} 条 Gateway 日志。`))
-              .catch((error: unknown) =>
-                console.setError(error instanceof Error ? error.message : String(error))
+    <>
+      <AppShell
+        titleBar={
+          <TitleBar
+            version={appVersion}
+            preference={theme.preference}
+            resolved={theme.resolved}
+            onCycleTheme={() => theme.setPreference(nextPreference(theme.preference))}
+            attention={terminals.terminals
+              .filter((item) => terminals.attention[item.id])
+              .map((item) => {
+                const attention = terminals.attention[item.id]!;
+                return {
+                  terminalId: item.id,
+                  title: item.title,
+                  provider: item.providerId,
+                  kind: attention.kind,
+                  detail: attention.detail,
+                  updatedAt: attention.updatedAt
+                };
+              })}
+            onSelectAttention={(terminalId) => {
+              // 标签的 key 在统一模型里**优先是会话编号**，所以要按 terminalId 反查
+              // 标签——直接拿 terminalId 当 key 会切到一张不存在的标签上。
+              const tab = workspace.tabs.find((item) => item.terminalId === terminalId);
+              workspace.setActiveKey(tab?.key ?? terminalId);
+              // 切过去就算看过了，清掉标记——否则铃铛上的数字一直不减。
+              terminals.clearAttention(terminalId);
+            }}
+            onDismissAttention={(terminalId) => terminals.clearAttention(terminalId)}
+          />
+        }
+        activityBar={
+          <ActivityBar
+            activity={activity}
+            // 活动栏切的是**整块侧栏**（工作台 / 会话两种形态），因此直接改 `pane`。
+            onActivity={(next) => console.setPane(next)}
+            // 设置默认开供应商页：它是这个入口最常被用来找的东西（spec §11）。
+            onOpenSettings={() => openSettings("vendors")}
+          />
+        }
+        sidebar={
+          <Sidebar
+            console={console}
+            selectedTarget={selectedTarget}
+            onOpen={openSessionById}
+            onMenu={(x, y, sessionId) => setMenu({ x, y, sessionId })}
+            providers={console.providers}
+            vendors={sidebarVendors}
+            gateway={console.gateway}
+            lastSwitch={lastRouteSwitch}
+            workbenchToken={workbenchToken}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+          />
+        }
+        main={
+          /*
+            工作区外面这一层包裹是必须的：`.app-main` 是内容列，`.workarea`
+            让「标签 + 终端栈 + 会话正文」这一整块吃掉列高（`flex: 1`），
+            停靠面板若直接挂到 `.app-shell` 上会落到状态栏**下面**。
+          */
+          <div className="workarea">
+            <SessionWorkspace
+              tabItems={tabItems}
+              activeKey={workspace.activeKey}
+              stage={stage}
+              terminalItems={terminals.terminals}
+              // 输入模式与输入框可见性都在 `useTerminals` 里：这里只是把它按编号透传下去。
+              uiStates={terminals.uiStates}
+              onInputModeChange={terminals.setInputMode}
+              onOutput={terminals.noteOutput}
+              registerSink={terminals.registerSink}
+              unregisterSink={terminals.unregisterSink}
+              onError={console.setError}
+              onActivate={(key) => {
+                workspace.setActiveKey(key);
+                // 看过就算处理过：清掉这一路的提醒标记，否则小点一直亮着，
+                // 用户会以为还有事没处理。提醒是按**终端编号**记的，标签 key 未必是它。
+                const terminalId = workspace.tabs.find((tab) => tab.key === key)?.terminalId;
+                if (terminalId) terminals.clearAttention(terminalId);
+              }}
+              onClose={workspace.closeTab}
+              onTabContextMenu={(key, x, y) => setTabMenu({ key, x, y })}
+              trailing={
+                <>
+                  <WorkspaceTrailing
+                    canStartCodex={canStartCodex(selectedTarget)}
+                    onNewCodex={beginNewSession}
+                    /*
+                      「详情」要看的会话。
+
+                      **当前标签那条会话优先**——这正是「在终端里还能查看详情」的关键：
+                      那时正文不渲染（原来详情按钮就在正文头部，于是消失了），
+                      而选中项也未必等于这张标签所属的会话。旧平台同理：它绑的是
+                      `activeSession`（活动标签的会话）。
+                    */
+                    detailSession={
+                      sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession
+                    }
+                    onOpenDetail={(session) => setDetailSession(session)}
+                    /*
+                      「继续会话」：点会话行不再起终端之后，这是**显式的**恢复入口
+                      （`beginResumeSession` 原样保留：本目录还在就直接进终端，不在就弹
+                      「设置工作目录」）。`undefined` = 这一刻没有可恢复的东西。
+                    */
+                    onResume={canResumeSession ? resumeActiveSession : undefined}
+                  />
+                  <ToolbarSpacer />
+                </>
+              }
+              session={console.selectedSession}
+              messageTotal={console.messageTotal}
+              messages={console.messages}
+              hasEarlier={console.hasEarlier}
+              loadingMore={console.loadingMore}
+              onLoadEarlier={() => void console.loadEarlierMessages()}
+              onBranch={(sourceLine) => void console.branchFromMessage(sourceLine)}
+              onOpenSession={(session) => {
+                const target =
+                  console.targets.find(
+                    (item) => item.id === session.metadata?.branch?.parentTargetId
+                  ) ?? selectedTarget;
+                if (target) void beginResumeSession(target, session);
+              }}
+              branchParent={(sessionId) => sessionById(sessionId)}
+              branchChildren={(parentSessionId) =>
+                api.listSessionChildren(parentSessionId, selectedTarget?.id)
+              }
+            />
+          </div>
+        }
+        statusBar={
+          <StatusBar
+            busy={console.busy}
+            searching={console.searching}
+            error={console.error}
+            session={console.selectedSession}
+            target={selectedTarget}
+            terminals={terminals}
+            activeTerminalId={activeTerminalId}
+            gateway={console.gateway}
+            // 还没有输入侧状态时按初值显示：新会话就是「自管输入」。
+            inputMode={activeUi?.inputMode ?? "composer"}
+            onToggleInputMode={() => {
+              if (!activeTerminalId) return;
+              terminals.setInputMode(
+                activeTerminalId,
+                activeUi?.inputMode === "terminal" ? "composer" : "terminal"
               );
-          },
-          quit
-        }}
+            }}
+            onNotify={toast.show}
+          />
+        }
       />
 
       <AppOverlays
@@ -619,6 +751,11 @@ export function App() {
             });
           },
           closeMenu: () => setMenu(null),
+          exportSession: (session, format) => {
+            // 先把选中态切到这一条：导出的落点提示、之后的「打开」都以它为上下文。
+            console.setSelectedId(session.id);
+            void runExport(format, session);
+          },
           openSessionFolder: (session) => {
             // 后端的「打开当前会话目录」读的是选中状态，因此先把它选中。
             console.setSelectedId(session.id);
@@ -668,119 +805,6 @@ export function App() {
         tabLabel={workspace.tabItems.find((item) => item.key === tabMenu?.key)?.label ?? "标签"}
         closableTabCount={workspace.tabs.length}
       />
-
-      <div className="main">
-        <Sidebar
-          console={console}
-          selectedTarget={selectedTarget}
-          onOpen={openSessionById}
-          onMenu={(x, y, sessionId) => setMenu({ x, y, sessionId })}
-          providers={console.providers}
-          vendors={sidebarVendors}
-          gateway={console.gateway}
-          lastSwitch={lastRouteSwitch}
-          workbenchToken={workbenchToken}
-          collapsed={sidebarCollapsed}
-          onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
-        />
-
-        {/*
-          工作区与底部停靠面板**同一列上下排**。
-          这一层包裹是必须的：`.main` 是「侧栏 | 内容」两列的网格，
-          把停靠面板直接挂到 `.shell` 上会落到状态栏**下面**——
-          而它必须留在侧栏右侧、状态栏之上。
-        */}
-        <div className="workarea">
-          <SessionWorkspace
-          tabItems={tabItems}
-          activeKey={workspace.activeKey}
-          stage={stage}
-          terminalItems={terminals.terminals}
-          registerSink={terminals.registerSink}
-          unregisterSink={terminals.unregisterSink}
-          onError={console.setError}
-          onActivate={(key) => {
-            workspace.setActiveKey(key);
-            // 看过就算处理过：清掉这一路的提醒标记，否则小点一直亮着，
-            // 用户会以为还有事没处理。提醒是按**终端编号**记的，标签 key 未必是它。
-            const terminalId = workspace.tabs.find((tab) => tab.key === key)?.terminalId;
-            if (terminalId) terminals.clearAttention(terminalId);
-          }}
-          onClose={workspace.closeTab}
-          onTabContextMenu={(key, x, y) => setTabMenu({ key, x, y })}
-          trailing={
-            <>
-              <WorkspaceTrailing
-                canStartCodex={canStartCodex(selectedTarget)}
-                onNewCodex={beginNewSession}
-                /*
-                  「详情」要看的会话。
-
-                  **当前标签那条会话优先**——这正是「在终端里还能查看详情」的关键：
-                  那时正文不渲染（原来详情按钮就在正文头部，于是消失了），
-                  而选中项也未必等于这张标签所属的会话。旧平台同理：它绑的是
-                  `activeSession`（活动标签的会话）。
-                */
-                detailSession={
-                  sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession
-                }
-                onOpenDetail={(session) => setDetailSession(session)}
-                /*
-                  「继续会话」：点会话行不再起终端之后，这是**显式的**恢复入口
-                  （`beginResumeSession` 原样保留：本目录还在就直接进终端，不在就弹
-                  「设置工作目录」）。`undefined` = 这一刻没有可恢复的东西。
-                */
-                onResume={canResumeSession ? resumeActiveSession : undefined}
-              />
-              <ToolbarSpacer />
-            </>
-          }
-          session={console.selectedSession}
-          messageTotal={console.messageTotal}
-          messages={console.messages}
-          hasEarlier={console.hasEarlier}
-          loadingMore={console.loadingMore}
-          onLoadEarlier={() => void console.loadEarlierMessages()}
-          onBranch={(sourceLine) => void console.branchFromMessage(sourceLine)}
-          onOpenSession={(session) => {
-            const target =
-              console.targets.find(
-                (item) => item.id === session.metadata?.branch?.parentTargetId
-              ) ?? selectedTarget;
-            if (target) void beginResumeSession(target, session);
-          }}
-          branchParent={(sessionId) => sessionById(sessionId)}
-          branchChildren={(parentSessionId) =>
-            api.listSessionChildren(parentSessionId, selectedTarget?.id)
-          }
-        />
-        </div>
-      </div>
-
-      {exportedTo && (
-        <div className="export-hint">
-          已导出到 <code>{exportedTo}</code>
-          <Button small onClick={() => void api.openPath(exportedTo)}>
-            打开
-          </Button>
-          <Button small onClick={() => setExportedTo("")}>
-            知道了
-          </Button>
-        </div>
-      )}
-
-      <StatusBar
-        busy={console.busy}
-        searching={console.searching}
-        session={console.selectedSession}
-        targetCount={console.targets.length}
-        sessionCount={console.sessions.length}
-        terminalCount={terminals.terminals.length}
-        activeTerminalId={workspace.activeTab?.terminalId}
-        terminals={terminals}
-        error={console.error}
-        gateway={console.gateway}
-      />
-    </div>
+    </>
   );
 }

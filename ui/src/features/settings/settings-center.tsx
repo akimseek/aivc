@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { DiagnosticsPanel } from "../../app/config/diagnostics-panel";
 import { EnvironmentPanel } from "../../app/config/environment-panel";
@@ -89,6 +89,26 @@ export function SettingsCenter({
 }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
 
+  /**
+   * Escape 关闭。
+   *
+   * 键盘用户此前**没有出口**：这个模态只有右上角那个 ✕，而它比 `Dialog` 自绘
+   * （`Dialog` 家族一直有 Escape）。
+   *
+   * 有更内层的东西开着时让给它：面板里能再开对话框（供应商编辑等），那层自己会处理
+   * Escape——不判断的话按一次 Escape 会**同时**关掉内层对话框与整个设置中心，
+   * 用户丢的是刚填了一半的东西。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (document.querySelector(".dialog-overlay, .popover")) return;
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
     <div className="settings-overlay" role="dialog" aria-modal="true" aria-label="系统配置与服务中心">
       <div className="settings-panel">
@@ -139,7 +159,7 @@ export function SettingsCenter({
             {tab === "gateway" && <GatewayPanel onError={onError} onNotify={onNotify} />}
             {tab === "usage" && <GatewayUsagePanel onError={onError} />}
             {tab === "failures" && <GatewayFailurePanel providerId={providerId} onError={onError} />}
-            {tab === "logs" && <GatewayLogPanel onError={onError} />}
+            {tab === "logs" && <GatewayLogPanel onError={onError} onNotify={onNotify} />}
             {tab === "skills" && (
               <SkillsPanel targetId={targetId} onError={onError} onNotify={onNotify} />
             )}

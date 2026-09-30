@@ -601,12 +601,21 @@ export function useConsole(options: { notify?: Notify } = {}) {
     [targetId, selectedId, view, query, loadSessions, notify]
   );
 
+  /**
+   * 导出会话。
+   *
+   * `sessionId` 省略时导出**当前选中**的那一条（菜单栏那一套的语义）。
+   * 会话右键菜单会显式传编号：它要导出的是**被右键的那一条**，而 `setSelectedId`
+   * 与导出发生在同一个事件里——`setState` 要等下一次渲染才生效，只读选中值的
+   * 那一刻拿到的还是上一条（什么都没选时则什么都不导）。
+   */
   const exportCurrent = useCallback(
-    async (format: ExportFormat) => {
-      if (!targetId || !selectedId) return;
+    async (format: ExportFormat, sessionId?: string) => {
+      const id = sessionId ?? selectedId;
+      if (!targetId || !id) return;
       try {
         // 不传路径：由后端挑一个确定的位置，再把实际路径回给我们显示。
-        const result = await api.exportSession(targetId, selectedId, format, "");
+        const result = await api.exportSession(targetId, id, format, "");
         setError("");
         return result;
       } catch (problem) {

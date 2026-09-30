@@ -69,6 +69,10 @@
   --ui-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.08);
   --ui-shadow-xs: 0 1px 3px rgba(15, 23, 42, 0.06);
 
+  /* 模态遮罩。此前写在 `.settings-overlay` 上，与其他弹层的 `rgba(18,24,33,.34)`
+     各写各的——同一个界面里两种遮罩深浅会看出来。 */
+  --ui-scrim: rgb(2 6 23 / 55%);
+
   color-scheme: light;
 }
 
@@ -122,6 +126,9 @@
   --ui-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
   --ui-shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.3);
 
+  /* 暗黑下底部更暗一档：明亮色的遮罩罩在深色界面上几乎看不出来。 */
+  --ui-scrim: rgb(0 0 0 / 65%);
+
   color-scheme: dark;
 }
 
@@ -160,6 +167,11 @@
   --ui-z-drawer: 40;
   --ui-z-overlay: 60;
   --ui-z-toast: 80;
+
+  /* 与主题无关的两个表面：品牌块与强调底上的文字。
+     两套主题下**值相同**，因此放在这里而不是各写一遍（写了就会漂移）。 */
+  --ui-on-accent: #fff;
+  --ui-brand-gradient: linear-gradient(135deg, #059669, #14b8a6);
 
   background: var(--ui-bg);
   color: var(--ui-text);

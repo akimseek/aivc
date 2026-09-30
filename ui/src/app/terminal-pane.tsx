@@ -5,7 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import * as api from "../ipc/commands";
 import { ComposerInput } from "./composer-input";
-import { initialComposerVisible, shouldRevealComposer, type TerminalInputMode } from "./composer-text";
+import type { TerminalInputMode } from "./composer-text";
 import { TerminalSearchBar } from "./terminal-search-bar";
 import { TerminalPasteDialog, TerminalTextContextMenu } from "./terminal-text-menu";
 import type { TerminalSink } from "./terminal-output";
@@ -22,16 +22,27 @@ import type { TerminalSink } from "./terminal-output";
  *    **不要**先转成字符串——光标控制序列不是合法 UTF-8，转一次就废了。
  * 3. **尺寸要告诉后端**：容器变化时 `fit()` 之后必须发 `terminal:resize`，
  *    否则 PTY 里的程序仍按旧尺寸排版，换行位置全错。
+ *
+ * # 输入侧的状态是**受控**的
+ *
+ * 输入模式与输入框可见性此前是本组件的本地状态。现在它们在
+ * [`useTerminals`](./use-terminals.ts) 里（状态栏也要读它，spec §6），
+ * 这里只做三件事：报告「收到了输出」、把用户切模式的意图报上去、按 props 渲染。
  */
 export function TerminalPane({
   terminalId,
   active,
   running,
   /**
-   * 这条终端属于哪条会话。为空表示「新会话」——自管输入的初始可见性由它决定：
-   * 新会话一进去就有输入框，恢复历史会话时先藏着（见 `initialComposerVisible`）。
+   * 自管输入框此刻该不该显示。初值与「收到输出后放出来」的规则都在
+   * [`useTerminals`](./use-terminals.ts)（纯判据在 `composer-text.ts`）。
    */
-  sessionId,
+  composerVisible,
+  /** 键盘输入去哪一边（自管输入框 / 终端原生）。 */
+  inputMode,
+  onInputModeChange,
+  /** 收到一段输出。**在数据回调里调**——这是「恢复的会话把输入框放出来」的唯一时机。 */
+  onOutput,
   registerSink,
   unregisterSink,
   onError
@@ -47,7 +58,10 @@ export function TerminalPane({
    * 与原因毫无关系的报错。
    */
   running: boolean;
-  sessionId?: string;
+  composerVisible: boolean;
+  inputMode: TerminalInputMode;
+  onInputModeChange: (mode: TerminalInputMode) => void;
+  onOutput: () => void;
   registerSink: (id: string, sink: TerminalSink) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
@@ -58,32 +72,14 @@ export function TerminalPane({
   // 尺寸回调挂在 ResizeObserver 里，拿不到最新的 prop，因此用一个 ref 镜像它。
   const runningRef = useRef(running);
   runningRef.current = running;
-
   /**
-   * 自管输入是否显示。
+   * 输出回调同样要镜像。
    *
-   * 初值由「是不是恢复历史会话」决定，之后由**第一段输出**把它打开——
-   * 那是唯一的入口（旧平台的 `revealComposer()` 也只能被这条路径触发）。
+   * 它是上层每次渲染新建的箭头函数（`() => noteOutput(id)`）；若把它写进挂载
+   * effect 的依赖里，**每次渲染都会重建 xterm**——缓冲区里的历史就没了。
    */
-  const [composerVisible, setComposerVisible] = useState(() =>
-    initialComposerVisible(sessionId)
-  );
-  /**
-   * 键盘输入去哪一边。
-   *
-   * 输入框一露出来，默认就是「自管输入框」——它出现的原因正是用户想在那里打字。
-   * 交互式程序（`vim`、`less`）要按「终端输入」切回去。
-   *
-   * 旧平台把它存成**显式模式**而不是「谁有焦点算谁」：否则用户点了「终端输入」之后，
-   * 只要不小心点到输入框，模式就悄悄变回去了。
-   */
-  const [inputMode, setInputMode] = useState<TerminalInputMode>("composer");
-  const composerVisibleRef = useRef(composerVisible);
-  composerVisibleRef.current = composerVisible;
-  /** 每次挂载都从初值重新判断：换了一条终端（key 变了）就是另一路。 */
-  useEffect(() => {
-    setComposerVisible(initialComposerVisible(sessionId));
-  }, [sessionId, terminalId]);
+  const onOutputRef = useRef(onOutput);
+  onOutputRef.current = onOutput;
 
   /** 文本右键菜单。`canCopy` 在右键那一刻取定，见 `onContextMenu`。 */
   const [textMenu, setTextMenu] = useState<{
@@ -212,28 +208,15 @@ export function TerminalPane({
     registerSink(terminalId, (bytes) => {
       term.write(bytes);
       /**
-       * **第一段输出到达时把自管输入露出来。**
+       * **把「收到输出」这件事报上去。**
        *
-       * 恢复历史会话时它初值是隐藏的（那时终端正在重放历史，输入框会挡住输出），
-       * 而这是唯一能把它们显示出来的路径——旧平台也是这么做的
+       * 恢复历史会话时输入框初值是隐藏的（那时终端正在重放历史，输入框会挡住输出），
+       * 而这是唯一能把它们显示出来的时机——旧平台也是这么做的
        * （`embedded-terminal.tsx` 的 `onTerminalData` 里那句 `revealComposer()`）。
        *
-       * 少了这一条，恢复的会话里用户**永远看不到**自管输入。
+       * 判据（要不要放出来）在 `useTerminals` 里，这里只报告事实。
        */
-      if (shouldRevealComposer(composerVisibleRef.current, bytes.length > 0)) {
-        setComposerVisible(true);
-        // 输入框占了一块高度，终端要重新量一次，否则最后几行会被它挡住。
-        window.requestAnimationFrame(() => {
-          try {
-            fit.fit();
-            if (runningRef.current) {
-              void api.resizeTerminal(terminalId, term.cols, term.rows).catch(() => undefined);
-            }
-          } catch {
-            /* 容器不可测量，忽略。 */
-          }
-        });
-      }
+      if (bytes.length > 0) onOutputRef.current();
     });
 
     // 输入：**这是终端能动的关键一环**（见文件头注释）。
@@ -306,6 +289,30 @@ export function TerminalPane({
   }, [active, terminalId]);
 
   /**
+   * 输入框出现或消失时重新量一次。
+   *
+   * 它占了一块高度，终端要跟着缩——不重量的话最后几行会被输入框挡住。
+   * 此前这一步写在输出回调里（那时状态是本地的），状态上收之后改成跟着 prop 走。
+   */
+  useEffect(() => {
+    if (!composerVisible) return;
+    const fit = fitRef.current;
+    const term = termRef.current;
+    if (!fit || !term) return;
+    const raf = window.requestAnimationFrame(() => {
+      try {
+        fit.fit();
+        if (runningRef.current) {
+          void api.resizeTerminal(terminalId, term.cols, term.rows).catch(() => undefined);
+        }
+      } catch {
+        /* 容器不可测量，忽略。 */
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [composerVisible, terminalId]);
+
+  /**
    * 切到前台时**把焦点交给终端**。
    *
    * # 这是探针发现的真实缺陷
@@ -333,12 +340,6 @@ export function TerminalPane({
     }
   }, [active, terminalId, composerVisible]);
 
-  /**
-   * 自管输入**只在前台显示**。
-   *
-   * 非前台的终端仍然挂载（不能卸载，会丢输出），但它的输入框不该占位置：
-   * 用户在看另一路终端时，屏幕下方多出一个属于别处的输入框只会让人写错地方。
-   */
   /**
    * Ctrl+F 打开查找栏。
    *
@@ -389,15 +390,13 @@ export function TerminalPane({
           inputMode={inputMode}
           /*
             切换键盘输入去哪一边。
-            
-            旧平台这个按钮在**状态栏**上（`status-bar.tsx`）。这里放在输入框自己的
-            工具条里：状态在 `TerminalPane`（xterm 与输入框都在它手上），
-            放进状态栏就得把它往上提两层再传回来。**流程没变**——一个按钮在
-            「终端原生输入」与「自管输入框」之间切，按钮上的字写的是点下去会切到哪。
+
+            按钮仍在输入框自己的工具条里（状态栏那个胶囊也走同一条状态，spec §6）。
+            模式与可见性都在 `useTerminals` 里，这里报意图 + 管焦点。
           */
           onToggleInputMode={() => {
             const next: TerminalInputMode = inputMode === "composer" ? "terminal" : "composer";
-            setInputMode(next);
+            onInputModeChange(next);
             // 切到哪边就把焦点给哪边：不转移焦点的话「切了但按键盘没反应」。
             window.requestAnimationFrame(() => {
               try {

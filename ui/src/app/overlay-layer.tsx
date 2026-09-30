@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "../components";
 import { SettingsCenter, type SettingsTab } from "../features/settings/settings-center";
-import type { AiProviderId, AiProviderSummary, AiSession, AiTarget } from "../types";
+import type { AiProviderId, AiProviderSummary, AiSession, AiTarget, ExportFormat } from "../types";
 import { ExitConfirm } from "./exit-confirm";
 import { NewSessionDialog } from "./new-session-dialog";
 import { SessionContextMenu } from "./session-context-menu";
@@ -66,6 +66,13 @@ export type OverlaysActions = {
   confirmNewSession: () => void;
   closeMenu: () => void;
   openSessionFolder: (session: AiSession) => void;
+  /**
+   * 导出**某一条**会话。
+   *
+   * 带 `session` 而不是只带格式：右键菜单里导出的是**被右键的那一条**，
+   * 而它与「当前选中」未必是同一条（详见 `exportCurrent` 的说明）。
+   */
+  exportSession: (session: AiSession, format: ExportFormat) => void;
   toggleFavorite: (session: AiSession) => void;
   copyText: (text: string) => void;
   removeSession: (session: AiSession) => void;
@@ -246,6 +253,8 @@ export function AppOverlays({
           // 复制**编号**而不是标题：编号是稳定的标识，粘到别处能用来定位。
           onCopyId={() => actions.copyText(menuSession.id)}
           onCopyPath={() => actions.copyText(menuSession.filePath)}
+          // 导出被右键的那一条：菜单栏里的「导出」只能导出选中项，这里能就着右键的对象来。
+          onExport={(format) => actions.exportSession(menuSession, format)}
           onRemove={() => actions.removeSession(menuSession)}
           onRestore={() => actions.restoreSession(menuSession)}
           onRename={() => actions.startRename(menuSession)}
@@ -330,6 +339,8 @@ export function AppOverlays({
  *
  * 抽出来是因为「已导出到…」与「已清理 N 条日志」此前是两段各自手写的 JSX，
  * 形状一样、位置一样，迟早会长出差别。
+ *
+ * 它是**浮层**（`hint-float`）：外壳是 100vh 网格，把它当正文渲染会把状态栏挤出屏幕。
  */
 function HintBar({
   message,
@@ -342,7 +353,7 @@ function HintBar({
   extra?: ReactNode;
 }) {
   return (
-    <div className="export-hint" role="status">
+    <div className="export-hint hint-float" role="status">
       {message}
       {extra}
       <Button small onClick={onDismiss}>

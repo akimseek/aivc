@@ -3,10 +3,12 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { Button, EmptyState, Tabs, type TabItem } from "../components";
 import type { AiMessage, AiSession, AiTarget } from "../types";
 import { BranchPanel } from "./branch-panel";
+import type { TerminalInputMode } from "./composer-text";
 import { messageCountLabel, formatTokens } from "./session-display";
 import { Message } from "./session-row";
 import { SessionDetailButton } from "./session-actions";
 import type { StageContent } from "./stage-content";
+import type { TerminalUiState } from "./use-terminals";
 
 /**
  * 终端**按需加载**。
@@ -45,6 +47,9 @@ export function SessionWorkspace({
   activeKey,
   stage,
   terminalItems,
+  uiStates,
+  onInputModeChange,
+  onOutput,
   registerSink,
   unregisterSink,
   onError,
@@ -67,8 +72,19 @@ export function SessionWorkspace({
   activeKey: string;
   /** 画布当前该显示什么（由 `resolveStageContent` 算出）。 */
   stage: StageContent;
-  /** 当前挂着的终端（全部，不只是前台那一个）。`sessionId` 决定自管输入的初始可见性。 */
-  terminalItems: { id: string; running: boolean; sessionId?: string }[];
+  /** 当前挂着的终端（全部，不只是前台那一个）。 */
+  terminalItems: { id: string; running: boolean }[];
+  /**
+   * 各终端的输入侧界面状态（输入模式 + 输入框可见性）。
+   *
+   * 由 [`useTerminals`](./use-terminals.ts) 上收（状态栏也要读它），这里只按编号
+   * 透传给对应的 `TerminalPane`。编号缺席时用「自管输入 + 隐藏」，见下面的回退。
+   */
+  uiStates: Record<string, TerminalUiState>;
+  /** 用户把某一路切到了另一种输入模式。 */
+  onInputModeChange: (terminalId: string, mode: TerminalInputMode) => void;
+  /** 某一路收到了输出（用于把藏着的输入框放出来）。 */
+  onOutput: (terminalId: string) => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
@@ -105,19 +121,29 @@ export function SessionWorkspace({
         {terminalItems.length > 0 && (
           <div className={`terminal-stack${stage.kind === "terminal" ? "" : " hidden"}`}>
             <Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}>
-              {terminalItems.map((item) => (
-                <TerminalPane
-                  key={item.id}
-                  terminalId={item.id}
-                  active={stage.kind === "terminal" && stage.terminalId === item.id}
-                  running={item.running}
-                  /* 自管输入的初始可见性由「是不是恢复历史会话」决定。 */
-                  sessionId={item.sessionId}
-                  registerSink={registerSink}
-                  unregisterSink={unregisterSink}
-                  onError={onError}
-                />
-              ))}
+              {terminalItems.map((item) => {
+                const ui = uiStates[item.id];
+                return (
+                  <TerminalPane
+                    key={item.id}
+                    terminalId={item.id}
+                    active={stage.kind === "terminal" && stage.terminalId === item.id}
+                    running={item.running}
+                    /*
+                      编号还没被登记时（启动中）按「自管输入、先藏着」显示：
+                      藏着的输入框不会挡住终端正在回放的内容，等 `noteOutput`
+                      按 `initialComposerVisible` 的规则把它放出来。
+                    */
+                    inputMode={ui?.inputMode ?? "composer"}
+                    composerVisible={ui?.composerVisible ?? false}
+                    onInputModeChange={(mode) => onInputModeChange(item.id, mode)}
+                    onOutput={() => onOutput(item.id)}
+                    registerSink={registerSink}
+                    unregisterSink={unregisterSink}
+                    onError={onError}
+                  />
+                );
+              })}
             </Suspense>
           </div>
         )}

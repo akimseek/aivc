@@ -30,13 +30,23 @@ import { GatewayRangePicker } from "./gateway-range-picker";
  * `GatewayInsights` 的「最近请求」是只读的一瞥；这里可以做三件那里做不到的事：
  * **按条件筛出要清的**、**逐条勾选**、**按编号删除**。
  *
- * 「清空日志」是一个不可撤销的全清动作，因此它**不在这里**——它单独留在
- * `GatewayInsights` 那一处，并且标成危险动作。把「按条件清」和「全清」放在一起，
- * 迟早会有人点错。
+ * # 「清空全部日志」为什么在这里
+ *
+ * 它原来是菜单栏「帮助 → 清理 Gateway 日志」的动作，菜单栏被移除后由这里承接
+ * （spec §11）。一次全清**不可撤销**，因此必须问一次（`window.confirm`）——
+ * 菜单栏那一条点了就直接执行，搬到面板里反而更容易被误点（面板是天天开的，
+ * 菜单不是）。
  *
  * 后端 `gateway:query-logs` 与 `gateway:delete-log-entries` 一直在，界面此前没有接。
  */
-export function GatewayLogPanel({ onError }: { onError: (message: string) => void }) {
+export function GatewayLogPanel({
+  onError,
+  onNotify
+}: {
+  onError: (message: string) => void;
+  /** 一句话成功反馈（清空之后要说一声，静默完成与没执行看起来一样）。 */
+  onNotify?: (message: string) => void;
+}) {
   const [picker, setPicker] = useState({ range: "7d" as UsageRangeKey, start: "", end: "" });
   const [outcome, setOutcome] = useState<"" | "ok" | "error" | "timeout" | "client-aborted">("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -90,6 +100,25 @@ export function GatewayLogPanel({ onError }: { onError: (message: string) => voi
       onError(problem instanceof Error ? problem.message : String(problem));
     }
   }, [selected, logs, toast, onError]);
+
+  /**
+   * 清空**全部**日志。
+   *
+   * 与「删除选中」是两件事：那个只动静筛选出来的那几条，这个把整张审计表清空。
+   * 不可撤销，因此先弹一次原生确认——界面上的 toast/hint 都不适合承担
+   * 「点错了就没了」的确认，它必须挡住这一步。
+   */
+  const clearAll = useCallback(async () => {
+    if (!window.confirm("确定清空所有网关审计日志吗？")) return;
+    try {
+      const removed = await api.clearGatewayLogs();
+      setSelected(new Set());
+      onNotify?.(`已清理 ${removed} 条 Gateway 日志。`);
+      await logs.reload();
+    } catch (problem) {
+      onError(problem instanceof Error ? problem.message : String(problem));
+    }
+  }, [logs, onNotify, onError]);
 
   return (
     <>
@@ -152,6 +181,10 @@ export function GatewayLogPanel({ onError }: { onError: (message: string) => voi
             onClick={() => void removeSelected()}
           >
             删除选中（{selected.size}）
+          </Button>
+          {/* 整表清空。承接被移除的菜单栏「清理 Gateway 日志」（spec §11）。 */}
+          <Button small variant="danger" onClick={() => void clearAll()} title="清空全部审计日志（不可撤销）">
+            清空全部日志
           </Button>
         </Toolbar>
       </Card>

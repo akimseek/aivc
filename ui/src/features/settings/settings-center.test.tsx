@@ -173,6 +173,33 @@ describe("SettingsCenter：关于与关闭", () => {
     });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("Escape 关闭——键盘用户此前没有出口", async () => {
+    // 这个模态是自绘的（比 `Dialog` 多一层两栏），因此没继承 `Dialog` 的 Escape。
+    // 右上角那个 ✕ 是鼠标用户的出口，键盘用户只有这一条路。
+    const { onClose } = setup();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("别层开着时不让 Escape 穿透到这里", async () => {
+    // 面板里能再开对话框；那层自己处理 Escape。不判断的话一次按键会同时关掉
+    // 内层对话框与整个设置中心。
+    const { onClose } = setup();
+    const nested = document.createElement("div");
+    nested.className = "dialog-overlay";
+    document.body.appendChild(nested);
+    try {
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      });
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      nested.remove();
+    }
+  });
 });
 
 describe("SettingsCenter：环境面板的 WSL 会话目录入口", () => {

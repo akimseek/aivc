@@ -27,7 +27,7 @@ function session(overrides: Partial<AiSession> = {}): AiSession {
   } as AiSession;
 }
 
-function setup(trash: boolean) {
+function setup(trash: boolean, withExport = true) {
   const handlers = {
     onClose: vi.fn(),
     onOpenFolder: vi.fn(),
@@ -36,6 +36,7 @@ function setup(trash: boolean) {
     onToggleFavorite: vi.fn(),
     onCopyId: vi.fn(),
     onCopyPath: vi.fn(),
+    onExport: withExport ? vi.fn() : undefined,
     onRemove: vi.fn(),
     onRestore: vi.fn()
   };
@@ -92,5 +93,50 @@ describe("SessionContextMenu：回收站的恢复", () => {
   it("回收站里的删除项写「彻底删除」，别处写「移入回收站」", () => {
     expect(setup(true).labels).toContain("彻底删除");
     expect(setup(false).labels).toContain("移入回收站");
+  });
+});
+
+/**
+ * 导出分区。
+ *
+ * # 这组测试是为什么来的
+ *
+ * 菜单栏里的「导出 Markdown / JSON / HTML」整组被移除了，
+ * 新家之一就是这个右键菜单（spec §11）。**入口搬了，动作必须一个不少**——
+ * 少一项就是用户少一条路，而界面上看不出任何异常。
+ *
+ * 另一半是「缺动作就不渲染」：没有导出能力的调用方不该看到一组点了没反应的项。
+ */
+describe("SessionContextMenu：导出分区", () => {
+  it("三种格式都在，且排在「复制文件路径」之后", () => {
+    const { labels } = setup(false);
+    expect(labels).toEqual(
+      expect.arrayContaining(["导出 Markdown", "导出 JSON", "导出 HTML"])
+    );
+    expect(labels.indexOf("复制文件路径")).toBeLessThan(labels.indexOf("导出 Markdown"));
+  });
+
+  it("每一项回传它自己的格式", () => {
+    const { handlers, click } = setup(false);
+    click("导出 Markdown");
+    expect(handlers.onExport).toHaveBeenLastCalledWith("markdown");
+    click("导出 JSON");
+    expect(handlers.onExport).toHaveBeenLastCalledWith("json");
+    click("导出 HTML");
+    expect(handlers.onExport).toHaveBeenLastCalledWith("html");
+    expect(handlers.onExport).toHaveBeenCalledTimes(3);
+  });
+
+  it("点导出会关掉菜单（与其余各项一致）", () => {
+    const { handlers, click } = setup(false);
+    click("导出 HTML");
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("没有导出动作时整组不渲染——不留一组死按钮", () => {
+    const { labels } = setup(false, false);
+    expect(labels.some((label) => label.startsWith("导出"))).toBe(false);
+    // 其余各项照旧。
+    expect(labels).toContain("复制文件路径");
   });
 });

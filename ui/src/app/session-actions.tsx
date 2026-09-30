@@ -21,7 +21,7 @@ import type { AiSession } from "../types";
  * | 动作 | 旧平台放哪 | 本工程 |
  * | --- | --- | --- |
  * | 重命名 / 复制 | 会话行右键菜单 | 已有（`session-context-menu.tsx`） |
- * | 导出 Markdown / JSON / HTML | 菜单栏「文件 / 导出」 | 已有（`app-menus.ts`） |
+ * | 导出 Markdown / JSON / HTML | 菜单栏「文件 / 导出」 | 已有（会话右键菜单的导出分区） |
  *
  * 所以那四个按钮是纯多余，而且它们**看起来像是这条会话的操作**，
  * 实际作用在「当前选中的那条」——选中项又曾经是自动挑的第一条，

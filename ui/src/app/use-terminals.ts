@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as api from "../ipc/commands";
 import type { AiTarget, TerminalAttention, TerminalDataPayload, TerminalStatusPayload } from "../types";
+import {
+  initialComposerVisible,
+  shouldRevealComposer,
+  type TerminalInputMode
+} from "./composer-text";
 import { TerminalOutputRouter } from "./terminal-output";
 import type { TerminalSink } from "./terminal-output";
 
@@ -38,6 +43,19 @@ export type VendorSwitch = {
   /** `manual` 用户切的；`failure` 上游失败自动切的；`mode` 只是模式变了。 */
   reason: "manual" | "failure" | "mode" | "candidate-pool";
 };
+
+/**
+ * 每路终端的**输入侧**界面状态。
+ *
+ * # 为什么要上收到这里
+ *
+ * 状态栏上有「输入模式」胶囊（spec §6），它讲的是**当前前台那一路**终端；
+ * 而状态此前只活在 `TerminalPane` 里。留在那里的话，状态栏要么拿不到它，
+ * 要么得把整棵终端组件树的状态往上扛。
+ *
+ * 于是 `TerminalPane` 改成受控：它只报告「收到了输出」，可见性与模式由这里决定。
+ */
+export type TerminalUiState = { inputMode: TerminalInputMode; composerVisible: boolean };
 
 /** 一路终端。 */
 export type TerminalSession = {
@@ -89,6 +107,8 @@ export function useTerminals() {
   const pendingPrompts = useRef<Map<string, string>>(new Map());
   /** 各终端待处理的提醒（等待确认等）。用户在界面上看过就该清掉。 */
   const [attention, setAttention] = useState<Record<string, TerminalAttention>>({});
+  /** 各终端的输入侧界面状态（模式与输入框可见性）。见 [`TerminalUiState`]。 */
+  const [uiStates, setUiStates] = useState<Record<string, TerminalUiState>>({});
   /**
    * 输出分发与缓冲。
    *
@@ -319,8 +339,15 @@ export function useTerminals() {
       start: (terminalId: string) => Promise<unknown>;
       /** 「启动提示词」：会话可交互之后自动发一次，见 `pendingPrompts`。 */
       prompt?: string;
+      /**
+       * 这一路是**恢复**哪条会话（新会话为空）。
+       *
+       * 它决定自管输入框的**初始可见性**：恢复时先藏着（终端正在重放历史，
+       * 输入框会挡住输出），等第一段输出再由 [`noteOutput`] 放出来。
+       */
+      sessionId?: string;
     }): Promise<string> => {
-      const { title, providerId, start, prompt } = options;
+      const { title, providerId, start, prompt, sessionId } = options;
       const id = nextId();
       // 先入列表再启动：启动失败时用户至少能看到这一路的存在与失败原因，
       // 而不是「点了没反应」。
@@ -340,6 +367,16 @@ export function useTerminals() {
             current.map((item) => (item.id === id ? { ...item, vendorId, vendorMode } : item))
           );
         }
+        /**
+         * 输入侧界面的初值。
+         *
+         * **启动成功之后才写**：启动失败的那一路没有终端可输入，写一份状态只会让
+         * 状态栏显示一个不存在的模式。
+         */
+        setUiStates((current) => ({
+          ...current,
+          [id]: { inputMode: "composer", composerVisible: initialComposerVisible(sessionId) }
+        }));
       } catch (error) {
         // 启动失败就别再把提示词留在队里：这路终端不会有输出了。
         pendingPrompts.current.delete(id);
@@ -371,6 +408,43 @@ export function useTerminals() {
     await api.setVendorRouteMode(id, mode);
   }, []);
 
+  /**
+   * 切换一路终端的输入模式。
+   *
+   * **切到自管输入时顺带把输入框显出来**——否则用户看到的是「切过去了但看不见框」：
+   * 输入框藏在恢复会话的初始状态里时，模式切了也没有任何可见变化。
+   */
+  const setInputMode = useCallback((id: string, mode: TerminalInputMode) => {
+    setUiStates((current) => {
+      const state = current[id] ?? { inputMode: "composer" as const, composerVisible: false };
+      return {
+        ...current,
+        [id]: {
+          ...state,
+          inputMode: mode,
+          composerVisible: mode === "composer" ? true : state.composerVisible
+        }
+      };
+    });
+  }, []);
+
+  /**
+   * 收到输出。
+   *
+   * 恢复历史会话时输入框是藏着的，而**第一段输出是唯一的显示时机**——
+   * 旧平台也只在 `onTerminalData` 里调 `revealComposer()`。判据本身在
+   * [`shouldRevealComposer`](./composer-text.ts) 里（有测试），这里只负责落状态。
+   */
+  const noteOutput = useCallback((id: string) => {
+    setUiStates((current) => {
+      const state = current[id];
+      if (!state || state.composerVisible) return current;
+      return shouldRevealComposer(state.composerVisible, true)
+        ? { ...current, [id]: { ...state, composerVisible: true } }
+        : current;
+    });
+  }, []);
+
   const openTerminal = useCallback(
     (
       target: AiTarget | null,
@@ -383,6 +457,7 @@ export function useTerminals() {
         title: target ? `终端 · ${target.label}` : "终端",
         providerId: target?.provider ?? "codex",
         prompt,
+        sessionId,
         start: (terminalId) =>
           api.startTerminal({
             terminalId,
@@ -417,6 +492,13 @@ export function useTerminals() {
         delete next[id];
         return next;
       });
+      // 输入侧状态跟着终端一起走：留着的话，同一个编号（不会复用，但列表会变）的
+      // 旧模式会在状态栏上显示出来。
+      setUiStates((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
       try {
         await api.stopTerminal(id);
       } catch {
@@ -439,9 +521,13 @@ export function useTerminals() {
   return {
     terminals,
     attention,
+    /** 输入侧的界面状态：状态栏读前台那一路（spec §6）。 */
+    uiStates,
     openTerminal,
     closeTerminal,
     clearAttention,
+    setInputMode,
+    noteOutput,
     registerSink,
     unregisterSink,
     switchVendor,

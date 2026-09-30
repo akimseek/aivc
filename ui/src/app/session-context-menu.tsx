@@ -9,8 +9,9 @@ import type { AiSession } from "../types";
  *
  * # 从 `app.tsx` 里搬出来的两件事
  *
- * 1. **菜单项的列表**（打开目录 / 收藏 / 复制编号 / 复制路径 / 移入回收站或彻底删除）。
- *    它此前是 55 行内联 JSX，而每一项都是一个「调 API + 关菜单」的闭包；
+ * 1. **菜单项的列表**（打开目录 / 收藏 / 复制编号 / 复制路径 / 导出三种格式 /
+ *    移入回收站或彻底删除）。它此前是 55 行内联 JSX，而每一项都是一个
+ *    「调 API + 关菜单」的闭包；
  * 2. **视口内定位**。菜单是按鼠标位置开在 `position: fixed` 上的，靠近右/下边缘时
  *    会被切掉一半。旧平台的 `useViewportMenuPosition` 就是干这个的
  *    （`context-menus.tsx`），这里把同一件事实现一遍。
@@ -37,6 +38,17 @@ export type SessionContextMenuProps = {
   onToggleFavorite: () => void;
   onCopyId: () => void;
   onCopyPath: () => void;
+  /**
+   * 导出这一条会话。
+   *
+   * 菜单栏被移除之后这里是导出的入口之一（spec §11 的入口迁移表）。它承接的是
+   * 「**就着右键的这条**导出」——菜单栏那个导出只能导出当前选中项，而右键一条
+   * 别的会话时，用户的意图显然是它。
+   *
+   * 不传就**整组不渲染**（沿用被移除的菜单栏那条约定的精神：宁可没有这一组，
+   * 也不要一组点了没反应的项）。
+   */
+  onExport?: (format: "markdown" | "json" | "html") => void;
   onRemove: () => void;
   /**
    * 从回收站恢复。
@@ -78,6 +90,7 @@ export function SessionContextMenu({
   onToggleFavorite,
   onCopyId,
   onCopyPath,
+  onExport,
   onRemove,
   onRestore
 }: SessionContextMenuProps) {
@@ -136,6 +149,23 @@ export function SessionContextMenu({
         <button type="button" role="menuitem" onClick={run(onCopyPath)}>
           复制文件路径
         </button>
+        {/* 导出分区。三种格式与菜单栏那份**逐字一致**（旧平台就是这样三项），
+            它们在这里是分开的三项，不再套一层子菜单——右键菜单里再展开一层，
+            手要移两次。 */}
+        {onExport && (
+          <>
+            <div className="context-menu-label">导出</div>
+            <button type="button" role="menuitem" onClick={run(() => onExport("markdown"))}>
+              导出 Markdown
+            </button>
+            <button type="button" role="menuitem" onClick={run(() => onExport("json"))}>
+              导出 JSON
+            </button>
+            <button type="button" role="menuitem" onClick={run(() => onExport("html"))}>
+              导出 HTML
+            </button>
+          </>
+        )}
         {/* 在回收站里时，「恢复」必须排在「彻底删除」前面：它是这一步更常用的选择，
             而销毁是不可撤销的。顺序本身就在防止误点。 */}
         {supportsTrash && trash && (

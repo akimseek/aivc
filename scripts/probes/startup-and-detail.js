@@ -24,11 +24,18 @@
   const clean = (element) => p.clean(element.textContent ?? "");
   const buttons = (root = document) =>
     [...root.querySelectorAll("button")].map((item) => clean(item));
-  const clickText = (text, root = document) => {
-    const found = [...root.querySelectorAll("button")].find((item) => clean(item) === text);
-    if (found) found.click();
-    return Boolean(found);
-  };
+
+  /**
+   * 标签栏动作区的「消息与分支」按钮（`features/workspace/tab-bar.tsx`）。
+   *
+   * **不能按文本精确匹配**：这颗按钮里除了 `<span>消息与分支</span>` 还挂着一颗条数
+   * 徽章，选中会话后 `textContent` 是「消息与分支0」这种带数字的形式，精确相等永远
+   * 匹配不到（`buttons()` 那套整页文本在它身上会给出假 FAIL）。按类名 + 前缀定位。
+   */
+  const messagesAction = () =>
+    [...document.querySelectorAll(".tab-bar-action")].find((item) =>
+      clean(item).startsWith("消息与分支")
+    );
 
   try {
     await p.waitForTargets();
@@ -99,11 +106,13 @@
     for (let index = 0; index < 20 && document.querySelectorAll(".sidebar .rows .session-card").length === 0; index += 1) {
       await p.sleep(500);
     }
+    const messagesBefore = messagesAction();
     out.loaded = {
       rowCount: document.querySelectorAll(".sidebar .rows .session-card").length,
       sessionHead: Boolean(document.querySelector(".history-head")),
       rowActive: document.querySelectorAll(".sidebar .rows .session-card.on").length,
-      detailBefore: buttons().includes("消息与分支")
+      detailBefore: Boolean(messagesBefore),
+      detailBeforeDisabled: messagesBefore?.disabled ?? null
     };
     check(
       "选了目标之后会话列表**确实装进了内容**（否则下面的断言没有意义）",
@@ -116,9 +125,9 @@
       JSON.stringify(out.loaded)
     );
     check(
-      "没有选中任何会话时**不显示「消息与分支」**（没有可查看的对象）",
-      !out.loaded.detailBefore,
-      `detail=${out.loaded.detailBefore}`
+      "没有选中任何会话时「消息与分支」**在但被禁用**（新 UI 用禁用表达「没有可查看的对象」，按钮不再消失）",
+      out.loaded.detailBefore && out.loaded.detailBeforeDisabled === true,
+      `present=${out.loaded.detailBefore} disabled=${out.loaded.detailBeforeDisabled}`
     );
 
     // ── 4. 那个动作条不该再出现自造的按钮 ────────────────
@@ -145,10 +154,12 @@
       await p.sleep(500);
     }
     await p.sleep(2500);
+    const messagesAfter = messagesAction();
     out.afterOpen = {
       xterm: Boolean(document.querySelector(".xterm")),
       sessionHead: Boolean(document.querySelector(".history-head")),
-      detail: buttons().includes("消息与分支")
+      detail: Boolean(messagesAfter),
+      detailDisabled: messagesAfter?.disabled ?? null
     };
     check(
       "双击会话行进入了终端（正文不再渲染，`history-head` 消失）",
@@ -156,8 +167,8 @@
       JSON.stringify(out.afterOpen)
     );
     check(
-      "**进入终端后仍然有「消息与分支」按钮**（此前详情入口随正文一起消失，于是到不了「从此处分支」）",
-      out.afterOpen.detail,
+      "**进入终端后仍然有「消息与分支」按钮，且可用**（此前详情入口随正文一起消失，于是到不了「从此处分支」）",
+      out.afterOpen.detail && out.afterOpen.detailDisabled === false,
       JSON.stringify(out.afterOpen)
     );
 
@@ -171,8 +182,14 @@
       !dialog(),
       String(Boolean(dialog()))
     );
-    const clicked = clickText("消息与分支");
-    check("点到了「消息与分支」按钮", clicked, String(clicked));
+    const action = messagesAction();
+    const clicked = Boolean(action && !action.disabled);
+    if (clicked) action.click();
+    check(
+      "点到了「消息与分支」按钮（按钮存在且可用）",
+      clicked,
+      `present=${Boolean(action)} disabled=${action?.disabled ?? null}`
+    );
     let opened = false;
     for (let index = 0; index < 30; index += 1) {
       await p.sleep(400);

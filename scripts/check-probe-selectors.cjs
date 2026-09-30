@@ -33,8 +33,19 @@
  *
  * 剩下的再与源码类名比对，仍不存在的才报——最后还有一层白名单（见 `ALLOW`）。
  *
+ * # 两个已知边界（写在文件头，不装作没有）
+ *
+ * 1. **两字符的类名扫不到**：正则是 `{2,}`（三字符起），因此状态类 `.on`
+ *    （`session-card.on` / `tab-pill.on`）这类**不在守卫范围内**。改它们时不会被拦，
+ *    只能靠 review 与人眼；要收紧就调正则下限，代价是一批 `.rs` / 变量名误报。
+ * 2. **路径豁免必须是写死的**：不能用「仓库里是否存在同名条目」来判断——
+ *    `.toolchain/` 是 gitignore 的，新克隆的机器上没有它，于是同一条提交会时红时绿。
+ *    这类路径列在 `PATH_TOKENS` 里。
+ *
  * 类名来源：`ui/src/**` 里 `className="…"`、`className={…}`（含模板与三元的字符串
  * 字面量）、`panelClassName="…"` 与 `.css` 里的选择器。
+ * **`*.test.tsx` / `*.test.ts` 跳过**：测试里的 `className` 是夹具，它证明不了界面上
+ * 真有这个类名，算进来会让「只在测试里存在的类名」把失效锚点兜住。
  *
  * 用法：
  *   node scripts/check-probe-selectors.cjs        # 有命中即 exit 1
@@ -136,6 +147,8 @@ function collectSourceClasses() {
   };
 
   for (const file of walk(path.join(root, "ui", "src"), [".tsx", ".ts", ".css"])) {
+    // 测试文件不算「源码声明」：那里的 `className` 是夹具（理由见文件头）。
+    if (file.includes(".test.")) continue;
     const text = fs.readFileSync(file, "utf8");
     const where = rel(file);
 
@@ -160,6 +173,16 @@ const EXT_SKIP = new Set([
   "ps1", "js", "cjs", "mjs", "ts", "tsx", "json", "png", "exe", "html",
   "css", "md", "txt", "rs", "toml", "yml", "yaml", "lock"
 ]);
+
+/**
+ * 这些是**路径**，不是类名（脚本里的 `'.toolchain'` 指的是仓库根那个目录）。
+ *
+ * 判据必须写死在仓库里：原先靠「仓库根下真有这个条目」豁免，于是**同一条提交**
+ * 在装了工具链的机器上绿、在删掉 `.toolchain/` 或刚克隆的机器上红——
+ * 它是 gitignore 的，`verify.ps1` / `cargo.ps1` 在没有它时会回退全局 cargo。
+ * 门禁的结论只允许取决于仓库内容，因此改成显式列出。
+ */
+const PATH_TOKENS = new Set(["toolchain"]);
 
 /**
  * 把注释抹成空白，保留长度（这样行号仍然准确）。
@@ -215,12 +238,6 @@ function collectScriptRefs() {
   const files = [
     ...walk(path.join(root, "scripts"), [".ps1", ".js", ".cjs"])
   ].filter((file) => path.resolve(file) !== path.resolve(__filename));
-  // 仓库根下真实存在的条目（`.toolchain`）：写成 `.foo` 时那是路径，不是类名。
-  const pathTokens = new Set(
-    fs.readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() || entry.isFile())
-      .map((entry) => entry.name.replace(/^\./, ""))
-  );
 
   for (const file of files) {
     const raw = fs.readFileSync(file, "utf8");
@@ -238,8 +255,8 @@ function collectScriptRefs() {
       // 路径（`ui/dist/index.html`、`scripts\cargo.ps1`）与扩展名
       if (prev === "/" || prev === "\\") continue;
       if (EXT_SKIP.has(name)) continue;
-      // 仓库里真实存在的目录/文件名（`.toolchain`）是路径，不是类名。
-      if (pathTokens.has(name)) continue;
+      // 显式列出的路径（`.toolchain`）是目录名，不是类名（理由见 PATH_TOKENS）。
+      if (PATH_TOKENS.has(name)) continue;
       // 行号：拿 `\n` 出现次数，够用且不必再扫一遍。
       const line = text.slice(0, start).split("\n").length;
       const entry = `${where}:${line}`;

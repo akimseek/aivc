@@ -27,13 +27,18 @@
     out.checks.push({ name, ok: Boolean(ok), detail });
   };
 
-  const clickText = (root, text) => {
-    const found = [...root.querySelectorAll("button")].find(
-      (item) => (item.textContent || "").trim() === text
+  /**
+   * 标签栏动作区的「消息与分支」按钮（`features/workspace/tab-bar.tsx`）。
+   *
+   * **不能按整页文本精确匹配**：这颗按钮里除了 `<span>消息与分支</span>` 还挂着一颗
+   * 条数徽章，选中会话之后 `textContent` 变成「消息与分支0」这种带数字的形式，
+   * 精确相等永远匹配不到。按类名 + 前缀定位，且把范围收在标签栏里
+   * （会话卡片上另有一颗同名的动作按钮，整页找会点错）。
+   */
+  const messagesAction = () =>
+    [...document.querySelectorAll(".tab-bar-action")].find((item) =>
+      (item.textContent || "").trim().startsWith("消息与分支")
     );
-    if (found) found.click();
-    return Boolean(found);
-  };
 
   // ── 前置：选中目标（让依赖目标的按钮可用） ──────────────
   const targets = await safe("targets", () => p.invoke("codex:list-targets", {}));
@@ -74,17 +79,19 @@
     if (targetSelect && option) await setSelect(targetSelect, option.value);
 
     // 等会话行真的出现：不等的话下一步点的是空列表，表现成「详情功能坏了」。
-    for (let index = 0; index < 24 && document.querySelectorAll(".sidebar .rows .row").length === 0; index += 1) {
-      await p.sleep(500);
-    }
-    out.rowCount = document.querySelectorAll(".sidebar .rows .row").length;
+    //
+    // 锚点是 `.session-card` 而不是 `.row`：主列表默认渲染的是会话卡片
+    // （`features/sessions/session-card.tsx`），`.row` 只有收藏夹与全局搜索里才有，
+    // 照旧口径等它**永远是 0**——白等 12 秒，还让下面「打开详情」点不到东西。
+    // 用有界等待（命中即返回），不再写死 24×500ms 的空转。
+    await p.waitFor(".sidebar .rows .session-card");
+    out.rowCount = document.querySelectorAll(".sidebar .rows .session-card").length;
   });
 
   // ── 1. 活动栏里有「工作台」 ────────────────────────────
   //
   // 批次一之后一级去处从侧栏 chips 搬到了活动栏（`.activity-item`，
   // `shell/activity-bar.tsx`），旧探针找的 `.pane-nav .chip` 不存在了。
-  const sidebar = document.querySelector(".sidebar");
   const activityLabels = [...document.querySelectorAll(".activity-top .activity-item")].map(
     (item) => item.getAttribute("aria-label") || ""
   );
@@ -123,18 +130,29 @@
   });
 
   // ── 3. 侧栏折叠 / 展开 ─────────────────────────────────
-  const beforeWidth = sidebar ? sidebar.getBoundingClientRect().width : 0;
+  //
+  // 宽度必须**现查现量**：侧栏会换元素——切到工作台是整块替换，切回来是重新挂载，
+  // 在切页之前抓的引用到这里已经**脱离文档**，`getBoundingClientRect()` 一律返回 0。
+  // 旧写法抓了一次引用量「折叠前」，得到的 0px 让这一条变成假 FAIL（实测打到过）。
+  const sidebarWidth = () =>
+    (document.querySelector(".sidebar") || { getBoundingClientRect: () => ({ width: 0 }) })
+      .getBoundingClientRect().width;
+  const beforeWidth = sidebarWidth();
   await safe("collapse", async () => {
     const button = document.querySelector('button[aria-label="折叠侧栏"]');
     if (button) button.click();
     await p.sleep(600);
   });
-  const collapsedWidth = (document.querySelector(".sidebar") || { getBoundingClientRect: () => ({ width: 0 }) })
-    .getBoundingClientRect().width;
+  const collapsedWidth = sidebarWidth();
+  // 折叠的设计是 `.sidebar.hidden`：**宽度归零**、节点留在流内占住那一列
+  // （`app.css:307`，理由在 `app.tsx` 的 `sidebar=` 分支——`display:none` 会让主区
+  // 掉进第 2 列）。因此旧口径里的「宽度 > 0」在这个设计下**永远假 FAIL**；
+  // 改成「折叠态确实挂上了 + 宽度严格变窄」，两个信号都来自当前 DOM。
+  const collapsedMarked = Boolean(document.querySelector(".sidebar.hidden"));
   check(
     "侧栏折叠后变窄",
-    collapsedWidth < beforeWidth && collapsedWidth > 0,
-    `折叠前=${Math.round(beforeWidth)}px 折叠后=${Math.round(collapsedWidth)}px`
+    collapsedMarked && collapsedWidth < beforeWidth,
+    `折叠前=${Math.round(beforeWidth)}px 折叠后=${Math.round(collapsedWidth)}px 折叠态=${collapsedMarked}`
   );
 
   await safe("expand", async () => {
@@ -147,8 +165,7 @@
     if (item) item.click();
     await p.sleep(800);
   });
-  const expandedWidth = (document.querySelector(".sidebar") || { getBoundingClientRect: () => ({ width: 0 }) })
-    .getBoundingClientRect().width;
+  const expandedWidth = sidebarWidth();
   check(
     "侧栏能再展开",
     expandedWidth > collapsedWidth,
@@ -175,8 +192,10 @@
   out.historyHeadPresent = Boolean(document.querySelector(".history-head"));
 
   await safe("detailButton", async () => {
-    if (!document.querySelector(".messages-panel")) {
-      clickText(document.body, "消息与分支");
+    // 还没打开时才点：重复点会先关再开，白挨一次闪烁。
+    const action = messagesAction();
+    if (!document.querySelector(".messages-panel") && action) {
+      action.click();
     }
     await p.sleep(2000);
   });

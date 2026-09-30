@@ -1173,6 +1173,32 @@ mod tests {
         assert!(opened["lastOpenedAt"].is_string());
     }
 
+    /// 端到端（命令名 → 路由 → 线上形状）：`gateway:query-logs` 的分页是**可选**的，
+    /// 两种形状都要从这条路由上原样出来。
+    ///
+    /// 它是本批唯一改了**语义**的 Rust 命令，因此形状在路由这一层也要钉一次：
+    /// 命令名与筛选参数名都没变，加的是可选的 `page`/`pageSize`；不带它们时
+    /// 调用方拿到的必须还是裸数组（界面上的「最近请求」走的就是那条路）。
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dispatches_the_gateway_log_query_with_and_without_paging() {
+        let (router, _dir) = router().await;
+
+        let all = router
+            .dispatch("gateway:query-logs", json!({}))
+            .await
+            .expect("all");
+        assert!(all.is_array(), "不带分页参数时仍是裸数组：{all}");
+
+        let page = router
+            .dispatch("gateway:query-logs", json!({ "page": 1, "pageSize": 20 }))
+            .await
+            .expect("page");
+        assert_eq!(page["total"], 0);
+        assert_eq!(page["page"], 1);
+        assert_eq!(page["pageSize"], 20);
+        assert!(page["entries"].as_array().expect("数组").is_empty());
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn dispatches_target_listing() {
         let (router, _dir) = router().await;

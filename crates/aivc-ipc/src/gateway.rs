@@ -299,18 +299,50 @@ impl GatewayLogs {
 
     /// 查询可清理的日志条目。
     ///
+    /// # 分页是可选的，且**要么两个参数都给、要么都不给**
+    ///
+    /// - 都不给：返回**全量数组**——与加这组参数之前完全一致，界面上「最近请求」那类
+    ///   旧调用（只带筛选条件）拿到的形状不变；
+    /// - 都给：返回 `{ entries, total, page, pageSize }`
+    ///   （[`aivc_infra::db::LogEntryPage`] 的线上形状）。
+    ///
+    /// 只给一个时报「参数无效」而不是**静默忽略**：这条命令此前就吃过一次亏——
+    /// 前端传的是 `{page, pageSize}`，而这里读的是另一套筛选参数名，于是两个参数被吃掉，
+    /// 调用方以为自己在分页，实际每次都拿全量。
+    ///
+    /// 页码从 1 起；每页上限由仓储钳制（[`aivc_infra::db::LOGS_PAGE_SIZE_MAX`]），
+    /// 命令面不重复实现。
+    ///
     /// # Errors
     ///
-    /// 数据库读取失败。
+    /// 分页参数非法或数据库读取失败。
     pub async fn query_logs(ctx: &ProviderContext, args: &Value) -> Result<Value> {
-        let entries = ctx
+        let filter = filter(args);
+        let page = args.get("page");
+        let page_size = args.get("pageSize");
+        if page.is_none() && page_size.is_none() {
+            let entries = ctx.gateway_request_log().cleanup_entries(&filter).await?;
+            // `LogEntry` 是仓储的读取模型，未实现 Serialize。这里显式映射成线上形状：
+            // 顺带把字段名固定下来，避免以后有人给它加 derive 就悄悄改变了契约。
+            return Ok(Value::Array(entries.iter().map(log_entry_value).collect()));
+        }
+
+        let page = require_positive_integer(page, "page")?;
+        let page_size = require_positive_integer(page_size, "pageSize")?;
+        // 饱和转换而不是 `as u32`：超大页码截断后会变成一个**很小的页码**，
+        // 于是「翻过头」变成「悄悄回到前面某页」——那是一份看起来正常的错数据。
+        let page = u32::try_from(page).unwrap_or(u32::MAX);
+        let page_size = u32::try_from(page_size).unwrap_or(u32::MAX);
+        let result = ctx
             .gateway_request_log()
-            .cleanup_entries(&filter(args))
+            .cleanup_entries_page(&filter, page, page_size)
             .await?;
-        // `LogEntry` 是仓储的读取模型，未实现 Serialize。这里显式映射成线上形状：
-        // 顺带把字段名固定下来，避免以后有人给它加 derive 就悄悄改变了契约。
-        let items: Vec<Value> = entries.iter().map(log_entry_value).collect();
-        Ok(Value::Array(items))
+        Ok(serde_json::json!({
+            "entries": result.entries.iter().map(log_entry_value).collect::<Vec<Value>>(),
+            "total": result.total,
+            "page": result.page,
+            "pageSize": result.page_size,
+        }))
     }
 
     /// 删除指定请求编号的日志。
@@ -675,6 +707,7 @@ mod tests {
     use aivc_core::target::Platform;
     use aivc_infra::config::{AppPaths, SettingsStore};
     use aivc_infra::db::Db;
+    use aivc_infra::db::LOGS_PAGE_SIZE_MAX;
     use aivc_infra::wsl::{LocalBashLauncher, WslAdapter, WslConfig};
     use aivc_provider::ProviderRepositories;
     use serde_json::json;
@@ -855,6 +888,105 @@ mod tests {
                 .expect("clear"),
             0
         );
+    }
+
+    /// 造一条请求记录：分页测试要真的落库，才测得出生效的 `total`。
+    fn log_record(id: &str, created_at: &str) -> aivc_core::gateway::GatewayRequestRecord {
+        aivc_core::gateway::GatewayRequestRecord {
+            request_id: aivc_core::id::RequestId::from(id),
+            route_id: "route-1".to_owned(),
+            provider_id: ProviderId::Codex,
+            vendor_id: VendorId::from("v1"),
+            method: "POST".to_owned(),
+            path: "/v1/responses".to_owned(),
+            model: None,
+            upstream_status: Some(200),
+            outcome: GatewayOutcome::Ok,
+            duration_ms: 10,
+            bytes_in: 1,
+            bytes_out: 2,
+            retry_count: 0,
+            switched: false,
+            error_code: None,
+            error_message: None,
+            usage: None,
+            created_at: Timestamp::from_raw(created_at),
+        }
+    }
+
+    /// 分页：首页 / 末页 / 越界页的条数与 `total`，以及**不带参数时仍是裸数组**。
+    ///
+    /// 最后一条是本任务的关键约束：旧调用（界面上的「最近请求」）只带筛选条件，
+    /// 它拿到的必须是和改动之前一模一样的形状。
+    #[tokio::test(flavor = "multi_thread")]
+    async fn logs_paging_returns_a_page_with_the_total() {
+        let (ctx, _dir) = context().await;
+        for index in 0..5 {
+            assert!(
+                ctx.gateway_request_log()
+                    .record(&log_record(
+                        &format!("r{index}"),
+                        &format!("2026-06-{:02}T00:00:00.000Z", index + 1)
+                    ))
+                    .await
+            );
+        }
+
+        let first = GatewayLogs::query_logs(&ctx, &json!({ "page": 1, "pageSize": 2 }))
+            .await
+            .expect("page 1");
+        assert_eq!(first["total"], 5, "total 是匹配总数，不是本页条数");
+        assert_eq!(first["page"], 1);
+        assert_eq!(first["pageSize"], 2);
+        let entries = first["entries"].as_array().expect("数组");
+        assert_eq!(entries.len(), 2);
+        // 排序与不分页那条路一致：最新的在最前。
+        assert_eq!(entries[0]["requestId"], "r4");
+
+        let last = GatewayLogs::query_logs(&ctx, &json!({ "page": 3, "pageSize": 2 }))
+            .await
+            .expect("page 3");
+        assert_eq!(last["entries"].as_array().expect("数组").len(), 1);
+
+        // 越界页：空数组 + 原样的总数——界面据此判断是「翻过头了」而不是「没数据」。
+        let beyond = GatewayLogs::query_logs(&ctx, &json!({ "page": 9, "pageSize": 2 }))
+            .await
+            .expect("page 9");
+        assert!(beyond["entries"].as_array().expect("数组").is_empty());
+        assert_eq!(beyond["total"], 5);
+
+        // 不带分页参数：裸数组（旧调用形状不变），且是全量。
+        let all = GatewayLogs::query_logs(&ctx, &json!({}))
+            .await
+            .expect("all");
+        assert_eq!(all.as_array().expect("数组").len(), 5);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn logs_paging_requires_both_parameters() {
+        // 只给一个必须**报错**，不能静默忽略：被吃掉的参数会让调用方以为自己在分页
+        // （这条命令就被这么坑过一次）。两个都不给才是「不分页」。
+        let (ctx, _dir) = context().await;
+        let error = GatewayLogs::query_logs(&ctx, &json!({ "page": 1 }))
+            .await
+            .expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "参数无效：pageSize");
+
+        let error = GatewayLogs::query_logs(&ctx, &json!({ "pageSize": 10 }))
+            .await
+            .expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "参数无效：page");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn logs_paging_clamps_the_page_size() {
+        // 每页上限由仓储钳制（与异常诊断同一条规则），命令面不重复实现，但行为要可观测。
+        let (ctx, _dir) = context().await;
+        let value = GatewayLogs::query_logs(&ctx, &json!({ "page": 1, "pageSize": 500 }))
+            .await
+            .expect("page");
+        assert!(value["pageSize"].as_u64().expect("数字") <= u64::from(LOGS_PAGE_SIZE_MAX));
+        assert!(value["entries"].is_array());
     }
 
     #[tokio::test(flavor = "multi_thread")]

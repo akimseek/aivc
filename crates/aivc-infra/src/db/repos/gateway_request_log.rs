@@ -41,6 +41,13 @@ use crate::db::migrations::sqlite_error;
 /// 工作台展示的近期异常条数（固定小窗口，避免侧栏查询变成全表扫描）。
 pub const RECENT_FAILURE_LIMIT: u32 = 3;
 
+/// 日志分页每页上限。
+///
+/// 与异常诊断同一个数字（现网 `gateway:query-logs` 也是 `Math.min(50, …)`）：
+/// 两处都是「一屏扫一眼」的量级。定义在仓储而不是命令面，是因为**钳制就发生在这里**——
+/// 常量跟着使用它的那处走，改一处不会漏掉另一处。
+pub const LOGS_PAGE_SIZE_MAX: u32 = 50;
+
 /// 已删除供应商在报表中的占位名。
 pub const DELETED_VENDOR_LABEL: &str = "已删除供应商";
 
@@ -82,6 +89,22 @@ pub struct LogEntry {
     pub method: Option<String>,
     /// 请求路径。
     pub path: Option<String>,
+}
+
+/// 清理候选项的一页。
+///
+/// 形状与 [`aivc_core::gateway_usage::FailureDiagnosticsPage`] 一致（条目 + 总数 +
+/// 页码 + 每页条数），只有条目字段名不同：那边叫 `items`，这里叫 `entries`。
+#[derive(Debug, Clone, PartialEq)]
+pub struct LogEntryPage {
+    /// 本页条目（按时间倒序）。
+    pub entries: Vec<LogEntry>,
+    /// 满足筛选条件的总数（**不是**本页条数）。
+    pub total: u64,
+    /// 当前页码（1 起，已钳制）。
+    pub page: u32,
+    /// 每页条数（已钳制到 [`LOGS_PAGE_SIZE_MAX`] 内）。
+    pub page_size: u32,
 }
 
 /// 网关请求日志仓储。
@@ -151,6 +174,70 @@ impl GatewayRequestLogRepo {
                     entries.push(row.map_err(sqlite_error)?);
                 }
                 Ok(entries)
+            })
+            .await
+    }
+
+    /// 查询清理候选记录（按时间倒序），**分页**。
+    ///
+    /// 与 [`Self::cleanup_entries`] 共用同一份 WHERE（[`build_filter`]）与同一条
+    /// `ORDER BY created_at DESC`，差别只有 `LIMIT/OFFSET`——分页不该顺带改变
+    /// 「筛出什么、按什么排序」。返回的 `page`/`page_size` 是**钳制之后**的值，
+    /// 调用方据此判断真实拿到的范围。
+    ///
+    /// 计数与取页在**同一次读连接**里完成：分成两次查时，两次之间新落库的记录会让
+    /// 「总数」与当前页对不上（界面上就是页码算出来多一页）。
+    pub async fn cleanup_entries_page(
+        &self,
+        filter: &LogFilter,
+        page: u32,
+        page_size: u32,
+    ) -> Result<LogEntryPage> {
+        let safe_page = page.max(1);
+        let safe_size = page_size.clamp(1, LOGS_PAGE_SIZE_MAX);
+        let filter = filter.clone();
+        self.db
+            .read(move |connection| {
+                let (where_clause, params) = build_filter(&filter);
+                let total: i64 = connection
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM gateway_request_logs WHERE {where_clause}"),
+                        rusqlite::params_from_iter(params.iter()),
+                        |row| row.get(0),
+                    )
+                    .map_err(sqlite_error)?;
+
+                let mut values = params;
+                // 偏移在 `i64` 里算：页码大到离谱时结果必然是空页（正确），
+                // 但先转 `u32` 会在超大页码上截断成一个**很小**的偏移，给出错误的页。
+                values.push(i64::from(safe_size).to_string());
+                values.push((i64::from(safe_page - 1) * i64::from(safe_size)).to_string());
+                let mut statement = connection
+                    .prepare(&format!(
+                        "SELECT request_id, provider_id, vendor_id, method, path, upstream_status,
+                                outcome, duration_ms, error_code, error_message, created_at
+                         FROM gateway_request_logs
+                         WHERE {where_clause}
+                         ORDER BY created_at DESC
+                         LIMIT ?{} OFFSET ?{}",
+                        values.len() - 1,
+                        values.len()
+                    ))
+                    .map_err(sqlite_error)?;
+                let rows = statement
+                    .query_map(rusqlite::params_from_iter(values.iter()), row_to_log_entry)
+                    .map_err(sqlite_error)?;
+
+                let mut entries = Vec::new();
+                for row in rows {
+                    entries.push(row.map_err(sqlite_error)?);
+                }
+                Ok(LogEntryPage {
+                    entries,
+                    total: u64::try_from(total).unwrap_or(0),
+                    page: safe_page,
+                    page_size: safe_size,
+                })
             })
             .await
     }
@@ -1025,6 +1112,90 @@ mod tests {
             .expect("delete");
         assert_eq!(removed, 1);
         assert_eq!(repo.count(&LogFilter::default()).await.expect("count"), 5);
+    }
+
+    #[tokio::test]
+    async fn cleanup_entries_page_paginates_in_sql() {
+        let (_dir, repo) = repo().await;
+        for index in 0..7 {
+            let mut entry = record(
+                &format!("r{index}"),
+                GatewayOutcome::Ok,
+                &format!("2026-06-{:02}T00:00:00.000Z", index + 1),
+            );
+            if index >= 5 {
+                entry.outcome = GatewayOutcome::Error;
+            }
+            repo.record(&entry).await;
+        }
+
+        // 首页：满页；`total` 是**匹配总数**而不是本页条数（分页控件据此算页数）。
+        let first = repo
+            .cleanup_entries_page(&LogFilter::default(), 1, 3)
+            .await
+            .expect("page 1");
+        assert_eq!(first.entries.len(), 3);
+        assert_eq!(first.total, 7);
+        assert_eq!(first.page, 1);
+        assert_eq!(first.page_size, 3);
+        // 排序与不分页那条路一致：最新的在最前。
+        assert_eq!(first.entries[0].request_id, "r6");
+
+        // 末页：只剩下最后一条。
+        let last = repo
+            .cleanup_entries_page(&LogFilter::default(), 3, 3)
+            .await
+            .expect("page 3");
+        assert_eq!(last.entries.len(), 1);
+        assert_eq!(last.entries[0].request_id, "r0");
+
+        // 越界页：空页，但 `total` 照旧——界面据此知道「只是翻过头了」而不是「没有数据」。
+        let beyond = repo
+            .cleanup_entries_page(&LogFilter::default(), 9, 3)
+            .await
+            .expect("page 9");
+        assert!(beyond.entries.is_empty());
+        assert_eq!(beyond.total, 7);
+
+        // 超大页码：偏移在 `i64` 里算，不会截断成一个很小的偏移而给出**错误的一页**。
+        let huge = repo
+            .cleanup_entries_page(&LogFilter::default(), u32::MAX, LOGS_PAGE_SIZE_MAX)
+            .await
+            .expect("huge");
+        assert!(huge.entries.is_empty());
+        assert_eq!(huge.total, 7);
+
+        // 筛选在分页**之前**生效：总数跟着筛选走。
+        let errors = repo
+            .cleanup_entries_page(
+                &LogFilter {
+                    outcome: Some(GatewayOutcome::Error),
+                    ..LogFilter::default()
+                },
+                1,
+                3,
+            )
+            .await
+            .expect("errors");
+        assert_eq!(errors.total, 2);
+        assert_eq!(errors.entries.len(), 2);
+
+        // 页码与每页条数都被钳制（与异常诊断同一处规则）。
+        let clamped = repo
+            .cleanup_entries_page(&LogFilter::default(), 0, 999)
+            .await
+            .expect("clamped");
+        assert_eq!(clamped.page, 1);
+        assert_eq!(clamped.page_size, LOGS_PAGE_SIZE_MAX);
+
+        // 不带分页的那条路仍是全量（旧调用不受影响）。
+        assert_eq!(
+            repo.cleanup_entries(&LogFilter::default())
+                .await
+                .expect("all")
+                .len(),
+            7
+        );
     }
 
     #[tokio::test]

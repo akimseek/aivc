@@ -32,7 +32,8 @@ pub use migrations::{MIGRATIONS, Migration, applied_versions, apply, latest_vers
 pub use repos::failover_rule::FailoverRuleRepo;
 pub use repos::gateway_health::GatewayHealthRepo;
 pub use repos::gateway_request_log::{
-    GatewayRequestLogRepo, LogEntry, LogFilter, RECENT_FAILURE_LIMIT,
+    GatewayRequestLogRepo, LOGS_PAGE_SIZE_MAX, LogEntry, LogEntryPage, LogFilter,
+    RECENT_FAILURE_LIMIT,
 };
 pub use repos::message_index::{MessageIndexEntry, MessageIndexRepo, SessionIndexKey};
 pub use repos::preset::WorkspacePresetRepo;

@@ -121,4 +121,52 @@ describe("Popover", () => {
 
     expect(view.getByRole("dialog").getAttribute("aria-label")).toBe("附件菜单");
   });
+
+  it("锚滚动或被窗口缩放带走后，浮层跟着挪回锚边（不脱锚）", () => {
+    // 浮层用的是**视口坐标**。不跟随的话，消息列表一滚，附件菜单就悬在半空——
+    // 还在屏幕上，却已经指不到触发它的那个按钮。
+    const anchor = createRef<HTMLButtonElement>();
+    const view = render(
+      <div>
+        <button ref={anchor}>锚</button>
+        <Popover open onClose={() => undefined} anchorRef={anchor}>
+          内容
+        </Popover>
+      </div>
+    );
+    const panel = view.getByRole("dialog");
+    /** jsdom 里所有 rect 都是 0，只能自己给几何。 */
+    const rect = (over: { left?: number; top?: number; bottom?: number; width?: number; height?: number }) =>
+      ({
+        left: 0,
+        top: 0,
+        bottom: 0,
+        right: 0,
+        width: 0,
+        height: 0,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+        ...over
+      }) as DOMRect;
+    const anchorRect = vi
+      .spyOn(anchor.current!, "getBoundingClientRect")
+      .mockReturnValue(rect({ left: 100, top: 100, bottom: 130, width: 80, height: 30 }));
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue(rect({ width: 200, height: 100 }));
+
+    // 滚动一回：浮层落在锚的下方（`bottom + 6`）、左对齐。
+    fireEvent.scroll(window);
+    expect(panel.style.top).toBe("136px");
+    expect(panel.style.left).toBe("100px");
+
+    // 锚被滚下去之后，浮层要跟到新的位置。
+    anchorRect.mockReturnValue(rect({ left: 100, top: 300, bottom: 330, width: 80, height: 30 }));
+    fireEvent.scroll(window);
+    expect(panel.style.top).toBe("336px");
+
+    // 窗口缩放同理（走的是同一个重算函数）。
+    anchorRect.mockReturnValue(rect({ left: 100, top: 100, bottom: 130, width: 80, height: 30 }));
+    fireEvent.resize(window);
+    expect(panel.style.top).toBe("136px");
+  });
 });

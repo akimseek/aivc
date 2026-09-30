@@ -622,16 +622,27 @@ describe("VendorsPanel：启用与禁用的区别必须是说得出的话", () =
 
 describe("VendorsPanel：工具区块在表下方，按需展开", () => {  it("「测连接（列模型）」展开测连接卡片，再点一次收起", async () => {
     const { view, byText } = setup({ existing: [vendor()] });
-    await waitFor(() => expect(byText("测连接（列模型）")).toBeTruthy());
+    /*
+      等的是**可点**的那一份，而不是「按钮在不在」：这个按钮在取数落地之前就已经
+      渲染出来了（只是 `disabled`），而点一个 `disabled` 的按钮是**空操作**
+      （浏览器不派发 click）。取数一旦落在点击之后，这次点击就什么都没做，
+      随后就会去等一个永远不会出现的「查询模型」——这正是此前并发下的偶发失败。
+      `disabled` 解除 ⇒ 供应商列表已落地 ⇒ 探活卡片会带出「查询模型」。
+    */
+    const probe = await waitFor(() => {
+      const found = byText("测连接（列模型）");
+      if (!found || found.disabled) throw new Error("「测连接」按钮还不能点");
+      return found;
+    });
     expect(view.container.textContent).not.toContain("查询模型");
 
     await act(async () => {
-      byText("测连接（列模型）")!.click();
+      probe.click();
     });
     await waitFor(() => expect(byText("查询模型")).toBeTruthy());
 
     await act(async () => {
-      byText("测连接（列模型）")!.click();
+      probe.click();
     });
     expect(byText("查询模型")).toBeFalsy();
   });

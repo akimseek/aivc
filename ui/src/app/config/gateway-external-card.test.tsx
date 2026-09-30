@@ -273,6 +273,44 @@ describe("GatewayExternalCard", () => {
     expect(view.container.textContent).not.toContain("sk-gw-abc123");
   });
 
+  it("**轮换令牌在途时按钮禁用**：每轮换一次旧令牌立即失效，连点会让明文与生效的对不上", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls = fakeRuntime({
+      "gateway:rotate-external-api-token": async () => {
+        await gate;
+        return { token: "sk-gw-once" };
+      }
+    });
+    const view = render(
+      <GatewayExternalCard
+        baseUrl="http://127.0.0.1:8787"
+        status={STATUS}
+        onStatusChange={vi.fn()}
+        onError={vi.fn()}
+      />
+    );
+    const button = findButton(view.container, "轮换令牌")!;
+    await act(async () => {
+      button.click();
+    });
+    await waitFor(() => expect(button.disabled).toBe(true));
+    // 第二下点不动（`disabled` 的按钮不会派发 click）。
+    button.click();
+    expect(
+      calls.filter((item) => item.command === "gateway:rotate-external-api-token")
+    ).toHaveLength(1);
+
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await waitFor(() => expect(button.disabled).toBe(false));
+    expect(view.container.textContent).toContain("sk-gw-once");
+  });
+
   it("没有令牌时说清「现在连不上」（半配置状态）", () => {
     fakeRuntime({});
     const view = render(

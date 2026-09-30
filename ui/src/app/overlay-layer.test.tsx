@@ -14,7 +14,10 @@ import { AppOverlays, type OverlaysActions, type OverlaysState } from "./overlay
  * ——而后端会一直等一个回答（它既不超时也不自己退出），用户只能再点一次关闭按钮。
  * 排到最后就等于「它永远在最上面」，这正是它该有的位置。
  *
- * 一条断言就够：把设置中心与退出确认框同时挂上，看最后一个浮层是谁。
+ * 「设置会话」是**同形态的第二处**：它的入口就在设置中心的环境页里，而它此前也排在
+ * 设置中心之前——从那一页点开之后什么都看不见。两处各钉一条断言。
+ *
+ * 每个用例一条断言就够：把两层同时挂上，看最后一个浮层是谁。
  */
 
 /** 全部动作都是必填的（见 `OverlaysActions` 的说明）——这里一次性给一组桩。 */
@@ -140,5 +143,22 @@ describe("AppOverlays 的排布顺序", () => {
     expect(layers[0]!.className).toContain("settings-overlay");
     expect(layers[layers.length - 1]!.className).toContain("dialog-overlay");
     expect(view.getByText("退出 AI 可视化控制台")).toBeTruthy();
+  });
+
+  it("「设置会话」排在设置中心**之后**：从环境页点开时不会被盖住", () => {
+    const view = renderOverlays(
+      baseState({
+        settingsOpen: true,
+        sessionSettings: { distro: "Ubuntu", path: "~/.codex" }
+      })
+    );
+
+    const layers = Array.from(
+      view.container.querySelectorAll<HTMLElement>(".settings-overlay, .dialog-overlay")
+    );
+    // 两层都在场，而且「设置会话」是最后一个——同档里 DOM 顺序就是层序。
+    expect(layers).toHaveLength(2);
+    expect(layers[0]!.className).toContain("settings-overlay");
+    expect(layers[layers.length - 1]!.querySelector(".session-settings-dialog")).toBeTruthy();
   });
 });

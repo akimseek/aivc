@@ -210,25 +210,6 @@ export function AppOverlays({
       )}
 
       {/*
-        「设置会话」：手动指定 WSL 里的 Codex 会话目录。自动探测受发行版、用户、
-        nvm/home 布局影响，探测不到时没有这个入口那台目标就等于用不了。
-      */}
-      {state.sessionSettings && (
-        <SessionSettingsDialog
-          currentPath={selectedTarget?.codexHome}
-          wslPath={state.sessionSettings.path}
-          isWsl={selectedTarget?.kind === "wsl"}
-          supportsSessionSettings
-          onChange={actions.changeSessionSettingsPath}
-          onClose={actions.closeSessionSettings}
-          onRestore={() => actions.restoreSessionSettings(state.sessionSettings!.distro)}
-          onSave={() =>
-            actions.saveSessionSettings(state.sessionSettings!.distro, state.sessionSettings!.path)
-          }
-        />
-      )}
-
-      {/*
         新会话对话框。旧平台的流程是**先定工作目录 / 标题 / 启动提示词 / CLI 参数，再打开**。
         此前这里是「点一下直接进终端」——用户报的 H2 说的就是这件事。
       */}
@@ -342,6 +323,33 @@ export function AppOverlays({
           onClose={actions.closeSettings}
           onError={actions.reportError}
           onNotify={actions.notify}
+        />
+      )}
+
+      {/*
+        「设置会话」：手动指定 WSL 里的 Codex 会话目录。自动探测受发行版、用户、
+        nvm/home 布局影响，探测不到时没有这个入口那台目标就等于用不了。
+
+        # 为什么它排在设置中心**之后**
+
+        `SettingsCenter` 的运行时环境页正是打开它的地方（`onOpenSessionSettings`），
+        而这两层同属 `--ui-z-overlay=60` 这一档：**同一档里 DOM 顺序决定谁盖住谁**。
+        它此前排在设置中心之前，于是从这里点开之后**什么都看不见**——框就压在下面
+        等着填，用户的结论只能是「按钮坏了」。排到设置中心与消息弹框之后才看得见。
+        （同形态的第一处是退出确认框，见文件末尾。）
+      */}
+      {state.sessionSettings && (
+        <SessionSettingsDialog
+          currentPath={selectedTarget?.codexHome}
+          wslPath={state.sessionSettings.path}
+          isWsl={selectedTarget?.kind === "wsl"}
+          supportsSessionSettings
+          onChange={actions.changeSessionSettingsPath}
+          onClose={actions.closeSessionSettings}
+          onRestore={() => actions.restoreSessionSettings(state.sessionSettings!.distro)}
+          onSave={() =>
+            actions.saveSessionSettings(state.sessionSettings!.distro, state.sessionSettings!.path)
+          }
         />
       )}
 

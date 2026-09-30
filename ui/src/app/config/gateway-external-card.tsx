@@ -20,7 +20,8 @@ import { SwitchPill } from "./gateway-switch-pill";
  * - `routes.rs:118` —— 路径形状就是 `/gateway/<平台>/<路由编号>/…`
  *
  * 客户端把「编号」替换成自己那条外部路由的编号，**前缀之后的路径原样转发**给上游
- * （`crates/aivc-gateway/src/server.rs:682` 的 `strip_route_prefix`）。
+ * （`crates/aivc-gateway/src/server.rs:1079` 的 `strip_route_prefix`，转发路径在
+ * `:682` 调它）。
  */
 
 /** 四个平台。顺序与侧栏/平台枚举一致，界面上的排列因此是稳定的。 */
@@ -31,7 +32,13 @@ export const EXTERNAL_PROVIDERS: readonly AiProviderId[] = [
   "qoder"
 ];
 
-const PROVIDER_LABELS: Record<AiProviderId, string> = {
+/**
+ * 平台编号 → 显示名。
+ *
+ * 导出给网关&路由页的其他卡用（故障规则表的作用域列要写「按平台 · Codex」）：
+ * 平台名只该有一份表，各卡各写一份迟早会出现同一个平台两种叫法。
+ */
+export const PROVIDER_LABELS: Record<AiProviderId, string> = {
   codex: "Codex",
   claude: "Claude",
   gemini: "Gemini",
@@ -108,6 +115,8 @@ export function GatewayExternalCard({
   const [revealedToken, setRevealedToken] = useState("");
   /** 复制成功提示：`"token"` 或平台编号。 */
   const [copied, setCopied] = useState("");
+  /** 开关的请求在途（见 `SwitchPill` 的说明：不挡第二下就会把状态又翻回去）。 */
+  const [toggling, setToggling] = useState(false);
 
   const copy = useCallback(
     async (key: string, text: string) => {
@@ -123,12 +132,17 @@ export function GatewayExternalCard({
   );
 
   const toggle = async () => {
+    // 在途时不再接第二次：`disabled` 已经挡在界面上，这里是同一件事的第二道闸。
+    if (toggling) return;
+    setToggling(true);
     try {
       const next = await api.setExternalApiEnabled(!status.enabled);
       onStatusChange(next);
       onNotify?.(next.enabled ? "外部 API 已启用。" : "外部 API 已关闭。");
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -157,6 +171,7 @@ export function GatewayExternalCard({
           on={status.enabled}
           label={status.enabled ? "外部网关已开启" : "外部网关已关闭"}
           action={status.enabled ? "关闭外部 API" : "启用外部 API"}
+          disabled={toggling}
           onClick={() => void toggle()}
         />
       }
@@ -238,7 +253,13 @@ export function GatewayExternalCard({
                   </code>
                   <span className="gateway-endpoint-auth">{item.auth}</span>
                 </div>
-                <Button small onClick={() => void copy(item.provider, item.url)}>
+                <Button
+                  small
+                  // 四行的按钮文字都是「复制」：读屏与自动化里四个同名按钮分不出谁是谁，
+                  // 因此把**平台名**放进可访问名（可见文字保持短）。
+                  aria-label={`复制 ${item.label} 端点`}
+                  onClick={() => void copy(item.provider, item.url)}
+                >
                   {copied === item.provider ? "已复制" : "复制"}
                 </Button>
               </div>

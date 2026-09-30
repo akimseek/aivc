@@ -42,21 +42,46 @@ export function GatewayPanel({
 }) {
   const [status, setStatus] = useState<GatewayPortStatus | null>(null);
   const [external, setExternal] = useState<ExternalApiStatus | null>(null);
+  /**
+   * 总开关的请求在途。
+   *
+   * 在途时第二次点击读到的是**切换前**的 `status`，于是刚改完的状态又被翻回去
+   * （后端每次都要写一遍设置）。因此把它交给 `SwitchPill` 的 `disabled`。
+   */
+  const [toggling, setToggling] = useState(false);
 
   const load = useCallback(async () => {
-    try {
-      const [port, externalStatus] = await Promise.all([
-        api.getGatewayPort(),
-        api.getExternalApiStatus()
-      ]);
-      // 假后端（外壳测试里那张按命令名给值的表）对没登记的命令回 `null`。
-      // 那种情况下保持等待态即可——真后端这两条一定给对象。
-      if (!port || !externalStatus) return;
-      setStatus(port);
-      setExternal(externalStatus);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+    // 两份状态**互不依赖**，因此不用 `Promise.all`：那样一条失败会把另一条也废掉
+    // （见下面 external 的处理）。
+    const [port, externalStatus] = await Promise.allSettled([
+      api.getGatewayPort(),
+      api.getExternalApiStatus()
+    ]);
+
+    // 端口状态是**整页的门面**（端口卡、三条阈值都靠它），读不到就真的没有页面
+    // 可渲染，只能停在等待态。假后端（外壳测试里那张按命令名给值的表）对没登记的
+    // 命令回 `null`，也走这里。
+    if (port.status === "rejected") {
+      onError(describeFailure(port.reason));
+      return;
     }
+    if (!port.value) return;
+    setStatus(port.value);
+
+    /*
+      外部状态读不到时**不能让整页一起停住**：它此前与端口状态捆在 `Promise.all`
+      里，一失败整页就永远停在「读取网关状态…」——而端口与阈值那一团明明读得到、
+      也用得上。现在退化成「关着且没有令牌」这一档继续渲染，失败本身仍然报出去
+      （否则没人知道看到的是退化值，而它看起来与真值没有区别）。
+    */
+    if (externalStatus.status === "fulfilled" && externalStatus.value) {
+      setExternal(externalStatus.value);
+      return;
+    }
+    if (externalStatus.status === "rejected") {
+      onError(describeFailure(externalStatus.reason));
+    }
+    setExternal({ enabled: false, hasToken: false });
   }, [onError]);
 
   useEffect(() => {
@@ -64,7 +89,9 @@ export function GatewayPanel({
   }, [load]);
 
   const toggleGateway = useCallback(async () => {
-    if (!status) return;
+    // 在途时不再接第二次：`disabled` 已经挡在界面上，这里是同一件事的第二道闸。
+    if (!status || toggling) return;
+    setToggling(true);
     try {
       const next = await api.setGatewayEnabled(!status.enabled);
       setStatus(next);
@@ -77,8 +104,10 @@ export function GatewayPanel({
       );
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setToggling(false);
     }
-  }, [status, onNotify, onError]);
+  }, [status, toggling, onNotify, onError]);
 
   if (!status || !external) {
     return (
@@ -103,6 +132,7 @@ export function GatewayPanel({
             on={status.enabled}
             label={status.enabled ? "本地网关已启用" : "本地网关已关闭"}
             action={status.enabled ? "关闭网关" : "启用网关"}
+            disabled={toggling}
             onClick={() => void toggleGateway()}
           />
         }
@@ -126,4 +156,14 @@ export function GatewayPanel({
       <GatewayInsights onError={onError} />
     </div>
   );
+}
+
+/**
+ * 取数失败的原因 → 一句话。
+ *
+ * `Promise.allSettled` 的拒因是 `unknown`，与别处的 `catch` 同一条规矩：
+ * `Error` 取 `message`，其余原样字符串化（后端抛的往往是字符串）。
+ */
+function describeFailure(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
 }

@@ -150,6 +150,59 @@ describe("GatewayExternalCard", () => {
     ).toBe("http://127.0.0.1:8787/gateway/claude/<routeId>");
   });
 
+  it("每一行的复制按钮带**平台名**的可访问名（四个「复制」读屏分不出谁是谁）", () => {
+    fakeRuntime({});
+    const view = render(
+      <GatewayExternalCard
+        baseUrl="http://127.0.0.1:8787"
+        status={STATUS}
+        onStatusChange={vi.fn()}
+        onError={vi.fn()}
+      />
+    );
+    const labels = [
+      ...view.container.querySelectorAll<HTMLButtonElement>(".gateway-endpoint button")
+    ].map((item) => item.getAttribute("aria-label"));
+    expect(labels).toEqual([
+      "复制 Codex 端点",
+      "复制 Claude 端点",
+      "复制 Gemini 端点",
+      "复制 Qoder 端点"
+    ]);
+  });
+
+  it("**切换在途时开关是禁用的**：第二下读到的还是切换前的状态，会把刚改完的又翻回去", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fakeRuntime({
+      "gateway:set-external-api-enabled": async (args) => {
+        await gate;
+        return { enabled: args.enabled, hasToken: true };
+      }
+    });
+    const view = render(
+      <GatewayExternalCard
+        baseUrl="http://127.0.0.1:8787"
+        status={STATUS}
+        onStatusChange={vi.fn()}
+        onError={vi.fn()}
+      />
+    );
+    const pill = findButton(view.container, "外部网关已开启")!;
+    await act(async () => {
+      pill.click();
+    });
+    await waitFor(() => expect(pill.disabled).toBe(true));
+
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await waitFor(() => expect(pill.disabled).toBe(false));
+  });
+
   it("**开关**走 `gateway:set-external-api-enabled`，并说清结果", async () => {
     const calls = fakeRuntime({
       "gateway:set-external-api-enabled": (args) => ({ enabled: args.enabled, hasToken: true })

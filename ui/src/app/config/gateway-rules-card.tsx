@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, Card, Icon, Toolbar } from "../../components";
+// 平台名表与供应商名解析各只有一处实现：这里再抄一份，迟早会出现
+// 「同一个平台在两张表上叫两个名字」。
+import { vendorName } from "../../features/workbench/workbench-cards";
 import * as api from "../../ipc/commands";
 import type { ApiVendor, FailoverRule } from "../../types";
+import { PROVIDER_LABELS } from "./gateway-external-card";
 import {
   draftFromRule,
   emptyRuleDraft,
@@ -108,10 +112,14 @@ export function GatewayRulesCard({
     }
     setTesting(true);
     try {
-      const statusCode = Number(draft.testStatus.trim());
+      // 留空 = 不按状态码判定：**不能发 `statusCode: 0`**——0 不是合法的 HTTP 状态码，
+      // 后端会拿它去比规则里的状态码列表（旧实现是省略该字段）。
+      // `Number("")` 恰好是 0 且是整数，因此必须连同空串一起判，光看 `Number.isInteger` 拦不住。
+      const statusText = draft.testStatus.trim();
+      const statusCode = Number(statusText);
       const result = await api.testFailoverRule({
         rule: payload.value,
-        ...(Number.isInteger(statusCode) ? { statusCode } : {}),
+        ...(statusText !== "" && Number.isInteger(statusCode) ? { statusCode } : {}),
         ...(draft.testMessage.trim() ? { message: draft.testMessage.trim() } : {})
       });
       setTestResult(result);
@@ -179,7 +187,7 @@ export function GatewayRulesCard({
             <tbody>
               {rules.map((rule) => (
                 <tr key={rule.id}>
-                  <td>{scopeText(rule)}</td>
+                  <td>{scopeText(rule, vendors)}</td>
                   <td className="mono">{rule.pattern}</td>
                   <td>{rule.statusCodes?.join(", ") ?? "-"}</td>
                   <td className="mono" title={rule.customResponseBody}>
@@ -239,8 +247,15 @@ export function GatewayRulesCard({
 }
 
 /** 一行里怎么读作用域：带目标的要把目标也写出来，否则「按平台」的几条规则长得一模一样。 */
-function scopeText(rule: FailoverRule): string {
-  if (rule.scope === "provider") return `按平台 · ${rule.providerId ?? "?"}`;
-  if (rule.scope === "vendor") return `按供应商 · ${rule.vendorId ?? "?"}`;
+function scopeText(rule: FailoverRule, vendors: ApiVendor[]): string {
+  // 目标写成**显示名**而不是编号：`codex` 与 `vendor-3f2a` 在表里认不出是谁，
+  // 而这一列存在的意义正是「一眼看出这条规则管谁」。查不到再退回编号（与
+  // 供应商面板同一条规矩）。
+  if (rule.scope === "provider") {
+    return `按平台 · ${rule.providerId ? PROVIDER_LABELS[rule.providerId] : "?"}`;
+  }
+  if (rule.scope === "vendor") {
+    return `按供应商 · ${rule.vendorId ? vendorName(vendors, rule.vendorId) : "?"}`;
+  }
   return "全局";
 }

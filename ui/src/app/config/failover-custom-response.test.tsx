@@ -365,4 +365,61 @@ describe("GatewayRulesCard：试规则", () => {
     });
     await waitFor(() => expect(view.container.textContent).toContain("状态码匹配"));
   });
+
+  it("**试规则的状态码留空时整个字段都不发**（`Number(\"\")` 恰好是 0）", async () => {
+    const calls = fakeRuntime({
+      "gateway:list-failover-rules": () => [RULE],
+      "gateway:test-failover-rule": () => ({ matched: false, matchedBy: "none" })
+    });
+    const view = render(<GatewayRulesCard onError={vi.fn()} />);
+    await openForm(view, "编辑");
+    const testCalls = () =>
+      calls.filter((item) => item.command === "gateway:test-failover-rule");
+    /** 改一格模拟状态码再点「试一下」，等这一趟请求真的发出去了。 */
+    const testWith = async (value: string) => {
+      const input = [...view.container.querySelectorAll<HTMLInputElement>("input")].find(
+        (i) => i.placeholder === "例如 429"
+      )!;
+      await act(async () => {
+        setValue(input, value);
+      });
+      const before = testCalls().length;
+      await act(async () => {
+        findButton(view.container, "试一下")!.click();
+      });
+      await waitFor(() => expect(testCalls().length).toBe(before + 1));
+      return testCalls().at(-1)!.args;
+    };
+
+    // 留空 = 这次不按状态码判定：`statusCode: 0` 会让后端拿 0 去比规则里的状态码列表
+    // （0 不是合法的 HTTP 状态码，旧实现是省略该字段）。
+    const empty = await testWith("");
+    expect("statusCode" in empty).toBe(false);
+    // 错误文本也留空时连 `message` 都不发。
+    expect("message" in empty).toBe(false);
+
+    // 非整数同理：填了一串字也不是状态码。
+    expect("statusCode" in (await testWith("abc"))).toBe(false);
+
+    // 填了合法状态码才带上它（否则上面两条可能是因为整个字段永远不发）。
+    expect((await testWith("503")).statusCode).toBe(503);
+  });
+
+  it("作用域列写**显示名**：平台 `codex` → `Codex`，供应商写它自己的名字", async () => {
+    fakeRuntime({
+      "gateway:list-failover-rules": () => [
+        { ...RULE, id: "r-provider", scope: "provider", providerId: "codex" },
+        { ...RULE, id: "r-vendor", scope: "vendor", providerId: "codex", vendorId: "v1" },
+        // 供应商已被删掉时退回编号：留一个空单元格会被读成「没有目标」。
+        { ...RULE, id: "r-gone", scope: "vendor", providerId: "codex", vendorId: "v-404" }
+      ],
+      "vendor:list": () => VENDORS
+    });
+    const view = render(<GatewayRulesCard onError={vi.fn()} />);
+    await waitFor(() => expect(view.container.textContent).toContain("官方 v2"));
+    const scopes = [...view.container.querySelectorAll("tbody tr td:first-child")].map(
+      (cell) => cell.textContent
+    );
+    expect(scopes).toEqual(["按平台 · Codex", "按供应商 · 官方 v2", "按供应商 · v-404"]);
+  });
 });

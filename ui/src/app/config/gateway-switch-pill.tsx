@@ -9,6 +9,13 @@ import { StatusDot } from "../../components";
  *
  * 它是**按钮**而不是状态标签：点一下就要切换开关。因此 `title`/`aria-label`
  * 写的是**点击后会做什么**（读屏用户看不出底色变化），而 `aria-pressed` 承载当前状态。
+ *
+ * # `disabled` 是给「请求在途」用的，不能删
+ *
+ * 两个调用方（`gateway-panel.tsx` 的总开关、`gateway-external-card.tsx` 的外部开关）
+ * 都在切换请求发出到结果回来之间传 `disabled`：状态还没回来时第二下读到的仍是
+ * **切换前**的 `on`，于是刚改完的状态又被翻回去——用户以为点快了没事，实际要多写
+ * 一次设置。因此这个 prop 留着并**接上**，而不是删掉（它此前确实没有调用方）。
  */
 export function SwitchPill({
   on,
@@ -22,6 +29,7 @@ export function SwitchPill({
   label: string;
   /** 点击后会做什么，例如「关闭本地网关」。 */
   action: string;
+  /** 切换请求在途时为真（见上面那段说明）。 */
   disabled?: boolean;
   onClick: () => void;
 }) {

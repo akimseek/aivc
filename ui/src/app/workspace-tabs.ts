@@ -97,8 +97,3 @@ export function tabSuffix(state?: {
   if (state.exitedCleanly) return "（已退出）";
   return `（退出码 ${state.exitCode ?? "?"}）`;
 }
-
-/** 有没有能导出的活动会话（导出动作的启用条件）。 */
-export function hasSessionTab(tabs: WorkspaceTabLike[]): boolean {
-  return tabs.some((tab) => tab.sessionId !== undefined);
-}

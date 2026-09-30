@@ -6,7 +6,6 @@ import type { AiSession, TerminalAttention } from "../types";
 import { useWorkspaceTabs } from "./use-workspace-tabs";
 import type { TerminalSession } from "./use-terminals";
 import type { useTerminals } from "./use-terminals";
-import { hasSessionTab } from "./workspace-tabs";
 
 /**
  * `useWorkspaceTabs` 的装配测试（统一模型）。
@@ -97,8 +96,8 @@ describe("useWorkspaceTabs 的接线", () => {
     expect(view.result.current.tabs).toEqual([
       { key: "term-3", terminalId: "term-3", title: "新会话" }
     ]);
-    // 导出动作的启用条件看的就是这个（转出的纯函数与标签用的是同一份规则）。
-    expect(hasSessionTab(view.result.current.tabs)).toBe(false);
+    // 标签上**没有**会话编号：画布据此走「空态」与终端信息条（那条会话还不存在）。
+    expect(view.result.current.tabs[0]!.sessionId).toBeUndefined();
   });
 
   it("干净退出的终端：标签自动收掉，并通知终端层关闭", () => {

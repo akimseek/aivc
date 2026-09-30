@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   attachTerminal,
   closeTab,
-  hasSessionTab,
   openSessionTab,
   tabSuffix,
   type WorkspaceTabLike
@@ -126,12 +125,5 @@ describe("tabSuffix", () => {
 
   it("干净退出标「已退出」（正常路径下会被自动收掉，这是兜底）", () => {
     expect(tabSuffix({ running: false, exitedCleanly: true })).toBe("（已退出）");
-  });
-});
-
-describe("hasSessionTab", () => {
-  it("只认挂着会话的标签", () => {
-    expect(hasSessionTab([{ key: "term-1", terminalId: "term-1", title: "x" }])).toBe(false);
-    expect(hasSessionTab([{ key: "sess-1", sessionId: "sess-1", title: "x" }])).toBe(true);
   });
 });

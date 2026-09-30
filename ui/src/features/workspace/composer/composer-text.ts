@@ -154,28 +154,16 @@ export function initialComposerVisible(sessionId: string | undefined): boolean {
 export type TerminalInputMode = "composer" | "terminal";
 
 /**
- * 切换按钮上的字。
+ * 状态栏胶囊的悬停说明。
  *
  * 写的是**点下去会切到哪**，不是当前在哪——旧平台就是这样
  * （`mode === "composer" ? "终端输入" : "自管输入"`）。
  * 写成当前状态的话，用户会以为按钮是「当前模式」的指示而不是可点的。
+ *
+ * 注：与它成对的「能不能切换」（旧平台 `canToggleTerminalInput = composerVisible`）
+ * 已随输入区那个按钮一起删除；状态栏胶囊不做门控——「键盘输入去哪一边」在前台终端
+ * 存在时永远是个有意义的选择。
  */
-export function terminalInputButtonLabel(mode: TerminalInputMode): string {
-  return mode === "composer" ? "终端输入" : "自管输入";
-}
-
-/** 按钮的悬停说明。旧平台原文：「切换到终端原生输入」／「切换到自管输入框」。 */
 export function terminalInputButtonTitle(mode: TerminalInputMode): string {
   return mode === "composer" ? "切换到终端原生输入" : "切换到自管输入框";
-}
-
-/**
- * 能不能切换。
- *
- * 旧平台的判据是**自管输入框此刻是否可见**（`canToggleTerminalInput =
- * composerVisible`）：输入框藏着的时候「切换输入位置」没有意义，
- * 用户看到的只是一个终端。
- */
-export function canToggleTerminalInput(composerVisible: boolean): boolean {
-  return composerVisible;
 }

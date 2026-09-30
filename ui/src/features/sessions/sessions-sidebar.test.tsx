@@ -2,7 +2,13 @@
 import { act, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AiProviderSummary, AiSession, AiTarget, GatewayPortStatus } from "../../types";
+import type {
+  AiProviderSummary,
+  AiSession,
+  AiTarget,
+  GatewayPortStatus,
+  SessionQuickAccessItem
+} from "../../types";
 import { SessionsSidebar, type SessionsSidebarConsole } from "./sessions-sidebar";
 
 /**
@@ -49,6 +55,14 @@ function session(overrides: Partial<AiSession> = {}): AiSession {
     ...overrides
   };
 }
+
+/** 快捷访问里的一条（收藏 / 最近打开两组共用这个形状）。 */
+const quickItem = (id: string, favorite: boolean): SessionQuickAccessItem => ({
+  target: TARGET,
+  // 标题不能等于编号：`displayTitle` 会把「标题 == id」当成没有标题，退回「未命名会话」。
+  session: session({ id, title: `会话 ${id}` }),
+  favorite
+});
 
 function consoleState(overrides: Record<string, unknown> = {}): SessionsSidebarConsole {
   return {
@@ -102,6 +116,7 @@ function setup(
     onMenu: vi.fn(),
     onNewSession: vi.fn(),
     onDetail: vi.fn(),
+    onOpenGateway: vi.fn(),
     onToggleCollapsed: vi.fn()
   };
   const view = render(
@@ -172,6 +187,59 @@ describe("过滤 chips", () => {
     expect(view.container.querySelector(".session-group-empty")!.textContent).toContain(
       "没有匹配的收藏"
     );
+  });
+
+  it("收藏夹里的本地筛选也是**按关键词命中**，命中的那条留着", () => {
+    const hit = setup({
+      view: "favorites",
+      query: "f1",
+      quickAccess: { favorites: [quickItem("f1", true)], recent: [quickItem("r1", false)] }
+    });
+    expect(hit.view.container.textContent).toContain("会话 f1");
+    expect(hit.view.container.querySelectorAll(".session-group-empty")).toHaveLength(1); // 只有「最近打开」那一组空
+
+    const miss = setup({
+      view: "favorites",
+      query: "查无此词",
+      quickAccess: { favorites: [quickItem("f1", true)], recent: [quickItem("r1", false)] }
+    });
+    expect(miss.view.container.querySelectorAll(".session-group-empty")).toHaveLength(2);
+  });
+
+  it("「★ 收藏 N」的 N **只数收藏**，不含「最近打开」", () => {
+    // 裁定 R22：这个数字说的是「收藏夹里有几条星标过的会话」。此前它把
+    // 「最近打开」也算进去，与 chip 上的字对不上。
+    const { view } = setup({
+      quickAccess: {
+        favorites: [quickItem("f1", true), quickItem("f2", true)],
+        recent: [quickItem("r1", false), quickItem("r2", false), quickItem("r3", false)]
+      }
+    });
+    expect(byText(view, "★ 收藏").textContent).toBe("★ 收藏 2");
+  });
+
+  it("收藏夹视图的底部摘要说的是**里面这批**（收藏 + 最近打开），与 chip 的口径不同", () => {
+    const { view } = setup({
+      view: "favorites",
+      quickAccess: {
+        favorites: [quickItem("f1", true), quickItem("f2", true)],
+        recent: [quickItem("r1", false), quickItem("r2", false), quickItem("r3", false)]
+      }
+    });
+    expect(view.container.querySelector(".sidebar-foot")!.textContent).toContain("共 5 条会话");
+  });
+});
+
+describe("头部", () => {
+  it("网关胶囊是**按钮**（点击 → 设置中心网关页，spec 的逐字要求）", () => {
+    const { view, handlers } = setup();
+    const pill = view.container.querySelector(".gateway-pill") as HTMLButtonElement;
+    expect(pill.tagName).toBe("BUTTON");
+    expect(pill.textContent).toContain("网关");
+    expect(pill.textContent).toContain("50064");
+    expect(pill.title).toContain("设置中心网关页");
+    act(() => pill.click());
+    expect(handlers.onOpenGateway).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -267,10 +335,18 @@ describe("保留的既有语义", () => {
 });
 
 describe("折叠", () => {
-  it("折叠后侧栏整个收掉，但**节点仍渲染**（否则主区会掉进那一格网格）", () => {
+  it("折叠后节点**留在流内**（宽度归零），而不是 `display: none`", () => {
+    // jsdom 量不了布局，所以这里钉住能够钉的部分：节点仍然渲染、带着
+    // `.sidebar.hidden`，并且**没有**任何会让它退出网格放置的东西——
+    // HTML 的 `hidden` 属性或行内样式都等于 `display: none`（那正是要避免的：
+    // 网格项一旦退出放置，主区会被放进第 2 列 `auto`、第 3 列的 `1fr` 空着，
+    // 右侧留一条空白）。宽度归零的规则在 `app.css` 的 `.sidebar.hidden`。
+    // **主区宽度最终只有批次末截图能确认。**
     const { view } = setup({}, { collapsed: true });
     const aside = view.container.querySelector("aside.sidebar")!;
-    expect(aside.className).toContain("hidden");
+    expect(aside.className).toBe("sidebar hidden");
+    expect(aside.hasAttribute("hidden")).toBe(false);
+    expect(aside.getAttribute("style")).toBeNull();
     expect(view.container.querySelector(".session-card")).toBeNull();
   });
 

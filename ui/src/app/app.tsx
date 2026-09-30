@@ -601,8 +601,10 @@ export function App() {
         sidebar={
           console.pane === "workbench" ? (
             sidebarCollapsed ? (
-              /* 折叠时留一个空节点：它是外壳网格的第二列（`auto`），
-                 不留节点主区会掉进那一列里去。 */
+              /* 折叠时节点仍要渲染、而且必须在流内（0 宽的网格项，占住第 2 列）：
+                 网格里 `display: none` 的项不参与放置，主区会被自动放进第 2 列
+                 （`auto`），第 3 列的 `1fr` 空着——右侧留一条空白。
+                 机制在 `.sidebar.hidden`（宽度归零），见 `app.css`。 */
               <aside className="sidebar hidden" aria-label="侧栏（已折叠）" />
             ) : (
               /* 工作台**整块替换**会话侧栏——活动栏切的是「哪一处地方」。
@@ -632,6 +634,8 @@ export function App() {
               */
               onNewSession={beginNewSession}
               onDetail={(session) => setDetailSession(session)}
+              // 网关胶囊：设置中心的网关页（端口、启停、健康都在那里）。
+              onOpenGateway={() => openSettings("gateway")}
               providers={console.providers}
               gateway={console.gateway}
               runningSessionIds={runningSessionIds}

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AiSession } from "../../types";
-import { matchesSessionSummary, resolveSidebarListMode } from "./sidebar-search";
+import { resolveSidebarListMode } from "./sidebar-search";
 
 /**
  * 列表区的四种内容与它们的优先级。
@@ -11,18 +10,14 @@ import { matchesSessionSummary, resolveSidebarListMode } from "./sidebar-search"
  * 判定顺序就是优先级，而「谁先谁后」是**有理由的**（见 `resolveSidebarListMode`
  * 的注释）。写成渲染里的四个 `if` 时，顺序错了界面也照常渲染，只是内容不对——
  * 那种错很难在图上看出来。
+ *
+ * 这里此前还有一组「摘要命中」的断言，服务于一个已删除的「搜索消息正文」开关：
+ * 关掉时它把跨目标搜索结果按本地重算的摘要命中再筛一遍，而那个筛子**恒真**
+ * （后端第二阶段命中正文时返回完整解析结果，命中词必然在 `preview` 里）。
+ * 开关与筛子已按裁定 R23 一起删除，断言随实现一起走。
  */
 
 const base = { view: "active" as const, query: "", globalSearching: false, globalQuery: "" };
-
-const session = (patch: Partial<AiSession>): AiSession => ({
-  id: "s1",
-  title: "会话",
-  filePath: "/sessions/s1.jsonl",
-  messageCount: 1,
-  preview: [],
-  ...patch
-});
 
 describe("列表内容判定", () => {
   it("什么都没输入、不是收藏夹 → 普通列表", () => {
@@ -63,36 +58,5 @@ describe("列表内容判定", () => {
     expect(resolveSidebarListMode({ ...base, view: "active", query: "x" })).toEqual({
       kind: "filtered"
     });
-  });
-});
-
-describe("摘要命中（「搜索消息正文」关掉时的筛子）", () => {
-  const item = session({
-    id: "abc123",
-    title: "重构会话列表",
-    cwd: "/home/me/project",
-    model: "gpt-5",
-    preview: [{ role: "user", text: "正文里的一句话" }]
-  });
-
-  it("命中标题、目录、模型与预览正文的任一字段都算摘要命中", () => {
-    expect(matchesSessionSummary(item, "重构")).toBe(true);
-    expect(matchesSessionSummary(item, "project")).toBe(true);
-    expect(matchesSessionSummary(item, "GPT-5")).toBe(true);
-    expect(matchesSessionSummary(item, "正文里")).toBe(true);
-    expect(matchesSessionSummary(item, "abc123")).toBe(true);
-  });
-
-  it("**全部词都要命中**（AND），与后端 `matches_session_terms` 一致", () => {
-    expect(matchesSessionSummary(item, "重构 project")).toBe(true);
-    expect(matchesSessionSummary(item, "重构 不存在的词")).toBe(false);
-  });
-
-  it("空关键词视为命中（后端也是：空查询等价于列出全部）", () => {
-    expect(matchesSessionSummary(item, "   ")).toBe(true);
-  });
-
-  it("摘要里没有的词不算命中——它只可能命中了正文", () => {
-    expect(matchesSessionSummary(item, "只存在于完整正文里的词")).toBe(false);
   });
 });

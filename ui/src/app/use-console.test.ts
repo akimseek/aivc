@@ -1,7 +1,9 @@
+// @vitest-environment jsdom
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { pickTarget, planTargetSwitch, shouldLoadSessionList, toRefs } from "./use-console";
-import type { AiSession, AiTarget } from "../types";
+import { pickTarget, planTargetSwitch, shouldLoadSessionList, toRefs, useConsole } from "./use-console";
+import type { AiSession, AiTarget, SessionQuickAccess } from "../types";
 
 const target = (id: string, available: boolean): AiTarget => ({
   id,
@@ -123,5 +125,98 @@ describe("哪些 view 需要取会话列表", () => {
   it("全部与回收站照常刷新列表", () => {
     expect(shouldLoadSessionList("active")).toBe(true);
     expect(shouldLoadSessionList("trash")).toBe(true);
+  });
+});
+
+/**
+ * `quickAccess` 的取数时机（在真 hook 上观察）。
+ *
+ * # 为什么值得单测
+ *
+ * 它是两处界面的**同一个数字**：收藏夹的内容，以及侧栏 chip 上「★ 收藏 N」。
+ * 只在进收藏夹时取一次（改动前的行为）会让从没点过收藏 chip 的用户看到
+ * 「★ 收藏 0」，点星之后数字也不动——这两条路径都只有 hook 层面测得出来。
+ *
+ * 装一个假的 Tauri 运行时（`window.__TAURI__.core.invoke`）：`useConsole` 的取数
+ * 都经过 `ipc/commands` → 这一层，按命令名回数据就能既测到真 hook、
+ * 又不碰真的 IPC。
+ */
+function fakeRuntime(commands: Record<string, () => unknown>) {
+  const calls: string[] = [];
+  const defaults: Record<string, () => unknown> = {
+    "codex:list-session-quick-access": () => ({ favorites: [], recent: [] })
+  };
+  window.__TAURI__ = {
+    core: {
+      invoke: async (_command: string, payload?: unknown) => {
+        const name = (payload as { command?: string } | undefined)?.command ?? "";
+        calls.push(name);
+        return (commands[name] ?? defaults[name] ?? (() => []))();
+      }
+    }
+  };
+  return calls;
+}
+
+const quickFavorites = (ids: string[]): SessionQuickAccess => ({
+  favorites: ids.map((id) => ({
+    target: target("codex:local", true),
+    session: session(id),
+    favorite: true
+  })),
+  recent: []
+});
+
+describe("quickAccess 的取数时机", () => {
+  it("启动就取一次：没进过收藏夹，chip 上的数字也要是对的", async () => {
+    const calls = fakeRuntime({
+      "codex:list-session-quick-access": () => quickFavorites(["f1"])
+    });
+    const { result } = renderHook(() => useConsole());
+    await waitFor(() => expect(result.current.quickAccess.favorites).toHaveLength(1));
+    expect(
+      calls.filter((name) => name === "codex:list-session-quick-access")
+    ).toHaveLength(1);
+  });
+
+  it("收藏成功后刷新：数字从 0 变 1（不从「等用户进收藏夹」开始）", async () => {
+    let stored: string[] = [];
+    fakeRuntime({
+      "codex:list-session-quick-access": () => quickFavorites(stored),
+      "codex:set-session-favorite": () => {
+        stored = ["s1"];
+        return {};
+      }
+    });
+    const { result } = renderHook(() => useConsole());
+    await waitFor(() => expect(result.current.quickAccess.favorites).toHaveLength(0));
+    act(() => result.current.selectTarget("codex:local"));
+    await act(async () => {
+      await result.current.toggleFavorite(session("s1"));
+    });
+    expect(result.current.quickAccess.favorites.map((item) => item.session.id)).toEqual(["s1"]);
+    // `selectTarget` 还会排一个 0ms 防抖的列表加载。让它在本用例里跑完，
+    // 否则它的请求会推到下一个用例的假运行时里（假运行时是窗口级的）。
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  });
+
+  it("收藏夹里点「刷新列表」取的是 quickAccess，不是会话列表", async () => {
+    // 改动前它是一个**死按钮**：`reloadSessions` → `loadSessions` 在收藏夹上
+    // 直接早退（不发请求、也不重取 quickAccess）。
+    const calls = fakeRuntime({
+      "codex:list-session-quick-access": () => quickFavorites(["f1"])
+    });
+    const { result } = renderHook(() => useConsole());
+    await waitFor(() => expect(result.current.quickAccess.favorites).toHaveLength(1));
+    act(() => result.current.setView("favorites"));
+    const before = calls.filter((name) => name === "codex:list-session-quick-access").length;
+    await act(async () => {
+      await result.current.reloadSessions();
+    });
+    const after = calls.filter((name) => name === "codex:list-session-quick-access").length;
+    expect(after).toBe(before + 1);
+    expect(calls).not.toContain("codex:list-sessions");
   });
 });

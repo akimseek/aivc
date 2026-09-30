@@ -262,10 +262,14 @@ select {
   overflow: hidden;
 }
 
-/* 折叠态：整个侧栏收掉。**节点仍然渲染**——它是外壳网格的第二列（`auto`），
-   不留节点的话主区会掉进那一列里去。 */
+/* 折叠态：侧栏宽度归零。**节点必须留在流内**，而且这里是 `width: 0` 而不是
+   `display: none`——`.app-body` 的列是 `50px auto minmax(0, 1fr)`，`display: none`
+   的网格项**不参与放置**，后两项会被自动放进第 1、2 列（第 2 列是 `auto`），
+   第 3 列的 `1fr` 空着：主区被撑到 max-content、右侧留一条空白。
+   宽度归零则只是「看不见」，占位不变。 */
 .sidebar.hidden {
-  display: none;
+  width: 0;
+  border-right: 0;
 }
 
 /* ── 侧栏 ────────────────────────────────────────────── */
@@ -311,6 +315,8 @@ select {
 /*
  * 网关胶囊：网关有没有在跑、在哪个端口。
  *
+ * 它是一个**按钮**：点它去设置中心的网关页（spec 的逐字要求），所以要有 hover
+ * 与指针反馈；`button` 不会继承周围字体，这里显式 `font: inherit` 再覆盖字号。
  * 端口用等宽（`.ui-mono`）——一串数字在比例字体里每次宽度都不一样，
  * 而它是要被**读出来**（甚至抄进外部客户端配置）的。
  * 三种状态只改边与底：胶囊本身的位置与形状不变，扫一眼就知道状态变没变。
@@ -319,12 +325,21 @@ select {
   display: flex;
   align-items: center;
   gap: var(--ui-space-2);
+  width: 100%;
   padding: var(--ui-space-1) var(--ui-space-2);
   border: 1px solid var(--ui-accent-border);
   border-radius: var(--ui-radius-md);
   background: var(--ui-accent-soft);
   color: var(--ui-accent-strong);
+  font: inherit;
   font-size: var(--ui-text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 悬停：边框收到文色（三种 tone 各自的色），不引入新的颜色 token。 */
+.gateway-pill:hover {
+  border-color: currentColor;
 }
 
 .gateway-pill.tone-warn {
@@ -472,16 +487,6 @@ select {
 .search-actions .search-select {
   flex: 1 1 96px;
   min-width: 0;
-}
-
-/* 「搜索消息正文」开关 + 文字：点文字也要能切，因此包在 `<label>` 里。 */
-.search-body {
-  display: flex;
-  align-items: center;
-  gap: var(--ui-space-1);
-  color: var(--ui-muted);
-  font-size: var(--ui-text-xs);
-  cursor: pointer;
 }
 
 .batchbar {

@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import {
   Button,
   ChipGroup,
@@ -10,8 +8,7 @@ import {
   SearchInput,
   Select,
   StatusDot,
-  ToolbarSpacer,
-  Toggle
+  ToolbarSpacer
 } from "../../components";
 import type {
   AiProviderId,
@@ -26,7 +23,7 @@ import { emptySessionMessage } from "../../app/session-display";
 import { QuickGroup, SearchResultRow } from "../../app/session-row";
 import { supportsBatchActions, supportsTrash } from "../../app/sidebar-nav";
 import type { useConsole } from "../../app/use-console";
-import { matchesSessionSummary, resolveSidebarListMode } from "./sidebar-search";
+import { resolveSidebarListMode } from "./sidebar-search";
 import { SessionCard } from "./session-card";
 import { WslHomeForm } from "./wsl-home-form";
 
@@ -72,6 +69,42 @@ export type SessionsSidebarConsole = Pick<
 const NO_RUNNING_SESSIONS: ReadonlySet<string> = new Set();
 
 /**
+ * 收藏夹里的**本地**筛选：在「收藏」与「最近打开」两组里按关键词筛。
+ *
+ * # 它只能筛 `quickAccess` 这个本地列表
+ *
+ * **不要拿它去重算后端的搜索结果**。曾经有过一个「搜索消息正文」开关，关掉时
+ * 用它把跨目标搜索结果再筛一遍「只有摘要命中的」——那是恒真的：后端搜索的第二阶段
+ * 命中正文时返回的是**完整解析结果**，命中词必然出现在返回的 `preview` 里，
+ * 所以按同一批字段重算必然也命中。在「不得新增后端命令」的前提下，客户端没有
+ * 办法诚实区分「摘要命中」与「正文命中」，那个开关已删除（控制器裁定 R23）。
+ *
+ * 这里剩下的是另一件事：用户站在收藏夹里打字，是在**眼前这两组**里找一条会话，
+ * 没命中就是没命中——与服务端搜过什么无关。
+ *
+ * 语义按空白分词、全部词都要命中（AND），与后端一致。
+ */
+function matchesQuickQuery(session: AiSession, query: string): boolean {
+  const terms = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = [
+    session.id,
+    session.title,
+    session.sourceTitle ?? "",
+    session.cwd ?? "",
+    session.model ?? "",
+    ...session.preview.map((message) => message.text)
+  ]
+    .join("\n")
+    .toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
+/**
  * 会话侧栏。
  *
  * # 它现在只管「会话」这一件事
@@ -99,6 +132,7 @@ export function SessionsSidebar({
   onMenu,
   onNewSession,
   onDetail,
+  onOpenGateway,
   providers,
   gateway,
   runningSessionIds = NO_RUNNING_SESSIONS,
@@ -117,6 +151,8 @@ export function SessionsSidebar({
   onNewSession: () => void;
   /** 「消息与分支」：打开会话详情（消息列表与分支关系都在那里）。 */
   onDetail: (session: AiSession) => void;
+  /** 网关胶囊：打开设置中心的**网关页**——端口、启停、为什么没起来都在那里。 */
+  onOpenGateway: () => void;
   providers: AiProviderSummary[];
   /**
    * 网关状态。
@@ -133,19 +169,18 @@ export function SessionsSidebar({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }) {
-  /**
-   * 「搜索消息正文」。
-   *
-   * 开（默认）= 连正文一起搜：后端本来就是两段式（先摘要、摘要不中读整个文件），
-   * 结果里既有摘要命中的、也有只在正文里命中的。关 = 只留摘要命中的那些。
-   * 它是**展示层的筛子**，不是请求参数——后端没有对应的开关，也不该为一个
-   * 展示选项加一个（筛法在 `sidebar-search.ts` 里与后端的 haystack 逐字对齐）。
-   */
-  const [searchBody, setSearchBody] = useState(true);
-
   const trash = state.view === "trash";
   const selectedCount = state.selectedIds.length;
-  const quickCount = state.quickAccess.favorites.length + state.quickAccess.recent.length;
+  /**
+   * 「★ 收藏 N」的 N **只数收藏**（裁定 R22）。
+   *
+   * 它此前是 `favorites.length + recent.length`——那个数字与 chip 上的字对不上，
+   * 而且用户心里「收藏 N」说的就是收藏夹里星标过的条数。「最近打开」是另一组数据
+   * （收藏夹视图里仍然两组都显示，底部摘要按那一批算）。
+   */
+  const favoriteCount = state.quickAccess.favorites.length;
+  /** 收藏夹视图里眼前这批的总数：两组都列出来，摘要说的是它们之和。 */
+  const quickCount = favoriteCount + state.quickAccess.recent.length;
   const provider = providers.find((item) => item.id === state.providerId);
   /**
    * 当前平台支不支持回收站与批量操作。
@@ -180,34 +215,30 @@ export function SessionsSidebar({
     ? state.targets.filter((target) => target.provider === state.searchProviderId)
     : state.targets;
 
-  /** 「搜索消息正文」关掉时，只留下摘要命中的结果（其余的可能只命中了正文）。 */
-  const visibleResults = searchBody
-    ? state.globalResults
-    : state.globalResults.filter((result) =>
-        matchesSessionSummary(result.session, state.globalQuery)
-      );
-
   /** 收藏夹里的本地筛选：在收藏里打字就是在**这两组里**筛。 */
   const filterQuick = (items: SessionQuickAccessItem[]) =>
     state.query.trim()
-      ? items.filter((item) => matchesSessionSummary(item.session, state.query))
+      ? items.filter((item) => matchesQuickQuery(item.session, state.query))
       : items;
 
   /** 底部摘要的数：说的是**眼前这批**，不是当前目标的会话总数。 */
   const visibleCount =
     mode.kind === "global"
-      ? visibleResults.length
+      ? state.globalResults.length
       : mode.kind === "favorites"
         ? quickCount
         : state.sessions.length;
 
   /**
-   * 折起来**什么也不留**（宽度归零）。
+   * 折起来时宽度归零，**但节点仍然留在流内**（0 宽的网格项，仍占第 2 列）。
    *
-   * 这里必须继续渲染一个 `<aside>`：它是外壳网格的第二列，不留节点的话
-   * 主区会掉到那一列（`auto` → 0 宽）里去。展开的入口在**活动栏**——
-   * 点「会话」或「工作台」都会把侧栏叫回来（见 `app.tsx` 的 `onActivity`）；
-   * 旧的 36px 竖条里那个 `»` 按钮随之删掉：它占着一整条竖边只为放一个按钮。
+   * 这里必须继续渲染一个 `<aside>`，而且它不能是 `display: none`：网格里
+   * `display: none` 的项**不参与放置**，后面两项会被自动放进第 1、2 列，
+   * 第 3 列的 `1fr` 空着——主区被撑到 max-content、右侧留一条空白。
+   * `.sidebar.hidden` 的做法是 `width: 0`（`app.css`），节点照常占位，
+   * 只是看不见。展开的入口在**活动栏**——点「会话」或「工作台」都会把侧栏
+   * 叫回来（见 `app.tsx` 的 `onActivity`）；旧的 36px 竖条随之删掉：
+   * 它占着一整条竖边只为放一个按钮。
    */
   if (collapsed) {
     return <aside className="sidebar hidden" aria-label="会话侧栏（已折叠）" />;
@@ -239,10 +270,12 @@ export function SessionsSidebar({
           </button>
         </div>
         {/* 网关胶囊：网关有没有在跑、在哪个端口，是这一屏最常被问的一件事。
-            点它不跳转（跳转入口在设置中心），只把状态说全。 */}
-        <div
+            点它去**设置中心的网关页**——改端口、重启网关、看它为什么没起来都在那里。 */}
+        <button
+          type="button"
           className={`gateway-pill tone-${gwTone}`}
-          title={`网关${gateway?.enabled ? "已启用" : "未启用"}：${gatewayPortLabel(gateway)}`}
+          title={`网关${gateway?.enabled ? "已启用" : "未启用"}：${gatewayPortLabel(gateway)}（点击打开设置中心网关页）`}
+          onClick={onOpenGateway}
         >
           <StatusDot
             tone={gwTone === "ok" ? "ok" : gwTone === "warn" ? "warn" : "idle"}
@@ -251,7 +284,7 @@ export function SessionsSidebar({
           />
           <span className="gateway-pill-label">网关</span>
           <span className="gateway-pill-port ui-num ui-mono">{gatewayPortLabel(gateway)}</span>
-        </div>
+        </button>
       </div>
 
       <div className="pickers">
@@ -374,7 +407,7 @@ export function SessionsSidebar({
           value={trash ? "" : state.view}
           options={[
             { value: "active", label: `全部 ${state.sessions.length}` },
-            { value: "favorites", label: `★ 收藏 ${quickCount}` }
+            { value: "favorites", label: `★ 收藏 ${favoriteCount}` }
           ]}
           onChange={(value) => {
             // 换一处地方看 = 退出跨目标搜索，否则点了 chip 界面不动（全局优先）。
@@ -405,8 +438,13 @@ export function SessionsSidebar({
 
         「在所有目标中搜索」是**一个动作**，不是一处地方：它把当前关键词送进
         `globalQuery`（`use-console` 里那条跨目标搜索随之启动）。进了全局之后，
-        这里换成两个筛选（平台 / 目标，与旧平台 `global-session-search-panel` 一致）
-        与「搜索消息正文」开关，并给一条回到当前列表的出路。
+        这里换成两个筛选（平台 / 目标，与旧平台 `global-session-search-panel` 一致），
+        并给一条回到当前列表的出路。
+
+        这里**没有**「搜索消息正文」开关了（裁定 R23）：后端搜索的第二阶段命中正文时
+        返回的是完整解析结果，命中词必然出现在结果的 `preview` 里——前端按同一批字段
+        重算「摘要是否命中」是恒真的，那个开关只是看起来有效。结果行显示的就是
+        后端返回的事实。
       */}
       {(mode.kind === "filtered" || global) && (
         <div className="search-actions">
@@ -450,15 +488,6 @@ export function SessionsSidebar({
                   </option>
                 ))}
               </Select>
-              <label className="search-body">
-                <Toggle
-                  checked={searchBody}
-                  onChange={setSearchBody}
-                  label="搜索消息正文"
-                  title="连消息正文一起搜；关掉只看摘要命中的"
-                />
-                <span>搜索消息正文</span>
-              </label>
               <Button small onClick={() => state.setGlobalQuery("")}>
                 返回当前列表
               </Button>
@@ -508,9 +537,6 @@ export function SessionsSidebar({
                     : undefined
                 }
               />
-            ) : visibleResults.length === 0 ? (
-              // 有结果但都被「只留摘要命中」筛掉了：说清开关在哪，而不是显示「没有结果」。
-              <EmptyState message="没有摘要命中的会话。" hint="打开「搜索消息正文」可以看到这些。" />
             ) : undefined
           ) : state.sessions.length === 0 ? (
             <EmptyState
@@ -568,8 +594,15 @@ export function SessionsSidebar({
           </>
         )}
 
+        {/*
+          跨目标搜索的结果：**后端返回什么就显示什么**。
+          这里原来有一个「搜索消息正文」开关，关掉时用本地重算的摘要命中筛一遍——
+          那个筛子恒真（后端第二阶段命中正文时返回的是完整解析结果，命中词必然在
+          `preview` 里），所以它只是让开关看起来有效。裁定 R23 已删除该开关与筛子：
+          命中来源以**后端返回的事实**为准——命中的词就在结果行的预览里。
+        */}
         {global &&
-          visibleResults.map((result) => (
+          state.globalResults.map((result) => (
             <SearchResultRow
               key={`${result.target.id}:${result.session.id}`}
               target={result.target}
@@ -580,7 +613,8 @@ export function SessionsSidebar({
       </List>
 
       {/* 底部摘要：说的是**眼前这批**有多少条（收藏夹 / 搜索结果各算各的），
-          并给一个手动刷新。刷新走 `reloadSessions`——它按当前目标与视图重取。 */}
+          并给一个手动刷新。刷新走 `reloadSessions`——收藏夹里它取的是
+          `quickAccess`（`use-console` 里分了支），否则那个按钮点了没反应。 */}
       <div className="sidebar-foot">
         <span className="ui-num">
           {provider?.label ?? "未选择平台"} · 共 {visibleCount} 条会话

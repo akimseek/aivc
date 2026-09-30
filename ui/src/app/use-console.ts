@@ -454,6 +454,22 @@ export function useConsole(options: { notify?: Notify } = {}) {
     setSelectedIds([]);
   }, []);
 
+  /* ── 快捷访问：只读缓存 ──
+   *
+   * 它是**收藏夹的内容**，也是侧栏 chip 上「★ 收藏 N」的那个 N。这两处要求它
+   * 在没进过收藏夹时也得是对的，所以取数有三条路径（都在下面的 effect / 动作里）：
+   * 启动取一次、进收藏夹再取一次（可能已过很久）、收藏动作成功后刷新。
+   * 定义放在 `toggleFavorite` 之前：那个动作要引用它（`const` 有 TDZ）。
+   */
+  const loadQuickAccess = useCallback(async () => {
+    try {
+      setQuickAccess(await api.listSessionQuickAccess());
+      setError("");
+    } catch (problem) {
+      setError(describe(problem));
+    }
+  }, []);
+
   const toggleFavorite = useCallback(
     async (session: AiSession) => {
       if (!targetId) return;
@@ -468,6 +484,12 @@ export function useConsole(options: { notify?: Notify } = {}) {
       );
       try {
         await api.setSessionFavorite(targetId, session.id, next);
+        /*
+          收藏刚变过，`quickAccess`（收藏夹的内容、以及 chip 上的数字）立刻过期。
+          不刷新的话，从未进过收藏夹的用户会看到「★ 收藏 0」在点星之后**不动**。
+          刷新失败只在 `error` 里说一句，不回滚：收藏本身已经成功了。
+        */
+        await loadQuickAccess();
         // 收藏是即时的视觉变化，但**列表里那颗星可能不在视野内**（快捷视图、
         // 搜索结果里都长得不一样），说一句比让用户去找那颗星更确定。
         notify(next ? "已收藏会话。" : "已取消收藏会话。");
@@ -483,7 +505,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         );
       }
     },
-    [targetId]
+    [targetId, loadQuickAccess]
   );
 
   const toggleSelected = useCallback((id: string) => {
@@ -770,18 +792,18 @@ export function useConsole(options: { notify?: Notify } = {}) {
     [providerId, loadTargets, notify]
   );
 
-  /* ── 快捷访问：只读缓存，进去就取一次 ── */
-  const loadQuickAccess = useCallback(async () => {
-    try {
-      setQuickAccess(await api.listSessionQuickAccess());
-      setError("");
-    } catch (problem) {
-      setError(describe(problem));
-    }
-  }, []);
+  /* ── 快捷访问的取数时机
+   *
+   * 「★ 收藏 N」这个数字在**没进过收藏夹**时也要是对的，所以启动就取一次。
+   * 另外两条：进收藏夹时再取（可能已过很久），以及收藏动作成功后刷新
+   * （`toggleFavorite` 里调）。
+   */
+  useEffect(() => {
+    void loadQuickAccess();
+  }, [loadQuickAccess]);
 
   useEffect(() => {
-    // 收藏夹自己按需刷新：它取的是缓存里的快捷访问，与会话列表是两批数据。
+    // 进收藏夹时再取一次：启动那次（上面）可能已经过很久了。
     if (view === "favorites") void loadQuickAccess();
   }, [view, loadQuickAccess]);
 
@@ -936,6 +958,13 @@ export function useConsole(options: { notify?: Notify } = {}) {
     globalSearching,
     openAt,
     reloadTargets: () => loadTargets(providerId),
-    reloadSessions: () => loadSessions(targetId, view, query)
+    /*
+      底部摘要的「刷新」按**眼前这批**刷新：收藏夹的内容是 `quickAccess`，
+      与会话列表接口是两批数据。不做这个分支的话，站在收藏夹上点刷新
+      `loadSessions` 会直接早退（`shouldLoadSessionList("favorites") === false`），
+      连缓存都不重取——一个点了没反应的死按钮。
+    */
+    reloadSessions: () =>
+      view === "favorites" ? loadQuickAccess() : loadSessions(targetId, view, query)
   };
 }

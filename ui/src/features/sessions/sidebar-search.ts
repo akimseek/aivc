@@ -1,4 +1,3 @@
-import type { AiSession } from "../../types";
 import type { SidebarView } from "../../app/sidebar-nav";
 
 /**
@@ -36,39 +35,4 @@ export function resolveSidebarListMode(input: {
   if (input.view === "favorites") return { kind: "favorites" };
   if (input.query.trim()) return { kind: "filtered" };
   return { kind: "list" };
-}
-
-/**
- * 关键词在不在这条会话的**摘要**里。
- *
- * # 为什么前端要再算一遍
- *
- * 后端的 `codex:search-sessions` 是两段式的：先匹配摘要，摘要不中再**读整个文件**
- * 用正文匹配（`matches_session_terms`）。结果里**不带**「它是哪一段命中的」这个信息，
- * 而界面上有一个「搜索消息正文」开关：关掉它时用户要的是「只看摘要命中的那些」。
- * 后端没有对应的开关参数（也不该为一个展示选项加一个），所以这里按
- * `aivc-core/src/text.rs` 的 `session_search_haystack` 逐字对齐地算一遍：
- * 编号、标题、来源标题、工作目录、模型、CLI 版本、预览消息全文。
- *
- * 语义与后端一致：按空白分词、全部词都要命中（AND）。
- */
-export function matchesSessionSummary(session: AiSession, query: string): boolean {
-  const terms = query
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (terms.length === 0) return true;
-  const haystack = [
-    session.id,
-    session.title,
-    session.sourceTitle ?? "",
-    session.cwd ?? "",
-    session.model ?? "",
-    session.cliVersion ?? "",
-    ...session.preview.map((message) => message.text)
-  ]
-    .join("\n")
-    .toLowerCase();
-  return terms.every((term) => haystack.includes(term));
 }

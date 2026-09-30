@@ -3,7 +3,6 @@ import { useCallback, useState } from "react";
 import {
   Button,
   Card,
-  ChipGroup,
   EmptyState,
   LoadingBlock,
   Select,
@@ -243,26 +242,5 @@ export function GatewayFailurePanel({
 
       {void onError}
     </div>
-  );
-}
-
-/** 结果筛选用的分段控件。放在这里是因为它只服务于本面板的语义。 */
-export function OutcomeChips({
-  value,
-  onChange
-}: {
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <ChipGroup
-      value={value}
-      onChange={onChange}
-      options={[
-        { value: "", label: "全部" },
-        { value: "error", label: "失败" },
-        { value: "timeout", label: "超时" }
-      ]}
-    />
   );
 }

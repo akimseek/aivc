@@ -293,6 +293,45 @@ describe("useWorkspaceTabs 的接线", () => {
     expect(closeTerminal).toHaveBeenCalledWith("term-1");
   });
 
+  /**
+   * 恢复会话（`beginResumeSession`）在切换选中态之后**显式**调 `selectSession`。
+   *
+   * # 为什么断言落在这一层
+   *
+   * 缺陷本身（R37：原目录丢失那一支只写了选中态、不切标签）在 `app.tsx` 的调用点
+   * 上，而 `app.tsx` 没有渲染入口测试——它一挂载就要把终端栈、事件订阅、六七个 IPC
+   * 全拉起来，为此造一套假后端只能测出假的接线。所以这里钉住那个调用**依赖的契约**：
+   * 显式 `selectSession` 能一次把标签切到位，且**不丢标签上已有的终端**。
+   */
+  it("恢复会话前先切标签：带终端的那张标签被重新激活时，终端不被丢掉", () => {
+    /*
+      原目录丢失时恢复路径会弹出「设置工作目录」对话框，而对话框背后的画布必须
+      已经是这条会话——用户填工作目录时看不出这是给谁填的，等于在给一个看不见的
+      对象填表（用户报的 R37）。
+
+      两个前提：① 已经存在的标签只**激活**，不会新建第二张；② 那张标签上可能还挂着
+      上一次的终端（异常退出时标签会保留现场，等用户点「继续会话」），激活不能把它
+      弄丢——丢了画布就是空的，恢复对话框弹在一张空标签上。
+    */
+    const { fake } = fakeTerminals([
+      terminal("term-1", { running: false, exitedCleanly: false, exitCode: 1 })
+    ]);
+    const view = renderHook(() => useWorkspaceTabs(fake, null));
+
+    act(() => view.result.current.attachTerminalTab("term-1", "sess-1", "会话甲"));
+    // 用户切到另一路新会话终端上——「活动标签不是会话甲」的常见状态。
+    act(() => view.result.current.attachTerminalTab("term-new", undefined, "新会话"));
+    expect(view.result.current.activeKey).toBe("term-new");
+
+    act(() => view.result.current.selectSession(session("sess-1")));
+
+    expect(view.result.current.activeKey).toBe("sess-1");
+    expect(view.result.current.tabs).toHaveLength(2);
+    expect(view.result.current.tabs.find((tab) => tab.key === "sess-1")!.terminalId).toBe(
+      "term-1"
+    );
+  });
+
   it("closeOtherTabs：保留下来的那张成为激活标签", () => {
     // 从**非激活**标签上右键「关闭其他」：不修 activeKey 就会留下一个指向已关标签的
     // 激活键——标签还在，画布却落到空状态。

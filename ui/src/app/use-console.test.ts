@@ -250,6 +250,38 @@ function recordingRuntime(answers: Record<string, () => unknown> = {}) {
   return calls;
 }
 
+/**
+ * `selectProvider` 的取值校验。
+ *
+ * # 为什么挡在 hook 里
+ *
+ * 它带一串清空副作用（目标、会话、选中项全作废）。脏值落进 `providerId` 之后，
+ * 目标被清空、下拉里又没有匹配项，用户必须重选一次真实平台才能恢复；而这层
+ * 「必须是自己校验一遍」的约定靠每个调用方记住是不牢的（`openAt` 也在调它）。
+ * 侧栏的 `chooseProvider` 仍然挡在前面，这是第二道。
+ */
+describe("selectProvider 的取值校验", () => {
+  it("只接受空值与清单里存在的编号，其余忽略", async () => {
+    const providers = [
+      { id: "codex", label: "Codex", capabilities: {} },
+      { id: "claude", label: "Claude", capabilities: {} }
+    ];
+    fakeRuntime({ "ai:list-providers": () => providers });
+    const { result } = renderHook(() => useConsole());
+    await waitFor(() => expect(result.current.providers).toHaveLength(2));
+
+    act(() => result.current.selectProvider("qoder"));
+    expect(result.current.providerId).toBe("");
+
+    act(() => result.current.selectProvider("claude"));
+    expect(result.current.providerId).toBe("claude");
+
+    // 空值仍然合法：它是「取消选择」这一动作。
+    act(() => result.current.selectProvider(""));
+    expect(result.current.providerId).toBe("");
+  });
+});
+
 describe("branchFromMessage 分给哪条会话", () => {
   const branchArgs = (calls: { command: string; args: Record<string, unknown> }[]) =>
     calls.find((call) => call.command === "codex:branch-session")?.args;

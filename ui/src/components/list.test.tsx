@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { createEvent, fireEvent, render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, createEvent, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ListRow } from "./list";
 
@@ -15,7 +15,15 @@ import { ListRow } from "./list";
  *
  * 反过来，**没有 `onClick` 的行是纯展示**（例如配置面里那些只读行），
  * 它们不该进 Tab 序、也不该被读成按钮。
+ *
+ * # 手动清理
+ *
+ * 本工程的 vitest 没开 `globals`，testing-library 注册不上自动清理。这一组用
+ * `container` 查询还不受影响，但「插槽里有什么」那条要按角色找按钮——
+ * 上一个用例留下的 DOM 会让它撞见两份。
  */
+afterEach(cleanup);
+
 describe("ListRow", () => {
   it("可点的行：role=button + tabIndex=0，Enter / Space 触发 onClick", () => {
     const onClick = vi.fn();
@@ -68,9 +76,41 @@ describe("ListRow", () => {
 
     // jsdom **不实现**原生控件的键盘激活（按 Space 不会真的变成 click），这里补上
     // 浏览器随后会合成的那一步，证明勾选这一路仍然有效。行自己的 `onClick` 会不会
-    // 被这次点击冒泡上来，取决于调用方给插槽控件加了什么——不在这个「按键让位」
-    // 守卫的范围里。
+    // 被这次点击冒泡上来，取决于调用方给插槽控件加了什么——见下一条。
     fireEvent.click(box);
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("插槽里的按钮自己吃点击：一次点击只做一件事", () => {
+    // 鼠标那一半的让位。行内插槽里放的是「勾选 / 收藏 / 打开菜单」这类**自己的**动作，
+    // 再顺带触发行点击（在这里就是「打开这条会话」）就是一次点击做两件事——
+    // 而其中一件用户根本没要求。
+    const onClick = vi.fn();
+    const onAction = vi.fn();
+    const view = render(
+      <ListRow
+        title="一条结果"
+        trailing={
+          <button type="button" onClick={onAction}>
+            收藏
+          </button>
+        }
+        onClick={onClick}
+      />
+    );
+
+    fireEvent.click(view.getByRole("button", { name: "收藏" }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
+
+    // 行本体照旧可点：插槽之外的区域（标题、空白处）不受这条守卫影响。
+    fireEvent.click(view.container.querySelector(".row-title")!);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("没传插槽时不多渲染那一层容器", () => {
+    // `.row-slot` 只为事件而存在；没有插槽就不该在 DOM 里多出空元素。
+    const view = render(<ListRow title="只读的一行" onClick={vi.fn()} />);
+    expect(view.container.querySelectorAll(".row-slot")).toHaveLength(0);
   });
 });

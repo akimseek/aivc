@@ -429,8 +429,16 @@ export function App() {
    */
   const beginResumeSession = useCallback(
     async (target: AiTarget, session: AiSession) => {
-      // 先把选中态切过去（列表高亮、标签）。
+      /*
+        先把选中态切过去（列表高亮、标签）。
+
+        **标签要显式切**，不能只靠 `openAt` 写选中编号——理由与 `openSessionById`
+        那句注释一样：编号没变时（这条会话本来就是选中项，而活动标签是另一路终端）
+        标签的 effect 不会重跑，「原目录丢失」这一支尤其明显——它会弹出一个对话框，
+        而对话框背后的画布还停在**别的**会话上，用户填工作目录时看不出这是给谁填的。
+      */
       console.openAt(target, session);
+      workspace.selectSession(session);
 
       const cwd = session.cwd ?? "";
       // 决策本身在 `resume-session.ts` 里，**有四条分支**且逐条有测试。
@@ -452,7 +460,7 @@ export function App() {
         title: displayTitle(session)
       });
     },
-    [console, openTerminal]
+    [console, openTerminal, workspace.selectSession]
   );
 
   /**

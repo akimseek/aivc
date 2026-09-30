@@ -437,15 +437,34 @@ export function useConsole(options: { notify?: Notify } = {}) {
     void api.logPerformance("ui.started", performance.now(), "ok");
   }, []);
 
-  const selectProvider = useCallback((next: AiProviderId | "") => {
-    setProviderId(next);
-    // 平台变了，目标与会话都作废——留着会让界面显示另一个平台的会话。
-    setTargets([]);
-    setTargetId("");
-    setSessions([]);
-    setSelectedId("");
-    setSelectedIds([]);
-  }, []);
+  /**
+   * 切换平台。
+   *
+   * # 取值要校验
+   *
+   * 它带一串**清空副作用**（目标、会话、选中项全作废——留着会显示另一个平台的
+   * 内容）。于是脏值不再是「下拉框显示不准」这种小问题：把清单里不存在的编号写进
+   * `providerId`，目标会被清空、而下拉里又没有匹配的项，用户必须重选一次真实平台
+   * 才能恢复。
+   *
+   * 侧栏 `chooseProvider` 已经挡了一层（它读得到 `providers`），这一层是**第二道**：
+   * 那个回调是界面代码，而这个 hook 的返回值是公共入口——`openAt` 也会调它，
+   * 将来多一个调用点不该要求每个调用方都记得自己校验一遍。
+   */
+  const selectProvider = useCallback(
+    (next: AiProviderId | "") => {
+      // `""` 是合法的（未选平台），其余必须在清单里。
+      if (next !== "" && !providers.some((item) => item.id === next)) return;
+      setProviderId(next);
+      // 平台变了，目标与会话都作废——留着会让界面显示另一个平台的会话。
+      setTargets([]);
+      setTargetId("");
+      setSessions([]);
+      setSelectedId("");
+      setSelectedIds([]);
+    },
+    [providers]
+  );
 
   const selectTarget = useCallback((next: string) => {
     setTargetId(next);

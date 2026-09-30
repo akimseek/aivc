@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
 /**
  * 列表与行。
@@ -12,10 +12,14 @@ import type { KeyboardEvent, ReactNode } from "react";
  */
 
 export type ListRowProps = {
-  /** 主行左端：复选框或图标。 */
+  /**
+   * 主行左端：复选框或图标。
+   *
+   * 它被包在 `.row-slot` 里——那一层只做一件事：点击不冒泡到行（见下文的「鼠标那一半」）。
+   */
   leading?: ReactNode;
   title: ReactNode;
-  /** 主行右端：收藏星、状态标记。 */
+  /** 主行右端：收藏星、状态标记。与 `leading` 一样包在 `.row-slot` 里。 */
   trailing?: ReactNode;
   /** 标题下的一行次要信息（预览文本）。 */
   preview?: ReactNode;
@@ -42,6 +46,14 @@ export type ListRowProps = {
  * `leading` / `trailing` 插槽里的控件上时，那个控件自己就认 Enter / Space。今天
  * 没有调用方往插槽里放可聚焦元素，但少了这一句，将来一放就会复现会话卡片那类劫持
  * （点勾选/按钮顺带触发行点击，而且 `preventDefault()` 还会让内层控件按不动）。
+ *
+ * # 鼠标那一半：插槽自己吃掉点击
+ *
+ * 键处理那一条只管键盘。鼠标点插槽里的 `<button>` 时，点击会**冒泡到行**上，
+ * 于是行也跟着开一次——一次点击做了两件事。挡法放在**插槽容器**上
+ * （`.row-slot` 的 `onClick` 里 `stopPropagation`），而不是在行的 `onClick` 里
+ * 列举「哪些元素算交互元素」：插槽里能放什么由调用方决定（按钮、勾选框、
+ * 自绘控件），列举法一定会漏，而漏掉的那一个就是「点它顺带开一条会话」。
  */
 export function ListRow({
   leading,
@@ -54,6 +66,9 @@ export function ListRow({
   onContextMenu,
   titleAttr
 }: ListRowProps) {
+  /** 插槽容器的点击处理器：吃掉冒泡，行不再跟着响应（理由见文件头）。 */
+  const stop = (event: MouseEvent<HTMLElement>) => event.stopPropagation();
+
   return (
     <div
       className={`row${active ? " on" : ""}`}
@@ -75,9 +90,9 @@ export function ListRow({
       title={titleAttr}
     >
       <div className="row-line">
-        {leading}
+        {leading !== undefined && <span className="row-slot" onClick={stop}>{leading}</span>}
         <span className="row-title">{title}</span>
-        {trailing}
+        {trailing !== undefined && <span className="row-slot" onClick={stop}>{trailing}</span>}
       </div>
       {preview !== undefined && preview !== "" && <div className="row-preview">{preview}</div>}
       {meta !== undefined && <div className="row-meta">{meta}</div>}

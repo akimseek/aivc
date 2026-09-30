@@ -748,6 +748,19 @@ select {
   min-width: 0;
 }
 
+/*
+ * 插槽容器：`leading` / `trailing` 外面那一层。
+ *
+ * 它**只为事件**而存在——插槽里的控件自己处理点击，行不重复响应（见 `list.tsx`）。
+ * 这里的三条只是让这一层不改变原来的对齐：它顶替了原来「控件直接当 flex 子项」
+ * 的位置，所以跟着 `flex: 0 0 auto`，内部用 inline-flex 居中。
+ */
+.row-slot {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
 .row-title {
   flex: 1;
   min-width: 0;

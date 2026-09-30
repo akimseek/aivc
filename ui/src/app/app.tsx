@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, ToolbarSpacer, useToast } from "../components";
+import { Button, ToolbarSpacer, useToast, type TabItem } from "../components";
 import * as api from "../ipc/commands";
 import type { AiSession, AiTarget, ApiVendor } from "../types";
 import { AppMenubar } from "./app-menubar";
@@ -11,11 +11,12 @@ import { planResume } from "./resume-session";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
 import { displayTitle } from "./session-display";
 import { Sidebar } from "./sidebar";
+import { resolveStageContent } from "./stage-content";
 import { StatusBar } from "./status-bar";
 import { useConsole } from "./use-console";
 import { useTerminals } from "./use-terminals";
 import { useTheme } from "./use-theme";
-import { useWorkspaceTabs } from "./use-workspace-tabs";
+import { hasSessionTab, useWorkspaceTabs } from "./use-workspace-tabs";
 
 /**
  * 应用外壳。
@@ -72,6 +73,29 @@ export function App() {
   const { selectedTarget } = console;
 
   const workspace = useWorkspaceTabs(terminals, console.selectedSession);
+
+  /**
+   * 画布当前该显示什么：**终端优先**，终端不在了才回落到历史，都没有就是空。
+   *
+   * 判据是纯函数（`stage-content.ts`，逐条有测试）：它是「切画布」唯一的判据，
+   * 错了整块区域就是错的——所以不在渲染里各写一遍。
+   */
+  const stage = resolveStageContent(workspace.activeTab, (id) =>
+    terminals.terminals.some((item) => item.id === id)
+  );
+
+  /**
+   * 标签条要的项目。
+   *
+   * `WorkspaceTabItem` 里的 `suffix` / `state` / `providerId` 是给新 `TabBar`
+   * 的（Task 9 接），旧的 `Tabs` 只认 `{ key, label, tone }`——所以这里先把后缀
+   * 拼进标题。这一小段映射在 TabBar 接手后删掉。
+   */
+  const tabItems: TabItem[] = workspace.tabItems.map((item) => ({
+    key: item.key,
+    label: `${item.label}${item.suffix}`,
+    tone: item.tone
+  }));
 
   /**
    * 从会话列表里按编号找回完整会话——右键菜单要它的文件路径，
@@ -195,7 +219,7 @@ export function App() {
   );
 
   /**
-   * **选中会话跟随当前终端。**
+   * **选中会话跟随当前标签。**
    *
    * 这是旧平台的规则（`app.tsx` 里那个依赖 `targetId` 的 effect）：
    *
@@ -204,22 +228,22 @@ export function App() {
    * setSelectedId(activeSessionForTarget?.id || "");
    * ```
    *
-   * 也就是**跟着当前终端那条会话走；终端没开、或它不属于当前目标时就是不选**。
+   * 也就是**跟着当前标签那条会话走；标签没有会话、或它不在这份列表里时就是不选**。
    * 从来不选「列表第一项」。
    *
-   * 这条规则是「点历史会话进入终端后还能看到详情/从此处分支」的另一半：
-   * 详情按钮在标签栏上、绑的是当前终端的会话，而选中项也要跟着走，
-   * 否则右侧正文显示的是另一条会话。
+   * 这条规则是「在终端里还能看到详情/从此处分支」的另一半：详情按钮在标签栏上、
+   * 绑的是当前标签的会话，而选中项也要跟着走，否则右侧正文显示的是另一条会话。
    *
-   * 只在**当前标签确实是终端**时同步。看会话正文（`kind === "session"`）时不动选中项
-   * ——那时用户是在列表里挑，选中项就是他的选择。
+   * 统一模型下来判据不再分「终端标签 / 会话标签」：**激活任一挂着会话的标签**
+   * 就把它设为选中项——切标签时左侧列表的高亮跟着走，靠的就是这一处；
+   * 全新会话的标签还没有编号（`sessionId` 缺席），那时不动选中项，因为
+   * 它对应的会话还不存在。**别在点击处各写一次。**
    */
   useEffect(() => {
-    if (workspace.activeTab?.kind !== "terminal") return;
-    const sessionId = workspace.activeTab.sessionId;
+    const sessionId = workspace.activeTab?.sessionId;
     if (!sessionId) return;
     console.setSelectedId(sessionId);
-  }, [workspace.activeTab?.kind, workspace.activeTab?.sessionId, console]);
+  }, [workspace.activeTab?.sessionId, console.setSelectedId]);
   /**
    * 最近一次路由变更。
    *
@@ -289,7 +313,7 @@ export function App() {
           options?.prompt,
           options?.sessionId
         );
-        workspace.addTerminalTab(id, options?.title ?? "终端", options?.sessionId);
+        workspace.attachTerminalTab(id, options?.sessionId, options?.title ?? "新会话");
       } catch (error) {
         console.setError(error instanceof Error ? error.message : String(error));
       }
@@ -314,7 +338,14 @@ export function App() {
   }, [console.selectedSession?.cwd]);
 
   /**
-   * 点历史会话：**恢复那次会话并进入终端**（旧平台 `openResumeWithDirectory`）。
+   * **恢复一条历史会话并进入终端**（旧平台 `openResumeWithDirectory`）。
+   *
+   * 这是**显式动作**（标签栏的「继续会话」、右键菜单与详情里的分支跳转），
+   * 不再由「点一下会话行」触发——单击只打开标签看历史。
+   *
+   * 不必再事先清掉这条会话上已经死掉的终端标签：`attachTerminal` 会把新终端挂到
+   * 那张标签上并回报被替换的旧终端，由 `attachTerminalTab` 把它 `closeTerminal`
+   * 收掉（这就是「再次进入被锁住」的修法）。
    *
    * 三条分支，与旧平台一致：
    *
@@ -329,10 +360,6 @@ export function App() {
    */
   const beginResumeSession = useCallback(
     async (target: AiTarget, session: AiSession) => {
-      // 先清掉这条会话上已经死掉的终端标签——否则下一步会切到那一张死标签上，
-      // 用户看到的是「再次进入被锁住」。
-      workspace.clearDeadTabs(session.id);
-
       // 先把选中态切过去（列表高亮、标签）。
       console.openAt(target, session);
 
@@ -356,22 +383,67 @@ export function App() {
         title: displayTitle(session)
       });
     },
-    [console, openTerminal, workspace]
+    [console, openTerminal]
   );
 
-  /** 侧栏回传的是编号（它不持有会话内容），这里还原成完整会话。 */
-  const resumeById = useCallback(
-    (target: AiTarget, sessionId: string) => {
+  /**
+   * 两点共用：按编号还原出完整会话（侧栏只回传编号，它不持有会话内容）。
+   *
+   * 「打开标签」与「继续会话」共用这一处判定，所以「会话已经不在列表里」
+   * 这句提示只有一份——两处各写一遍迟早会不一致。
+   */
+  const sessionForAction = useCallback(
+    (sessionId: string): AiSession | null => {
       const session = sessionById(sessionId) ?? console.selectedSession;
       if (!session || session.id !== sessionId) {
         // 会话可能刚被别处删掉。给一句明确的说明，而不是静默无反应。
         toast.show("该会话已不在当前列表里，请刷新后重试。");
-        return;
+        return null;
       }
-      void beginResumeSession(target, session);
+      return session;
     },
-    [sessionById, console.selectedSession, beginResumeSession, toast]
+    [sessionById, console.selectedSession, toast]
   );
+
+  /** 继续会话动作用的入口（标签栏的「继续会话」）。 */
+  const resumeById = useCallback(
+    (target: AiTarget, sessionId: string) => {
+      const session = sessionForAction(sessionId);
+      if (session) void beginResumeSession(target, session);
+    },
+    [sessionForAction, beginResumeSession]
+  );
+
+  /**
+   * 侧栏点会话行：**只打开/激活它的标签**，不再顺带起终端。
+   *
+   * 本批次的一处行为变化：单击的意图多半是「看一下这条会话」，而起一路 CLI
+   * 进程既慢又意外；恢复终端改成显式动作（标签栏的「继续会话」）。
+   * 选中态一改，标签就由 `useWorkspaceTabs` 里那个 effect 打开——这里不重复实现它。
+   */
+  const openSessionById = useCallback(
+    (target: AiTarget, sessionId: string) => {
+      const session = sessionForAction(sessionId);
+      if (session) console.openAt(target, session);
+    },
+    [sessionForAction, console.openAt]
+  );
+
+  /**
+   * 「继续会话」这一刻有没有意义。
+   *
+   * 两个条件都要：标签挂着**会话编号**（全新会话还没有编号，无从恢复），
+   * 而且这张标签上的终端**没在跑**——正在跑时再点等于白起一路、再把它替换掉。
+   * 异常退出或被关掉的终端（`running` 为假）仍然可恢复，这正是「退出后被锁住」
+   * 那条路径的出口。
+   */
+  const canResumeSession = Boolean(workspace.activeTab?.sessionId) && !activeTerminal?.running;
+
+  /** 「继续会话」：在当前标签的会话上再起一路终端（带 `--resume`）。 */
+  const resumeActiveSession = useCallback(() => {
+    const sessionId = workspace.activeTab?.sessionId;
+    if (selectedTarget && sessionId) resumeById(selectedTarget, sessionId);
+  }, [workspace.activeTab?.sessionId, selectedTarget, resumeById]);
 
   /* ── 导出 ─────────────────────────────────────────────── */
 
@@ -392,7 +464,7 @@ export function App() {
     <div className="shell">
       <AppMenubar
         selectedTarget={selectedTarget}
-        hasActiveSession={workspace.tabs.some((tab) => tab.kind === "session")}
+        hasActiveSession={hasSessionTab(workspace.tabs)}
         attentionEntries={terminals.terminals
           .filter((item) => terminals.attention[item.id])
           .map((item) => {
@@ -407,7 +479,10 @@ export function App() {
             };
           })}
         onSelectAttention={(terminalId) => {
-          workspace.setActiveKey(terminalId);
+          // 标签的 key 在统一模型里**优先是会话编号**，所以要按 terminalId 反查
+          // 标签——直接拿 terminalId 当 key 会切到一张不存在的标签上。
+          const tab = workspace.tabs.find((item) => item.terminalId === terminalId);
+          workspace.setActiveKey(tab?.key ?? terminalId);
           // 切过去就算看过了，清掉标记——否则铃铛上的数字一直不减。
           terminals.clearAttention(terminalId);
         }}
@@ -561,14 +636,14 @@ export function App() {
         canBranch={supportsBranch(console.providers, console.providerId)}
         resolveSession={sessionById}
         tabLabel={workspace.tabItems.find((item) => item.key === tabMenu?.key)?.label ?? "标签"}
-        closableTabCount={workspace.closableKeys().length}
+        closableTabCount={workspace.tabs.length}
       />
 
       <div className="main">
         <Sidebar
           console={console}
           selectedTarget={selectedTarget}
-          onResume={resumeById}
+          onOpen={openSessionById}
           onMenu={(x, y, sessionId) => setMenu({ x, y, sessionId })}
           providers={console.providers}
           vendors={sidebarVendors}
@@ -587,9 +662,9 @@ export function App() {
         */}
         <div className="workarea">
           <SessionWorkspace
-          tabItems={workspace.tabItems}
+          tabItems={tabItems}
           activeKey={workspace.activeKey}
-          activeTab={workspace.activeTab}
+          stage={stage}
           terminalItems={terminals.terminals}
           registerSink={terminals.registerSink}
           unregisterSink={terminals.unregisterSink}
@@ -597,10 +672,9 @@ export function App() {
           onActivate={(key) => {
             workspace.setActiveKey(key);
             // 看过就算处理过：清掉这一路的提醒标记，否则小点一直亮着，
-            // 用户会以为还有事没处理。
-            if (workspace.tabs.find((tab) => tab.key === key)?.kind === "terminal") {
-              terminals.clearAttention(key);
-            }
+            // 用户会以为还有事没处理。提醒是按**终端编号**记的，标签 key 未必是它。
+            const terminalId = workspace.tabs.find((tab) => tab.key === key)?.terminalId;
+            if (terminalId) terminals.clearAttention(terminalId);
           }}
           onClose={workspace.closeTab}
           onTabContextMenu={(key, x, y) => setTabMenu({ key, x, y })}
@@ -612,15 +686,21 @@ export function App() {
                 /*
                   「详情」要看的会话。
 
-                  **当前终端那条会话优先**——这正是「点历史会话进入终端后还能查看详情」
-                  的关键：那时正文不渲染（原来详情按钮就在正文头部，于是消失了），
-                  而选中项也未必等于这条终端所属的会话。旧平台同理：它绑的是
+                  **当前标签那条会话优先**——这正是「在终端里还能查看详情」的关键：
+                  那时正文不渲染（原来详情按钮就在正文头部，于是消失了），
+                  而选中项也未必等于这张标签所属的会话。旧平台同理：它绑的是
                   `activeSession`（活动标签的会话）。
                 */
                 detailSession={
                   sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession
                 }
                 onOpenDetail={(session) => setDetailSession(session)}
+                /*
+                  「继续会话」：点会话行不再起终端之后，这是**显式的**恢复入口
+                  （`beginResumeSession` 原样保留：本目录还在就直接进终端，不在就弹
+                  「设置工作目录」）。`undefined` = 这一刻没有可恢复的东西。
+                */
+                onResume={canResumeSession ? resumeActiveSession : undefined}
               />
               <ToolbarSpacer />
             </>

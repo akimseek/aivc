@@ -96,13 +96,18 @@ export type SidebarConsole = Pick<
  *
  * # 行点击只回传 `sessionId`
  *
- * 抽成 `onResume(target, sessionId)` 而不是把 `AiSession` 整个递出去：
+ * 抽成 `onOpen(target, sessionId)` 而不是把 `AiSession` 整个递出去：
  * 侧栏不关心会话内容，只关心「用户点了哪一条」。
+ *
+ * 单击的语义是**打开/激活这条会话的标签**（终端没在跑就显示历史），
+ * **不再顺带起终端**——那是本批次的一处行为变化：单击多半只是想看一眼，
+ * 而拉起一个 CLI 进程既慢又意外。恢复终端是显式动作（标签栏的「继续会话」）。
+ * 这条语义只在上层实现（`openSessionById`），侧栏只管把「点了哪一条」报上去。
  */
 export function Sidebar({
   console: state,
   selectedTarget,
-  onResume,
+  onOpen,
   onMenu,
   providers,
   vendors,
@@ -114,7 +119,7 @@ export function Sidebar({
 }: {
   console: SidebarConsole;
   selectedTarget: AiTarget | null;
-  onResume: (target: AiTarget, sessionId: string) => void;
+  onOpen: (target: AiTarget, sessionId: string) => void;
   onMenu: (x: number, y: number, sessionId: string) => void;
   providers: AiProviderSummary[];
   vendors: ApiVendor[];
@@ -495,7 +500,7 @@ export function Sidebar({
               checked={state.selectedIds.includes(session.id)}
               selectable={canBatch}
               onOpen={() => {
-                if (selectedTarget) onResume(selectedTarget, session.id);
+                if (selectedTarget) onOpen(selectedTarget, session.id);
               }}
               onToggle={() => state.toggleSelected(session.id)}
               onFavorite={() => void state.toggleFavorite(session)}
@@ -509,13 +514,13 @@ export function Sidebar({
               title="收藏"
               items={state.quickAccess.favorites}
               empty="还没有收藏。在会话行上点 ☆ 收藏它。"
-              onOpen={(target, session) => onResume(target, session.id)}
+              onOpen={(target, session) => onOpen(target, session.id)}
             />
             <QuickGroup
               title="最近打开"
               items={state.quickAccess.recent}
               empty="还没有打开过会话。"
-              onOpen={(target, session) => onResume(target, session.id)}
+              onOpen={(target, session) => onOpen(target, session.id)}
             />
           </>
         )}
@@ -526,7 +531,7 @@ export function Sidebar({
               key={`${result.target.id}:${result.session.id}`}
               target={result.target}
               session={result.session}
-              onOpen={() => onResume(result.target, result.session.id)}
+              onOpen={() => onOpen(result.target, result.session.id)}
             />
           ))}
       </List>

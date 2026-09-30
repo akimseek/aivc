@@ -6,7 +6,7 @@ import { BranchPanel } from "./branch-panel";
 import { messageCountLabel, formatTokens } from "./session-display";
 import { Message } from "./session-row";
 import { SessionDetailButton } from "./session-actions";
-import type { WorkspaceTab } from "./use-workspace-tabs";
+import type { StageContent } from "./stage-content";
 
 /**
  * 终端**按需加载**。
@@ -29,16 +29,21 @@ const TerminalPane = lazy(() =>
  *
  * 这里把「三种正文怎么切换」一次说清：
  *
- * | 当前标签 | 正文显示 |
+ * | 画布状态（`stage`） | 正文显示 |
  * | --- | --- |
  * | 终端 | 终端栈（会话正文整块不渲染） |
- * | 会话且没有会话标签 | 空状态（说明该怎么开始） |
- * | 会话 | 会话头 + 分支面板 + 消息线程 |
+ * | 历史 | 会话头 + 分支面板 + 消息线程 |
+ * | 空 | 空状态（说明该怎么开始） |
+ *
+ * 判据由 [`resolveStageContent`](./stage-content.ts) 算好传进来：**终端优先**——
+ * 一张标签同时挂着会话与终端（统一模型），两者都在时显示终端；终端不在了
+ * （还没起、或已被关掉）才回落到历史。这一步不在渲染里判，否则「终端或历史」
+ * 就会在几个组件里各写一遍。
  */
 export function SessionWorkspace({
   tabItems,
   activeKey,
-  activeTab,
+  stage,
   terminalItems,
   registerSink,
   unregisterSink,
@@ -60,7 +65,8 @@ export function SessionWorkspace({
 }: {
   tabItems: TabItem[];
   activeKey: string;
-  activeTab: WorkspaceTab | null;
+  /** 画布当前该显示什么（由 `resolveStageContent` 算出）。 */
+  stage: StageContent;
   /** 当前挂着的终端（全部，不只是前台那一个）。`sessionId` 决定自管输入的初始可见性。 */
   terminalItems: { id: string; running: boolean; sessionId?: string }[];
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
@@ -97,13 +103,13 @@ export function SessionWorkspace({
         {/* 所有终端**同时挂载**、叠在同一个位置上；非前台的只隐藏不卸载——
             卸载会丢掉 xterm 的缓冲，切回来时历史就没了。 */}
         {terminalItems.length > 0 && (
-          <div className={`terminal-stack${activeTab?.kind === "terminal" ? "" : " hidden"}`}>
+          <div className={`terminal-stack${stage.kind === "terminal" ? "" : " hidden"}`}>
             <Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}>
               {terminalItems.map((item) => (
                 <TerminalPane
                   key={item.id}
                   terminalId={item.id}
-                  active={activeTab?.kind === "terminal" && activeTab.terminalId === item.id}
+                  active={stage.kind === "terminal" && stage.terminalId === item.id}
                   running={item.running}
                   /* 自管输入的初始可见性由「是不是恢复历史会话」决定。 */
                   sessionId={item.sessionId}
@@ -116,7 +122,7 @@ export function SessionWorkspace({
           </div>
         )}
 
-        {activeTab?.kind === "terminal" ? null : (
+        {stage.kind === "history" ? (
           <SessionBody
             session={session}
             messageTotal={messageTotal}
@@ -129,7 +135,12 @@ export function SessionWorkspace({
             branchParent={branchParent}
             branchChildren={branchChildren}
           />
-        )}
+        ) : stage.kind === "empty" ? (
+          <EmptyState
+            message="没有打开的会话。"
+            hint="从左侧选择一个会话，或新建一个终端。"
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -138,8 +149,8 @@ export function SessionWorkspace({
 /**
  * 会话正文。
  *
- * 没有会话标签时给空状态而不是空白：用户需要知道「从这里怎么开始」。
- * 三个入口（左侧选会话 / 新建终端 / 新建 Codex）都写在提示里。
+ * 没有会话时给空状态而不是空白：标签还在、而那条会话已经不在当前列表里
+ * （刚被别处删掉，或目标刚切过去还没加载完）时，至少要有一句说明。
  */
 function SessionBody({
   session,
@@ -167,8 +178,8 @@ function SessionBody({
   if (!session) {
     return (
       <EmptyState
-        message="没有打开的会话。"
-        hint="从左侧选择一个会话，或新建一个终端。"
+        message="这条会话已经不在当前列表里。"
+        hint="刷新列表，或从左侧重新选择一条会话。"
       />
     );
   }
@@ -254,17 +265,18 @@ function UsagePills({ usage, model }: { usage: NonNullable<AiSession["usage"]>; 
   );
 }
 
-/** 工作区标签条的尾部按钮：详情 + 新建 Codex。 */
+/** 工作区标签条的尾部按钮：详情 + 继续会话 + 新建 Codex。 */
 export function WorkspaceTrailing({
   canStartCodex,
   onNewCodex,
   detailSession,
-  onOpenDetail
+  onOpenDetail,
+  onResume
 }: {
   canStartCodex: boolean;
   onNewCodex: () => void;
   /**
-   * 「详情」要看的会话：**当前终端那条会话优先**，否则当前选中的会话。
+   * 「详情」要看的会话：**当前标签那条会话优先**，否则当前选中的会话。
    *
    * 旧平台就是这个来源（`activeSession && <button>详情</button>`，而 `activeSession`
    * 是活动标签的会话）。用「当前选中」会在进入终端后失灵——那时选中项可能不是
@@ -272,10 +284,23 @@ export function WorkspaceTrailing({
    */
   detailSession: AiSession | null;
   onOpenDetail: (session: AiSession) => void;
+  /**
+   * 「继续会话」：在活动标签的会话上起一路终端（带 `--resume`）。
+   *
+   * 传 `undefined` 表示这一刻没有可恢复的东西（标签没有会话编号，或那一路终端
+   * 正在跑）。放在**标签条这一行**而不是正文里：终端异常退出时标签保留现场
+   * （画布仍是终端），按钮放进正文就够不着了——那正是「退出后被锁住」的形态。
+   */
+  onResume?: () => void;
 }) {
   return (
     <>
       <SessionDetailButton session={detailSession} onOpenDetail={onOpenDetail} />
+      {onResume && (
+        <Button small onClick={onResume} title="带 --resume 起一路终端，接着这条会话">
+          继续会话
+        </Button>
+      )}
       <Button small disabled={!canStartCodex} onClick={onNewCodex} title="在目标里启动 Codex">
         + Codex
       </Button>

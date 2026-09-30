@@ -16,8 +16,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  * | 关闭全部 | 全部可关的标签 |
  * | 关闭这张 | 就是这一张 |
  *
- * 「可关的」= `closable !== false`。会话标签通常标着不可关——把它一起关掉
- * 会让用户正在看的那条会话凭空消失。
+ * 「可关的」由调用方数出来（`closableCount`）：统一模型里每张标签都可关，
+ * 它现在就是标签总数。数量仍然要传——只剩一张时不该出现「关闭其他」
+ * （那只会关掉 0 张，用户以为没生效）。
  */
 export type TabContextMenuProps = {
   x: number;
@@ -99,8 +100,8 @@ export function TabContextMenu({
         ref={menuRef}
         onClick={(event) => event.stopPropagation()}
       >
-        {/* 这张也不可关时**连「关闭这张」都不出现**：给一个点了会失败的动作，
-            比不给更糟——用户会以为是自己点错了。 */}
+        {/* 一张都关不掉时（`closableCount` 为 0）**连「关闭这张」都不出现**：
+            给一个点了会失败的动作比不给更糟——用户会以为是自己点错了。 */}
         {closableCount > 0 && (
           <button type="button" role="menuitem" onClick={run(() => onCloseThis(tabKey))}>
             关闭这张

@@ -108,8 +108,8 @@ export type OverlaysActions = {
  * # 标签菜单的两项数据由调用方算好
  *
  * `tabLabel` 与 `closableTabCount` 来自 `useWorkspaceTabs`——那里才知道
- * 哪些标签可关、标题是什么。在这里猜（例如拿 key 去查会话）对**终端标签**
- * 是错的：终端标签的 key 是终端编号，查不到任何会话。
+ * 哪些标签可关、标题是什么。在这里猜（例如拿 key 去查会话）是错的：
+ * 统一模型里标签的 key 可能是终端编号（全新会话），查不到任何会话。
  */
 export function AppOverlays({
   state,
@@ -148,7 +148,7 @@ export function AppOverlays({
   resolveSession: (sessionId: string) => AiSession | undefined;
   /** 标签菜单显示的那张标签的标题。 */
   tabLabel: string;
-  /** 一共关得掉几张标签（会话标签不可关）。 */
+  /** 一共关得掉几张标签（统一模型里每张都可关，等于标签总数）。 */
   closableTabCount: number;
 }) {
   const menuSession = state.menu ? resolveSession(state.menu.sessionId) : undefined;

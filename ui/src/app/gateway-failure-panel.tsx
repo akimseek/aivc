@@ -98,7 +98,7 @@ export function GatewayFailurePanel({
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <>
+    <div className="observability-panel">
       {/* 面板头统一：标题、说明与「重新查询」从卡片头搬到这里（卡片本体只管内容）。 */}
       <PanelHeader
         title="异常诊断"
@@ -109,6 +109,7 @@ export function GatewayFailurePanel({
           </Button>
         }
       />
+      {/* 筛选一张卡、结果一张卡：筛选条件与结果不是一回事，中间那条边界要说出来。 */}
       <Card>
         <Toolbar>
           <label className="field">
@@ -199,7 +200,9 @@ export function GatewayFailurePanel({
             hint="这是好消息；如果确实期望有记录，先确认网关是否在服务请求。"
           />
         ) : (
-          <table className="data-table">
+          /* `dense`：一页 20 行、行里是状态码与耗时这类数字，行距收一档、单元格居中；
+             数字列加 `.ui-num` 让同一列的数位对齐。 */
+          <table className="data-table dense">
             <thead>
               <tr>
                 <th>时间</th>
@@ -215,7 +218,7 @@ export function GatewayFailurePanel({
             <tbody>
               {diagnostics.data.items.map((item, index) => (
                 <tr key={`${item.createdAt}:${item.vendorId}:${index}`}>
-                  <td className="mono">{formatLogTime(item.createdAt)}</td>
+                  <td className="mono ui-num">{formatLogTime(item.createdAt)}</td>
                   <td>{item.providerId}</td>
                   <td>{item.vendorId}</td>
                   <td>
@@ -223,9 +226,9 @@ export function GatewayFailurePanel({
                       {outcomeLabel(item.outcome)}
                     </span>
                   </td>
-                  <td>{item.upstreamStatus ?? "-"}</td>
-                  <td>{item.retryCount}</td>
-                  <td>{formatDuration(item.durationMs)}</td>
+                  <td className="ui-num">{item.upstreamStatus ?? "-"}</td>
+                  <td className="ui-num">{item.retryCount}</td>
+                  <td className="ui-num">{formatDuration(item.durationMs)}</td>
                   {/* 原因按「错误代码 → 上游状态 → 错误消息」取第一个可用的：
                       错误消息常常是一整段 HTML/JSON，表格里读不了。 */}
                   <td className="mono" title={item.errorMessage}>
@@ -239,7 +242,7 @@ export function GatewayFailurePanel({
       </Card>
 
       {void onError}
-    </>
+    </div>
   );
 }
 

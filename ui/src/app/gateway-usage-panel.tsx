@@ -1,20 +1,20 @@
 import { useCallback, useState } from "react";
 
 import {
+  Button,
   Card,
-  ChipGroup,
   DescriptionList,
   EmptyState,
   LoadingBlock,
-  Toolbar,
-  ToolbarSpacer,
   useAsyncData
 } from "../components";
 import * as api from "../ipc/commands";
 import { PanelHeader } from "../features/settings/panel-header";
-import type { UsageDimension } from "../types";
+// 成功率只有一处实现：工作台的「今日用量」与本页读的是同一个比值，
+// 各写一遍迟早会出现「一处 `0.0%`、一处 `-`」。
+import { successRateText } from "../features/workbench/workbench-cards";
+import type { UsageDimension, UsageSummary } from "../types";
 import {
-  USAGE_RANGES,
   customBounds,
   formatCost,
   formatDuration,
@@ -57,26 +57,18 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
   const report = useAsyncData(load, { errorMessage: "用量报表读取失败" });
 
   return (
-    <>
+    <div className="observability-panel">
       {/* 面板头统一：标题与范围选择从卡片头搬到这里，卡片本体只管内容。 */}
       <PanelHeader
         title="用量报表"
         description="按供应商与模型分组。「全部时间」的起点是 Unix 纪元——它覆盖所有已有记录。"
         actions={
           <>
-            <ChipGroup
-              value={picker.range}
-              onChange={(value) =>
-                setPicker((current) => ({ ...current, range: value as UsageRangeKey }))
-              }
-              options={USAGE_RANGES.filter((item) => item.key !== "custom").map((item) => ({
-                value: item.key,
-                label: item.label
-              }))}
-            />
             {/*
-              自定义日期**单独一行**（不在 actions 里）：两个日期框塞进右上角会把标题挤没。
-              三个观测面板共用同一个组件，因此三处的提示语与校验必然一致。
+              范围选择**只有一个入口**（这个组件）：此前这一页还有一个并列的预设
+              chips，同一个状态两个控件，而 chips 里偏偏没有「自定义」——用户会以为
+              两者是不同的东西。三个观测面板共用同一个组件，因此三处的提示语与
+              校验必然一致。
             */}
             <GatewayRangePicker
               range={picker.range}
@@ -84,10 +76,21 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
               end={picker.end}
               onChange={setPicker}
             />
+            {/*
+              「重新查询」与异常、日志两页同一个位置、同一个措辞。
+              它不随加载结果隐藏：读失败时恰恰最需要它。
+            */}
+            <Button small onClick={() => void report.reload()}>
+              重新查询
+            </Button>
           </>
         }
       />
-      <Card>
+
+      {/* 三个读数是这一页的结论，放在最上面；没拿到报表时不出（下方卡片会说原因）。 */}
+      {report.data && <SummaryCards summary={report.data.summary} />}
+
+      <Card title="区间明细">
         {report.loading ? (
           <LoadingBlock label="正在汇总用量…" />
         ) : report.error ? (
@@ -95,9 +98,20 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
         ) : !report.data ? (
           <EmptyState message="这个区间内没有用量记录。" />
         ) : (
+          /*
+            明细里**不再重复**上面三张卡片的数字：请求数、总 token、费用已经在
+            卡片上，四十像素外再写一遍只会让人以为它们可能不一样。这里留下卡片
+            给不出的分项——成功率之外的成功/失败条数、耗时与 token 的构成。
+
+            token 分项逐条列出来，而不是只给一个总数。「缓存输入」尤其要紧：它通常是
+            **便宜很多**的那一部分（命中缓存的价格往往只有几分之一），因此「总数多少」
+            不如「其中多少是缓存的」有用。后端一直在发这些字段。
+
+            缺字段是常态（不同上游记录的信息多寡不一样），`formatTokenCount`
+            对 `undefined` 给 `-` 而不是 `0`——`0` 会被读成「确实没有缓存」。
+          */
           <DescriptionList
             items={[
-              { label: "请求数", value: report.data.summary.requestCount },
               { label: "成功", value: report.data.summary.successCount, tone: "ok" },
               {
                 label: "失败",
@@ -105,16 +119,6 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
                 tone: report.data.summary.failureCount > 0 ? "warn" : undefined
               },
               { label: "平均耗时", value: formatDuration(report.data.summary.averageDurationMs) },
-              /*
-                token 分项逐条列出来，而不是只给一个总数。
-                
-                「缓存输入」尤其要紧：它通常是**便宜很多**的那一部分（命中缓存的价格
-                往往只有几分之一），因此「总数多少」不如「其中多少是缓存的」有用。
-                后端一直在发这些字段，此前界面只显示了 `总 token`。
-                
-                缺字段是常态（不同上游记录的信息多寡不一样），`formatTokenCount`
-                对 `undefined` 给 `-` 而不是 `0`——`0` 会被读成「确实没有缓存」。
-              */
               { label: "输入 token", value: formatTokenCount(report.data.summary.inputTokens) },
               { label: "输出 token", value: formatTokenCount(report.data.summary.outputTokens) },
               {
@@ -124,9 +128,7 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
               {
                 label: "推理 token",
                 value: formatTokenCount(report.data.summary.reasoningTokens)
-              },
-              { label: "总 token", value: formatTokenCount(report.data.summary.totalTokens) },
-              { label: "费用", value: formatCost(report.data.summary.costUsd) }
+              }
             ]}
           />
         )}
@@ -149,18 +151,51 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
         </>
       )}
 
-      {report.error === "" && (
-        <Toolbar>
-          <ToolbarSpacer />
-          <button type="button" className="btn btn-sm" onClick={() => void report.reload()}>
-            刷新
-          </button>
-        </Toolbar>
-      )}
-
       {void onError}
-    </>
+    </div>
   );
+}
+
+/**
+ * 一行三张汇总卡：请求数（含成功率）、累计 Tokens、预估费用。
+ *
+ * 它们与下方维度表的分工，和「今日用量」卡与这一页的分工是同一件事：
+ * 卡片回答「花了多少」，表格回答「花在哪」。
+ */
+function SummaryCards({ summary }: { summary: UsageSummary }) {
+  return (
+    <div className="stat-cards">
+      <div className="stat-card">
+        <span className="stat-card-label">请求数</span>
+        <span className="stat-card-value ui-num">{formatCount(summary.requestCount)}</span>
+        {/*
+          成功率并进请求数这张卡，而不是单开第四张：没有请求时它只能是 `-`，
+          单独一张「-」的卡片占位却什么都没说。
+        */}
+        <span className="stat-card-note">
+          成功率 {successRateText(summary.requestCount ?? 0, summary.successCount ?? 0)}
+        </span>
+      </div>
+      <div className="stat-card">
+        <span className="stat-card-label">累计 Tokens</span>
+        <span className="stat-card-value ui-num">{formatTokenCount(summary.totalTokens)}</span>
+      </div>
+      <div className="stat-card">
+        <span className="stat-card-label">预估费用</span>
+        <span className="stat-card-value ui-num">{formatCost(summary.costUsd)}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 卡片上的计数。
+ *
+ * 缺字段给 `-` 而不是 `0`：`0` 会被读成「确实一次请求都没有」，
+ * 而真相是这份报表没给这个数。`NaN` 同理不能落到界面上。
+ */
+function formatCount(value: number | undefined): string {
+  return value === undefined || Number.isNaN(value) ? "-" : String(value);
 }
 
 /**
@@ -185,7 +220,9 @@ function DimensionTable({
       {rows.length === 0 ? (
         <EmptyState message={empty} />
       ) : (
-        <table className="data-table">
+        /* `dense`：这两张表列多、行里全是数字，行距收一档、单元格居中，
+           数字列再加 `.ui-num`（等宽数字）——不等宽时列对不齐，扫一列很难。 */
+        <table className="data-table dense">
           <thead>
             <tr>
               <th>{firstColumn}</th>
@@ -209,19 +246,19 @@ function DimensionTable({
                     因此把 key 放在 title 上，鼠标悬停能看到真正是谁。 */}
                 <td title={row.key}>{row.label}</td>
                 <td>{row.providerId}</td>
-                <td>{row.requestCount}</td>
+                <td className="ui-num">{row.requestCount}</td>
                 <td>
-                  <span className={`tag ${row.failureCount > 0 ? "off" : "ok"}`}>
+                  <span className={`tag ui-num ${row.failureCount > 0 ? "off" : "ok"}`}>
                     {row.failureCount}
                   </span>
                 </td>
-                <td>{row.switchedCount}</td>
-                <td>{formatDuration(row.averageDurationMs)}</td>
-                <td>{formatTokenCount(row.inputTokens)}</td>
-                <td>{formatTokenCount(row.outputTokens)}</td>
-                <td>{formatTokenCount(row.cachedInputTokens)}</td>
-                <td>{formatTokenCount(row.totalTokens)}</td>
-                <td>{formatCost(row.costUsd)}</td>
+                <td className="ui-num">{row.switchedCount}</td>
+                <td className="ui-num">{formatDuration(row.averageDurationMs)}</td>
+                <td className="ui-num">{formatTokenCount(row.inputTokens)}</td>
+                <td className="ui-num">{formatTokenCount(row.outputTokens)}</td>
+                <td className="ui-num">{formatTokenCount(row.cachedInputTokens)}</td>
+                <td className="ui-num">{formatTokenCount(row.totalTokens)}</td>
+                <td className="ui-num">{formatCost(row.costUsd)}</td>
               </tr>
             ))}
           </tbody>

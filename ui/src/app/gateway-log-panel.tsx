@@ -122,7 +122,7 @@ export function GatewayLogPanel({
   }, [logs, onNotify, onError]);
 
   return (
-    <>
+    <div className="observability-panel">
       {toast.message && (
         <div className="export-hint" role="status">
           {toast.message}
@@ -185,7 +185,9 @@ export function GatewayLogPanel({
           >
             删除选中（{selected.size}）
           </Button>
-          {/* 整表清空。承接被移除的菜单栏「清理 Gateway 日志」（spec §11）。 */}
+          {/* 整表清空。承接被移除的菜单栏「清理 Gateway 日志」（spec §11）。
+              与「删除选中」同一条工具条、同一个尺寸与危险色：两个动作的差别只在
+              范围（选中的 vs 全部），按钮本身长得不一样会让人以为它们差得更远。 */}
           <Button small variant="danger" onClick={() => void clearAll()} title="清空全部审计日志（不可撤销）">
             清空全部日志
           </Button>
@@ -203,7 +205,9 @@ export function GatewayLogPanel({
             hint="换个时间区间或结果类型看看。"
           />
         ) : (
-          <table className="data-table">
+          /* `dense`：日志一行信息不多但会很长，行距收一档、单元格居中；
+             时间与状态码走等宽数字，同一列才对得齐。 */
+          <table className="data-table dense">
             <thead>
               <tr>
                 <th>选择</th>
@@ -226,7 +230,7 @@ export function GatewayLogPanel({
                       onChange={() => toggle(entry.requestId)}
                     />
                   </td>
-                  <td className="mono">{formatLogTime(entry.createdAt)}</td>
+                  <td className="mono ui-num">{formatLogTime(entry.createdAt)}</td>
                   <td>{entry.providerId}</td>
                   <td>{entry.vendorId}</td>
                   <td>
@@ -234,7 +238,7 @@ export function GatewayLogPanel({
                       {outcomeLabel(entry.outcome)}
                     </span>
                   </td>
-                  <td>{entry.upstreamStatus ?? "-"}</td>
+                  <td className="ui-num">{entry.upstreamStatus ?? "-"}</td>
                   <td className="mono" title={entry.requestId}>
                     {entry.errorCode ?? "-"}
                   </td>
@@ -244,6 +248,6 @@ export function GatewayLogPanel({
           </table>
         )}
       </Card>
-    </>
+    </div>
   );
 }

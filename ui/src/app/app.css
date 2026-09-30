@@ -3379,3 +3379,54 @@ select {
   display: flex;
   gap: var(--ui-space-2);
 }
+
+/* ── 观测三页（用量 / 异常 / 日志）──────────────────────
+   三页同形：面板头 + 卡片堆叠。`.settings-content` 既不是 flex 也不是 grid，
+   兄弟元素之间没有 gap——不在这里给间距，面板头下第一张卡会与它贴在一起、
+   卡片之间也会贴在一起。与供应商页、网关页同一做法（`.vendor-panel` / `.gateway-panel`）。 */
+.observability-panel {
+  display: grid;
+  gap: var(--ui-space-4);
+  align-content: start;
+}
+
+/* 汇总卡：一行三张，等宽。三个读数是同类项，宽度不齐会让人以为有的更重要；
+   `auto-fit` 让窄窗口下自动折成两行，而不是把数字挤到换行。 */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--ui-space-3);
+}
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-3) var(--ui-space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  /* 比卡片浅一档的底：这是「读数」，不是又一块可操作的内容。 */
+  background: var(--ui-bg-activity);
+}
+.stat-card-label {
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+}
+.stat-card-value {
+  color: var(--ui-text);
+  font-size: var(--ui-text-xl);
+  font-weight: 700;
+  line-height: var(--ui-leading-tight);
+}
+.stat-card-note {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+}
+
+/* 观测表：这些表一页 20 行、单元格里是数字与状态胶囊，行距比默认紧一档，
+   垂直居中让胶囊与数字落在同一行线上（顶部对齐时胶囊会吊在行首）。 */
+.data-table.dense th,
+.data-table.dense td {
+  padding: 6px 10px;
+  vertical-align: middle;
+}

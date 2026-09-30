@@ -68,6 +68,9 @@ describe("BranchPanel", () => {
       expect(view.container.textContent).toContain("根会话");
     });
     const bar = view.container.querySelector(".lineage-bar")!;
+    // 容器是 `role="group"` 而不是地标 `nav`：一行血缘不该出现在读屏的地标列表里。
+    expect(bar.getAttribute("role")).toBe("group");
+    expect(bar.getAttribute("aria-label")).toBe("分支关系");
     expect(bar.querySelector(".lineage-node.root")).toBeTruthy();
     const current = bar.querySelector(".lineage-node.current")!;
     expect(current.textContent).toContain("当前会话");

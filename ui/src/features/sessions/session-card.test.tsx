@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AiSession } from "../../types";
@@ -149,5 +149,26 @@ describe("点击的归属", () => {
     });
     expect(handlers.onMenu).toHaveBeenCalledWith(210, 90);
     expect(event.defaultPrevented).toBe(true);
+  });
+});
+
+describe("键盘的归属", () => {
+  it("卡片进 Tab 序列；Enter / Space 与单击同一个动作，方向键不被劫持", () => {
+    // 卡片是 `<div>` 加 `onClick`：不给 `role` / `tabIndex` / 键处理的话，
+    // 整个会话列表就是**鼠标专属**——键盘用户打不开任何一条会话。
+    const { view, handlers } = setup();
+    const card = view.container.querySelector(".session-card") as HTMLElement;
+    expect(card.getAttribute("role")).toBe("button");
+    expect(card.tabIndex).toBe(0);
+
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(handlers.onOpen).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(card, { key: " " });
+    expect(handlers.onOpen).toHaveBeenCalledTimes(2);
+
+    // 方向键留给列表导航（将来），卡片不该先抢。
+    fireEvent.keyDown(card, { key: "ArrowDown" });
+    expect(handlers.onOpen).toHaveBeenCalledTimes(2);
   });
 });

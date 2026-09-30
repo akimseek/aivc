@@ -167,6 +167,49 @@ describe("ModelSelect", () => {
     await waitFor(() => expect(ipc.listModels).toHaveBeenCalledWith("qoder:local"));
   });
 
+  it("Tab 穿过输入区（焦点落到下拉上）不取数——那会真起一个 CLI 进程", async () => {
+    // 曾经的信号是 `onFocus`：键盘用户只是路过这个控件，Qoder 那一路就真起一次
+    // `qodercn --list-models`（最长 20 秒）。「路过」不该有副作用。
+    const view = render(
+      <ModelSelect terminalId="t1" providerId="qoder" targetId="qoder:local" onError={vi.fn()} />
+    );
+
+    fireEvent.focus(select(view.container)!);
+    fireEvent.blur(select(view.container)!);
+    fireEvent.focus(select(view.container)!);
+    expect(ipc.listModels).not.toHaveBeenCalled();
+  });
+
+  it("键盘展开（↓ / Enter / Space）与主键点击同一条路：取一次数", async () => {
+    // 原生 `<select>` 就是用这三个键展开的，它们才是键盘上的「要去选」。
+    const view = render(
+      <ModelSelect terminalId="t1" providerId="qoder" targetId="qoder:local" onError={vi.fn()} />
+    );
+
+    fireEvent.keyDown(select(view.container)!, { key: "ArrowDown" });
+    await waitFor(() => expect(ipc.listModels).toHaveBeenCalledWith("qoder:local"));
+
+    // 已经取到就不再取：Enter / Space 展开同一份清单。
+    fireEvent.keyDown(select(view.container)!, { key: "Enter" });
+    fireEvent.keyDown(select(view.container)!, { key: " " });
+    expect(ipc.listModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("取数失败后，键盘展开同样能重试", async () => {
+    ipc.listModels.mockRejectedValueOnce(new Error("CLI 起不来"));
+    ipc.listModels.mockResolvedValueOnce([{ id: "qwen3-coder" }]);
+    const view = render(
+      <ModelSelect terminalId="t1" providerId="qoder" targetId="qoder:local" onError={vi.fn()} />
+    );
+
+    fireEvent.keyDown(select(view.container)!, { key: "ArrowDown" });
+    await waitFor(() => expect(view.container.textContent).toContain("无法获取模型"));
+
+    fireEvent.keyDown(select(view.container)!, { key: "Enter" });
+    await waitFor(() => expect(ipc.listModels).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(select(view.container)!.textContent).toContain("qwen3-coder"));
+  });
+
   it("来源变了（供应商被自动换掉）就把清单作废，不再列旧家的模型", async () => {
     // 自动故障转移全程没有用户操作：沿用旧清单会让用户把 `/model` 发给一家
     // 已经不再服务这一路的供应商。

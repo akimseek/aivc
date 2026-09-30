@@ -322,6 +322,29 @@ describe("MessagesModal", () => {
     await waitFor(() => expect(props.onClose).toHaveBeenCalled());
   });
 
+  it("有内层浮层（退出确认框 `.overlay`）开着时，Escape 让给它", async () => {
+    // 退出确认框盖在弹框之上；不判断的话一次 Escape 会把它和整个弹框一起关掉，
+    // 用户还没来得及回答「最小化还是退出」。
+    const { props } = setup();
+    const confirm = document.createElement("div");
+    confirm.className = "overlay";
+    document.body.appendChild(confirm);
+    try {
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      });
+      expect(props.onClose).not.toHaveBeenCalled();
+    } finally {
+      confirm.remove();
+    }
+
+    // 内层收掉之后，Escape 仍然是这个弹框的关闭键。
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    await waitFor(() => expect(props.onClose).toHaveBeenCalled());
+  });
+
   it("角色与时间都在：我 / 助手 + 时间", () => {
     const { view } = setup();
     const items = [...view.container.querySelectorAll(".messages-item")];

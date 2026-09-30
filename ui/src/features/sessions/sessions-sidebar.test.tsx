@@ -298,6 +298,17 @@ describe("保留的既有语义", () => {
     expect(options.querySelector('option[value=""]')!.textContent).toBe("请选择平台");
   });
 
+  it("平台列表为空时，「加载中…」不与占位项撞同一个空值", () => {
+    // 两个 `value=""` 的 option 会让原生 select 的匹配变得有歧义（只认第一个）：
+    // 加载提示因此不带 value，空值只留给占位项。
+    const { view } = setup({ providers: [], providerId: "" });
+    const select = [...view.container.querySelectorAll("select")][0]!;
+    const empties = [...select.querySelectorAll('option[value=""]')];
+    expect(empties).toHaveLength(1);
+    expect(empties[0]!.textContent).toBe("请选择平台");
+    expect(select.textContent).toContain("加载中…");
+  });
+
   it("目标下拉两态文案：「暂无可用目标」与「请选择目标」", () => {
     const empty = setup({ targets: [], targetId: "" });
     expect(

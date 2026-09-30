@@ -21,12 +21,18 @@ describe("terminalInputButtonTitle", () => {
 });
 
 describe("模式是两个值，不是布尔量", () => {
-  it("取值与旧平台一致（`composer` / `terminal`）", () => {
-    const modes: TerminalInputMode[] = ["composer", "terminal"];
-    // 序列化成什么不重要，重要的是**恰好两个**——多一个值就意味着某一处
-    // 的 `=== "composer"` 判断会走到「其余」分支。
-    expect(modes).toHaveLength(2);
-    expect(modes).toContain("composer");
-    expect(modes).toContain("terminal");
+  it("每个取值都有悬停说明（`satisfies` 映射：多一个 / 少一个都过不了 typecheck）", () => {
+    /*
+      原来的写法是 `const modes: TerminalInputMode[] = ["composer", "terminal"]`
+      再断言它长度为 2——那是**自建字面量的同义反复**：删掉一个取值它照样绿。
+      改成 `Record<TerminalInputMode, string>` 的 `satisfies` 映射：`TerminalInputMode`
+      新增一个成员时这里少键会报错，多写一个不存在的键也会被多余属性检查拦下。
+    */
+    const titles = {
+      composer: terminalInputButtonTitle("composer"),
+      terminal: terminalInputButtonTitle("terminal")
+    } satisfies Record<TerminalInputMode, string>;
+
+    expect(Object.keys(titles).sort()).toEqual(["composer", "terminal"]);
   });
 });

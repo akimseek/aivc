@@ -66,6 +66,35 @@ describe("useWorkspaceTabs 的接线", () => {
     expect(tab.terminalId).toBeUndefined();
   });
 
+  it("列表刷新给出「同 id、新对象」时不抢走活动标签", () => {
+    /*
+      `console.selectedSession` 是 `sessions.find(...) ?? null` 的结果——每次列表
+      加载（搜索框 250ms 防抖、点「刷新」）都会换一个新对象。effect 若按**对象身份**
+      触发，就会重跑一次 `openSessionTab`，而它对「标签已存在」的处理是**激活**那张
+      标签：用户在搜索框打字，画布就被拽回更早选中的会话上。
+
+      R12 允许的状态正是这样：正在跑的新会话终端没有 sessionId，选中项仍指向更早的
+      会话。判据只能是**会话编号**变没变。
+    */
+    const { fake } = fakeTerminals();
+    const view = renderHook(({ selected }) => useWorkspaceTabs(fake, selected), {
+      initialProps: { selected: null as AiSession | null }
+    });
+
+    view.rerender({ selected: session("sess-1") });
+    expect(view.result.current.activeKey).toBe("sess-1");
+
+    // 起一路新会话终端（还没有 sessionId），用户切到它上面看输出。
+    act(() => view.result.current.attachTerminalTab("term-new", undefined, "新会话"));
+    expect(view.result.current.activeKey).toBe("term-new");
+
+    // 列表刷新：同一条选中会话换了一个新对象（内容一致，引用不同）。
+    view.rerender({ selected: session("sess-1") });
+
+    expect(view.result.current.tabs).toHaveLength(2);
+    expect(view.result.current.activeKey).toBe("term-new");
+  });
+
   it("同一会话再挂终端：复用同一张标签，并收掉被替换的旧终端", () => {
     // 不收旧终端就是「再次进入会话被锁住」：标签没了，进程与 xterm 还在。
     const { fake, closeTerminal } = fakeTerminals();

@@ -84,7 +84,6 @@ describe("TabBar", () => {
     // 只有激活的那张在 Tab 序列里（roving tabindex），否则整条标签栏键盘够不着。
     expect(pills()[0]!.tabIndex).toBe(0);
     expect(pills()[1]!.tabIndex).toBe(-1);
-
     fireEvent.keyDown(pills()[0]!, { key: "Enter" });
     expect(onActivate).toHaveBeenCalledWith("session-1");
 
@@ -114,6 +113,15 @@ describe("TabBar", () => {
     // 关闭按钮自己的点击不受影响。
     fireEvent.click(close);
     expect(onClose).toHaveBeenCalledWith("session-2");
+  });
+
+  it("只有激活标签的关闭按钮在 Tab 序里", () => {
+    // 否则 Tab 会依次停在每一张标签的 ✕ 上：标签一多，整条标签栏要按十几次才穿得过去。
+    const { pills } = setup();
+    const closeOf = (index: number) =>
+      pills()[index]!.querySelector<HTMLButtonElement>(".tab-pill-close")!;
+    expect(closeOf(0).tabIndex).toBe(0);
+    expect(closeOf(1).tabIndex).toBe(-1);
   });
 
   it("状态点区分「跑着」「等确认」与「异常退出」", () => {

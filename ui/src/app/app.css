@@ -828,7 +828,8 @@ select {
   overflow: hidden;
 }
 
-.workspace-body {
+/* 画布：标签栏之下的全部空间。终端阶段与历史阶段都吃满它。 */
+.stage {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -836,35 +837,158 @@ select {
   overflow: hidden;
 }
 
-/* 关注中心条：贴在内容顶部，不占满整屏——它是提醒，不是主体。 */
-.attention-bar {
-  padding: 10px 22px 0;
+/* ── 标签栏 ──────────────────────────────────────────── */
+
+/*
+ * 两段：左边**横向滚动**的标签组，右边固定不动的动作（＋ / 查找 / 消息与分支）。
+ * 滚动只加在标签组上——把动作一起放进滚动区，标签一多它们就被推出屏幕。
+ */
+.tab-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  flex: 0 0 auto;
+  padding: 6px var(--ui-space-3) 0;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg-tabbar);
 }
 
-.thread {
+.tab-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  /* 滚动条在标签行里只能占一条细线，否则标签会被它顶得跳一下。 */
+  scrollbar-width: thin;
+}
+
+/* 标签：流体（宽度随内容，上限 240px），激活态靠「卡片底 + 边框 + 阴影」浮起来。 */
+.tab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 240px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-md);
+  color: var(--ui-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab-pill:hover {
+  background: var(--ui-bg-card-hover);
+}
+
+.tab-pill.on {
+  border-color: var(--ui-border);
+  background: var(--ui-bg-card);
+  box-shadow: var(--ui-shadow-xs);
+  color: var(--ui-text);
+  font-weight: 640;
+}
+
+.tab-pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 后缀（`（退出码 137）`）：是补充说明，比标题轻一档。 */
+.tab-pill-suffix {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+}
+
+/*
+ * 关闭按钮**悬停才显形**：标签本来就多，常驻的 ✕ 会让整行看起来一直在闪。
+ * 用 `opacity` 而不是 `display`——否则悬停时标签宽度会跳一下，鼠标就从按钮上滑走了。
+ * 触屏（`@media (hover: none)`）没有悬停，因此常显：藏起来的按钮永远点不到。
+ */
+.tab-pill-close {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  color: var(--ui-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.tab-pill:hover .tab-pill-close,
+.tab-pill-close:focus-visible {
+  opacity: 1;
+}
+
+.tab-pill-close:hover {
+  color: var(--ui-danger);
+}
+
+@media (hover: none) {
+  .tab-pill-close {
+    opacity: 1;
+  }
+}
+
+.tab-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  flex: 0 0 auto;
+  padding-bottom: 6px;
+}
+
+/* 右端的动作：与标签同一行、同样的高度，但看起来是「按钮」而不是「标签」。 */
+.tab-bar-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  padding: 5px 9px;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab-bar-action:hover:not(:disabled) {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+.tab-bar-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── 历史视图 ────────────────────────────────────────── */
+
+.history-view {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: 22px 26px 40px;
-}
-
-.load-earlier {
   display: flex;
-  justify-content: center;
-  margin-bottom: 18px;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-/* ── 会话级操作条 ────────────────────────────────────── */
-
-.session-head {
+.history-head {
   display: flex;
   align-items: center;
   gap: 9px;
+  flex: 0 0 auto;
   padding: 10px 22px;
   border-bottom: 1px solid var(--ui-divider);
 }
 
-.session-head h2 {
+.history-head h2 {
   margin: 0;
   font-size: 14px;
   font-weight: 680;
@@ -874,22 +998,110 @@ select {
   white-space: nowrap;
 }
 
-.session-head .meta {
+.history-head .meta {
   color: var(--ui-faint);
   font-size: 12px;
   white-space: nowrap;
 }
 
-.rename-input {
-  height: 28px;
-  min-width: 20ch;
-  max-width: 42ch;
-  padding: 0 8px;
-  border: 1px solid var(--ui-accent);
-  border-radius: var(--ui-radius-sm);
-  background: var(--ui-bg-card);
-  color: var(--ui-text);
+/* 「继续会话」靠右：它是这一行唯一的动作，与左侧那些**读**的信息分开。 */
+.history-resume {
+  margin-left: auto;
+}
+
+.history-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px 26px 40px;
+}
+
+/* 关注中心条：贴在内容顶部，不占满整屏——它是提醒，不是主体。 */
+.attention-bar {
+  padding: 10px 22px 0;
+}
+
+.load-earlier {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+/*
+ * 一条消息：**用户与助手用形态区分，不是用深浅**。
+ *
+ * 此前两者都是「浅色底 + 边框」的方块——在纯白的工作区上这两个几乎一样，
+ * 整段对话读起来是一堆同样的方块，看不出哪句是谁说的。
+ *
+ * 现在：**用户是引述**（强调色底 + 左侧竖线），**助手是正文**（无框，直接落在
+ * 工作区上），**工具 / 系统是等宽小字块**（它们是过程记录，不是对话）。
+ */
+.history-message {
+  max-width: 78ch;
+  margin-bottom: var(--ui-space-5);
+}
+
+.history-who {
+  margin-bottom: var(--ui-space-1);
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
   font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.history-text {
+  line-height: var(--ui-leading);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.history-message.user .history-who {
+  color: var(--ui-accent-strong);
+}
+
+.history-message.user .history-text {
+  padding: var(--ui-space-3) var(--ui-space-4);
+  /* 左侧竖线而不是整圈边框：它是「引述」，不是「一块卡片」。 */
+  border-left: 3px solid var(--ui-accent);
+  border-radius: 0 var(--ui-radius-lg) var(--ui-radius-lg) 0;
+  background: var(--ui-accent-soft);
+  /* 引述块里的正文用稍软的色，避免强调色底上出现纯黑文字。 */
+  color: var(--ui-text-soft);
+}
+
+.history-message.tool .history-text,
+.history-message.system .history-text,
+.history-message.unknown .history-text {
+  padding: var(--ui-space-2) var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-activity);
+  color: var(--ui-text-soft);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-xs);
+}
+
+/* 分支动作：默认不显眼，悬停到消息上才出现——
+   它是低频动作，常驻会干扰阅读。 */
+.history-branch {
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  color: var(--ui-faint);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.history-message:hover .history-branch,
+.history-branch:focus-visible {
+  opacity: 1;
+}
+
+.history-branch:hover {
+  color: var(--ui-accent);
 }
 
 .export-hint {
@@ -1565,6 +1777,60 @@ select {
 
 /* ── 终端 ────────────────────────────────────────────── */
 
+/*
+ * 终端视图：信息条 + 终端栈。
+ *
+ * 它的底色与文字**全部走 `--term-*`**（而不是 `--ui-*`）：终端区在两套主题下各自
+ * 有一套配色（明亮是浅色终端、暗黑是深色终端），混用两套 token 会让明暗切换时
+ * 半截换、半截不换。xterm 自己那半边在 `terminal-theme.ts` 里，值与 tokens.css
+ * 逐字一致（有测试钉住）。
+ */
+.terminal-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--term-bg);
+}
+
+/* 非终端阶段整块收起，但**不卸载**（卸载会丢 xterm 的缓冲与 PTY 输出）。 */
+.terminal-view.hidden {
+  display: none;
+}
+
+/* 会话信息条：常驻一行，回答「这条终端在看哪条会话、连的什么」。 */
+.terminal-info-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-3);
+  flex: 0 0 auto;
+  padding: 6px var(--ui-space-3);
+  border-bottom: 1px solid var(--term-border);
+  background: var(--term-bg);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.terminal-info-strip .strip-title {
+  overflow: hidden;
+  color: var(--term-text);
+  font-weight: 640;
+  text-overflow: ellipsis;
+  max-width: 40ch;
+}
+
+.terminal-info-strip .strip-id {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+}
+
+.terminal-info-strip .strip-item b {
+  color: var(--term-text);
+  font-weight: 600;
+}
+
 /* 所有终端**同时挂载**、叠在同一个位置上，非前台的只隐藏不卸载——
    卸载会让 PTY 的输出无人接收而丢失（见 `terminal-pane.tsx` 的注释）。
    用 `visibility` 而不是 `display:none`：后者会让容器尺寸归零，xterm 无法测量，
@@ -1584,7 +1850,7 @@ select {
   display: grid;
   place-items: center;
   height: 100%;
-  color: #8b949e;
+  color: var(--ui-muted);
   font-size: 12.5px;
 }
 
@@ -1731,6 +1997,9 @@ select {
  *
  * 占一行会把终端往下推、触发一次 fit，而用户正在看的那几行会跟着跳——
  * 查找这个动作本身不该改变终端里的排版。
+ *
+ * 配色用**终端那一套**（`--term-card-*`）：它是浮在终端上的，跟着 `--ui-*` 走会
+ * 在明亮主题下变成一块白板压在浅色终端上（暗黑主题下则是一块深板压在深色终端上）。
  */
 .terminal-search {
   position: absolute;
@@ -1742,17 +2011,17 @@ select {
   gap: 6px;
   max-width: calc(100% - 24px);
   padding: 6px 8px;
-  border: 1px solid #2f3b4d;
+  border: 1px solid var(--term-card-border);
   border-radius: var(--ui-radius-sm);
-  background: #131c2b;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  background: var(--term-card-bg);
+  box-shadow: var(--ui-shadow-sm);
 }
 
 .terminal-search .control {
   width: 22ch;
-  border-color: #2f3b4d;
-  background: #0f172a;
-  color: #c9d1d9;
+  border-color: var(--term-card-border);
+  background: var(--term-bg);
+  color: var(--term-text);
   font-size: var(--ui-text-sm);
 }
 
@@ -1760,14 +2029,14 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: #8b949e;
+  color: var(--ui-muted);
   font-size: var(--ui-text-xs);
   cursor: pointer;
 }
 
 .terminal-search-count {
   min-width: 6ch;
-  color: #c9d1d9;
+  color: var(--term-text);
   font-family: var(--ui-font-mono);
   font-size: var(--ui-text-xs);
   text-align: center;
@@ -1775,14 +2044,14 @@ select {
 
 .terminal-search .btn {
   padding: 2px 7px;
-  border-color: #2f3b4d;
-  background: #1a2434;
-  color: #c9d1d9;
+  border-color: var(--term-card-border);
+  background: var(--term-card-bg);
+  color: var(--term-text);
 }
 
 /* 范围提示。**必须显示**：滚出缓冲区的输出搜不到，而用户会以为「日志里没有」。 */
 .terminal-search-hint {
-  color: #6b7688;
+  color: var(--ui-faint);
   font-size: 10.5px;
   white-space: nowrap;
 }

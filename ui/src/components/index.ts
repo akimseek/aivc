@@ -19,8 +19,6 @@ export {
 export type { ButtonVariant } from "./primitives";
 
 export { EmptyState, Notice } from "./feedback";
-export { Tabs } from "./tabs";
-export type { TabItem, TabTone } from "./tabs";
 
 /* 通用构件：弹层、加载态、卡片、列表。四者都在**多处**被用到，
  * 之前每一处各抄一遍骨架，是走样的来源。 */

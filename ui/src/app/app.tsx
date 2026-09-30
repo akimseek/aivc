@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ToolbarSpacer, useToast, type TabItem } from "../components";
+import { useToast } from "../components";
 import { SessionsSidebar } from "../features/sessions/sessions-sidebar";
 import type { SettingsTab } from "../features/settings/settings-center";
 import { WorkbenchSidebar } from "../features/workbench/workbench-sidebar";
@@ -13,7 +13,7 @@ import type { AiSession, AiTarget, ApiVendor } from "../types";
 import { AppOverlays } from "./overlay-layer";
 import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
-import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
+import { SessionWorkspace, canStartCodex } from "./session-workspace";
 import { displayTitle } from "./session-display";
 import { resolveStageContent } from "./stage-content";
 import { nextPreference } from "./theme";
@@ -94,15 +94,11 @@ export function App() {
   /**
    * 标签条要的项目。
    *
-   * `WorkspaceTabItem` 里的 `suffix` / `state` / `providerId` 是给新 `TabBar`
-   * 的（Task 9 接），旧的 `Tabs` 只认 `{ key, label, tone }`——所以这里先把后缀
-   * 拼进标题。这一小段映射在 TabBar 接手后删掉。
+   * 统一模型（Task 3/4）已经把界面需要的都算好了：`suffix`（退出码）、`tone`
+   * （等待确认）、`providerId`（平台徽章）、`state`（状态点）。这里**直接透传**，
+   * 不在渲染层再拼一遍——拼一次就多一份会漂移的规则。
    */
-  const tabItems: TabItem[] = workspace.tabItems.map((item) => ({
-    key: item.key,
-    label: `${item.label}${item.suffix}`,
-    tone: item.tone
-  }));
+  const tabItems = workspace.tabItems;
 
   /**
    * 从会话列表里按编号找回完整会话——右键菜单要它的文件路径，
@@ -174,6 +170,15 @@ export function App() {
    * 状态**不持久化**：它是一次会话里的临时调整，与窗口大小同理。
    */
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  /**
+   * 「查找」计数：标签栏那个按钮把它加一。
+   *
+   * app 层**只转发这个计数**：真正的查找栏在 `TerminalPane` 里（只有那一层拿得到
+   * xterm 的缓冲区，`readLines` 与滚动选中都在那里）。计数变化即「打开」，
+   * 不需要事件总线——两个入口（按钮与 Ctrl+F）落在同一个组件里。
+   */
+  const [findSignal, setFindSignal] = useState(0);
 
   /**
    * 新会话对话框的内容；`null` 表示没打开。
@@ -514,6 +519,32 @@ export function App() {
   const trash = console.view === "trash";
 
   /**
+   * 当前标签那条会话。
+   *
+   * **当前标签优先**——这正是「在终端里还能查看详情」的关键：那时正文不渲染
+   * （原来详情按钮就在正文头部，于是消失了），而选中项也未必等于这张标签所属的
+   * 会话。旧平台同理：它绑的是 `activeSession`（活动标签的会话）。
+   */
+  const activeSession =
+    sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession;
+
+  /**
+   * 「消息与分支」：打开这条会话的详情（消息列表 + 分支关系都在那里）。
+   *
+   * 没有会话可看时传 `undefined`——按钮显示为禁用，而不是「点得动但什么都不发生」。
+   */
+  const openMessages = activeSession ? () => setDetailSession(activeSession) : undefined;
+
+  /**
+   * 「消息与分支」上的条数。
+   *
+   * 优先用**详情路径带回来的精确总数**（`console.messageTotal`）；它还没到或没取过时
+   * 退回列表里的条数。两个都没有就传 `null`——那时不渲染徽章，不编数字。
+   */
+  const messageCount =
+    console.messageTotal ?? console.selectedSession?.messageCount ?? null;
+
+  /**
    * 输入模式与输入框可见性都在 `useTerminals` 里（状态栏也要读它）。
    * 状态栏讲的是**前台那一路**，因此先按活动标签的终端编号取。
    */
@@ -679,33 +710,41 @@ export function App() {
               }}
               onClose={workspace.closeTab}
               onTabContextMenu={(key, x, y) => setTabMenu({ key, x, y })}
-              trailing={
-                <>
-                  <WorkspaceTrailing
-                    canStartCodex={canStartCodex(selectedTarget)}
-                    onNewCodex={beginNewSession}
-                    /*
-                      「详情」要看的会话。
-
-                      **当前标签那条会话优先**——这正是「在终端里还能查看详情」的关键：
-                      那时正文不渲染（原来详情按钮就在正文头部，于是消失了），
-                      而选中项也未必等于这张标签所属的会话。旧平台同理：它绑的是
-                      `activeSession`（活动标签的会话）。
-                    */
-                    detailSession={
-                      sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession
-                    }
-                    onOpenDetail={(session) => setDetailSession(session)}
-                    /*
-                      「继续会话」：点会话行不再起终端之后，这是**显式的**恢复入口
-                      （`beginResumeSession` 原样保留：本目录还在就直接进终端，不在就弹
-                      「设置工作目录」）。`undefined` = 这一刻没有可恢复的东西。
-                    */
-                    onResume={canResumeSession ? resumeActiveSession : undefined}
-                  />
-                  <ToolbarSpacer />
-                </>
+              // 新建会话走对话框（不是「点一下直接进终端」），入口在 `beginNewSession`。
+              onNewSession={beginNewSession}
+              /*
+                查找：只转发计数，真正的查找栏在 `TerminalPane` 里（见上面的
+                `findSignal`）。画布不是终端时没有可查找的缓冲区，因此按钮禁用。
+              */
+              onFind={
+                stage.kind === "terminal"
+                  ? () => setFindSignal((value) => value + 1)
+                  : undefined
               }
+              onOpenMessages={openMessages}
+              // `＋` 的可用性：目标进得去才有意义（与侧栏那个入口同一条判据）。
+              canCreate={canStartCodex(selectedTarget)}
+              messageCount={messageCount}
+              /*
+                平台徽章上的名字来自后端（`ai:list-providers` 的 `label`）：
+                界面不自己维护一份平台名表——它会与后端漂移。
+              */
+              providerLabel={(providerId) =>
+                console.providers.find((item) => item.id === providerId)?.label ?? providerId
+              }
+              findSignal={findSignal}
+              // xterm 的主题跟解析后的明暗走（它读不到 CSS 变量）。
+              resolvedTheme={theme.resolved}
+              target={selectedTarget}
+              gateway={console.gateway}
+              // 供应商编号 → 名字要一份清单；它已经为工作台取过了，复用同一份。
+              vendors={sidebarVendors}
+              /*
+                「继续会话」：点会话行不再起终端之后，这是**显式的**恢复入口
+                （`beginResumeSession` 原样保留：本目录还在就直接进终端，
+                不在就弹「设置工作目录」）。`undefined` = 这一刻没有可恢复的东西。
+              */
+              onResumeSession={canResumeSession ? resumeActiveSession : undefined}
               session={console.selectedSession}
               messageTotal={console.messageTotal}
               messages={console.messages}

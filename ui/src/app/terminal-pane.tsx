@@ -7,6 +7,7 @@ import * as api from "../ipc/commands";
 import { ComposerInput } from "./composer-input";
 import type { TerminalInputMode } from "./composer-text";
 import { TerminalSearchBar } from "./terminal-search-bar";
+import { terminalThemeFor } from "./terminal-theme";
 import { TerminalPasteDialog, TerminalTextContextMenu } from "./terminal-text-menu";
 import type { TerminalSink } from "./terminal-output";
 
@@ -28,6 +29,13 @@ import type { TerminalSink } from "./terminal-output";
  * 输入模式与输入框可见性此前是本组件的本地状态。现在它们在
  * [`useTerminals`](./use-terminals.ts) 里（状态栏也要读它，spec §6），
  * 这里只做三件事：报告「收到了输出」、把用户切模式的意图报上去、按 props 渲染。
+ *
+ * # 主题也是受控的，而且**不重建终端**
+ *
+ * xterm 用 canvas 画字符，读不到 CSS 变量——底色只能由
+ * [`terminalThemeFor`](./terminal-theme.ts) 在 JS 侧给。主题变化时只改
+ * `terminal.options.theme`：重建终端会把缓冲区（回滚历史）清空，那正是用户
+ * 切主题时正在看的东西。
  */
 export function TerminalPane({
   terminalId,
@@ -45,7 +53,11 @@ export function TerminalPane({
   onOutput,
   registerSink,
   unregisterSink,
-  onError
+  onError,
+  /** 当前解析出的主题。改它只换 xterm 的配色，不重建终端。 */
+  resolvedTheme,
+  /** 递增即「打开查找栏」（标签栏那个查找按钮）。0 或不变都不触发。 */
+  findSignal = 0
 }: {
   terminalId: string;
   /** 是否在前台。非前台的仍然挂载——见下。 */
@@ -65,6 +77,8 @@ export function TerminalPane({
   registerSink: (id: string, sink: TerminalSink) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
+  resolvedTheme: "light" | "dark";
+  findSignal?: number;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -192,11 +206,8 @@ export function TerminalPane({
       cursorBlink: true,
       fontFamily: 'Consolas, "Cascadia Mono", "Courier New", monospace',
       fontSize: 13,
-      theme: {
-        background: "#0f172a",
-        foreground: "#c9d1d9",
-        cursor: "#7ee787"
-      }
+      // 主题由 props 决定（xterm 读不到 CSS 变量，值在 `terminal-theme.ts`）。
+      theme: terminalThemeFor(resolvedTheme)
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -270,6 +281,36 @@ export function TerminalPane({
       fitRef.current = null;
     };
   }, [terminalId, registerSink, unregisterSink, onError]);
+  // 注意：`resolvedTheme` **不在**上面那份依赖里。放进去会在每次切主题时重建终端，
+  // 而重建会把回滚缓冲清空——用户切主题时正在看的历史就没了。主题变化走下面那条。
+
+  /**
+   * 明暗切换：只换 xterm 的配色。
+   *
+   * `terminal.options.theme` 是 xterm 支持的原地更新（不重建、不动缓冲）。
+   * 终端外面那圈留白（`.terminal-stack` / `.terminal-host`）由 CSS 变量跟着
+   * `<html data-theme>` 一起换，两条路必须同时发生——否则就是「终端底色变了、
+   * 外圈没变」的半截错位。
+   */
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = terminalThemeFor(resolvedTheme);
+  }, [resolvedTheme]);
+
+  /**
+   * 标签栏那个查找按钮：计数一变就打开查找栏。
+   *
+   * 与下面的 Ctrl+F 是**同一处状态**的两个入口（都在本组件里），不需要事件总线。
+   * 只在**前台**时响应：非前台的终端仍然挂着（不能卸载，会丢输出），
+   * 但打开一个看不见的查找栏没有意义。
+   */
+  useEffect(() => {
+    if (findSignal <= 0) return;
+    if (active) setSearchOpen(true);
+    // 只在计数变化时触发；`active` 不放依赖里——切前台不该顺手弹出查找栏。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findSignal]);
 
   // 切回前台时重新量一次：隐藏期间容器的尺寸可能已经变了，而 xterm 不会自己知道。
   useEffect(() => {

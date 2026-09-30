@@ -1,6 +1,4 @@
-import type { ReactNode } from "react";
-
-import { Button } from "../components";
+import { Button, HintBar } from "../components";
 import { MessagesModalContainer } from "../features/workspace/messages-modal";
 import { SettingsCenter, type SettingsTab } from "../features/settings/settings-center";
 import * as api from "../ipc/commands";
@@ -189,14 +187,14 @@ export function AppOverlays({
 
       {/*
         两条一句话提示，形状相同：都要能被看见、也都能收掉。
-        合成一个渲染分支是为了让「提示只有一个地方定义」——
-        分成两处迟早会长得不一样。
+        都走共享的 `HintBar`（浮层形态）——分成两处写迟早会长得不一样。
       */}
       {state.toastMessage && (
-        <HintBar message={state.toastMessage} onDismiss={actions.closeToast} />
+        <HintBar floating message={state.toastMessage} onDismiss={actions.closeToast} />
       )}
       {state.exportedTo && (
         <HintBar
+          floating
           message={
             <>
               已导出到 <code>{state.exportedTo}</code>
@@ -350,34 +348,5 @@ export function AppOverlays({
         />
       )}
     </>
-  );
-}
-
-/**
- * 一句话提示条。
- *
- * 抽出来是因为「已导出到…」与「已清理 N 条日志」此前是两段各自手写的 JSX，
- * 形状一样、位置一样，迟早会长出差别。
- *
- * 它是**浮层**（`hint-float`）：外壳是 100vh 网格，把它当正文渲染会把状态栏挤出屏幕。
- */
-function HintBar({
-  message,
-  onDismiss,
-  extra
-}: {
-  message: ReactNode;
-  onDismiss: () => void;
-  /** 「打开」这类附加动作。 */
-  extra?: ReactNode;
-}) {
-  return (
-    <div className="export-hint hint-float" role="status">
-      {message}
-      {extra}
-      <Button small onClick={onDismiss}>
-        知道了
-      </Button>
-    </div>
   );
 }

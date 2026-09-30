@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button } from "../components";
+import { Button, Dialog } from "../components";
 import * as api from "../ipc/commands";
 
 /**
@@ -20,6 +20,13 @@ import * as api from "../ipc/commands";
  * 后端**不会**因为等太久就自己退出——那会在用户还在读这段文字的时候杀掉应用。
  * 它会一直等；用户如果干脆再点一次窗口关闭按钮，后端就把那次当成「坚持要退」放行。
  * 见 `crates/aivc-app/src/exit.rs` 的失败安全一节。
+ *
+ * # 为什么现在套 `Dialog` 而不是自绘
+ *
+ * 这个框此前自带一套 `.overlay` 骨架（遮罩 + 头 + 正文 + 页脚），于是它是唯一
+ * **没有 Escape** 的弹层：键盘用户除了鼠标点那三个按钮没有别的出口，而后端会一直
+ * 等着回答。骨架换成共享的 `Dialog` 之后，Escape / `aria-modal` / 焦点进面板
+ * 三件事都跟着来，尺寸档也用确认类的 `sm`（内容少，不该占满整屏）。
  */
 export function ExitConfirm({ onError }: { onError: (message: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -58,36 +65,46 @@ export function ExitConfirm({ onError }: { onError: (message: string) => void })
     [onError]
   );
 
+  /**
+   * Escape（与点遮罩同一条路）等价于「取消」。
+   *
+   * 忙碌时忽略：请求已经在路上，再按一次只是重复询问后端；三个按钮此时也都是禁用的。
+   */
+  const cancel = useCallback(() => {
+    if (!busy) void choose("cancel");
+  }, [busy, choose]);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label="退出确认">
-      <div className="overlay-panel overlay-panel-confirm">
-        <header className="overlay-head">
-          <h2>退出 AI 可视化控制台</h2>
-        </header>
-
-        <div className="overlay-body">
-          <p className="overlay-copy">
-            最小化后应用会继续在后台运行，终端与本地 Gateway 都不受影响；
-            直接退出会关闭所有终端和本地 Gateway。
-          </p>
-        </div>
-
-        <footer className="overlay-foot">
-          <Button small disabled={busy} onClick={() => void choose("cancel")}>
+    <Dialog
+      // 标题即无障碍名称（`Dialog` 默认取它）：可见文字与读屏念出的一致，符合
+      // 「标签包含名称」，不再另写一个更短的 `aria-label`。
+      title="退出 AI 可视化控制台"
+      size="sm"
+      onClose={cancel}
+      // 点遮罩不关闭用 `Dialog` 的默认值：这个框的每个选项都会改变应用状态，
+      // 误点一下遮罩不该被当成回答。
+      footer={
+        <>
+          <Button disabled={busy} onClick={() => void choose("cancel")}>
             取消
           </Button>
-          <Button small disabled={busy} onClick={() => void choose("minimize")}>
+          <Button disabled={busy} onClick={() => void choose("minimize")}>
             最小化到托盘
           </Button>
-          <Button small variant="danger" disabled={busy} onClick={() => void choose("quit")}>
+          <Button variant="danger" disabled={busy} onClick={() => void choose("quit")}>
             直接退出
           </Button>
-        </footer>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p className="dialog-copy">
+        最小化后应用会继续在后台运行，终端与本地 Gateway 都不受影响；
+        直接退出会关闭所有终端和本地 Gateway。
+      </p>
+    </Dialog>
   );
 }

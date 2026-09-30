@@ -322,20 +322,23 @@ describe("MessagesModal", () => {
     await waitFor(() => expect(props.onClose).toHaveBeenCalled());
   });
 
-  it("有内层浮层（退出确认框 `.overlay`）开着时，Escape 让给它", async () => {
+  it("有内层浮层（退出确认框）开着时，Escape 让给它", async () => {
     // 退出确认框盖在弹框之上；不判断的话一次 Escape 会把它和整个弹框一起关掉，
-    // 用户还没来得及回答「最小化还是退出」。
+    // 用户还没来得及回答「最小化还是退出」。它现在是 `Dialog` 家族的
+    // `.dialog-overlay`，`.overlay` 是同一处判定的历史外壳类——两个都要让。
     const { props } = setup();
-    const confirm = document.createElement("div");
-    confirm.className = "overlay";
-    document.body.appendChild(confirm);
-    try {
-      await act(async () => {
-        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-      });
-      expect(props.onClose).not.toHaveBeenCalled();
-    } finally {
-      confirm.remove();
+    for (const layer of [".overlay", ".dialog-overlay"]) {
+      const confirm = document.createElement("div");
+      confirm.className = layer.slice(1);
+      document.body.appendChild(confirm);
+      try {
+        await act(async () => {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+        expect(props.onClose, `${layer} 在场时不该关弹框`).not.toHaveBeenCalled();
+      } finally {
+        confirm.remove();
+      }
     }
 
     // 内层收掉之后，Escape 仍然是这个弹框的关闭键。

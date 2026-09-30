@@ -235,17 +235,45 @@ describe("SettingsCenter：关于与关闭", () => {
     // 面板里能再开对话框；那层自己处理 Escape。不判断的话一次按键会同时关掉
     // 内层对话框与整个设置中心。
     const { onClose } = setup();
-    const nested = document.createElement("div");
-    nested.className = "dialog-overlay";
-    document.body.appendChild(nested);
-    try {
-      await act(async () => {
-        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-      });
-      expect(onClose).not.toHaveBeenCalled();
-    } finally {
-      nested.remove();
+    for (const layer of [".dialog-overlay", ".popover"]) {
+      const nested = document.createElement("div");
+      nested.className = layer.slice(1);
+      document.body.appendChild(nested);
+      try {
+        await act(async () => {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+        expect(onClose, `「${layer}」开着时不该关设置中心`).not.toHaveBeenCalled();
+      } finally {
+        nested.remove();
+      }
     }
+  });
+
+  it("**退出确认框在场时不吃 Escape**——一次按键只该回答那一层", async () => {
+    // 退出确认框（`.overlay` / 现在 `Dialog` 的 `.dialog-overlay`）随时可能从后端推来，
+    // 而它盖在设置中心**之上**。设置中心也吃这一次 Escape 的话，用户还没来得及回答
+    // 「最小化还是退出」，整个设置中心（连同填了一半的表单）就没了。
+    const { onClose } = setup();
+    for (const layer of [".overlay", ".dialog-overlay"]) {
+      const confirm = document.createElement("div");
+      confirm.className = layer.slice(1);
+      document.body.appendChild(confirm);
+      try {
+        await act(async () => {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+        expect(onClose, `退出确认框（${layer}）在场时不该关设置中心`).not.toHaveBeenCalled();
+      } finally {
+        confirm.remove();
+      }
+    }
+
+    // 它收掉之后，Escape 仍然是设置中心的关闭键。
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 

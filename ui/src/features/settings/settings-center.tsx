@@ -9,7 +9,7 @@ import { VendorsPanel } from "../../app/config/vendors-panel";
 import { GatewayFailurePanel } from "../../app/gateway-failure-panel";
 import { GatewayLogPanel } from "../../app/gateway-log-panel";
 import { GatewayUsagePanel } from "../../app/gateway-usage-panel";
-import { Icon } from "../../components";
+import { Icon, hasLayerAbove } from "../../components";
 import type { AiProviderId, AiProviderSummary, AiTarget } from "../../types";
 import { AboutPanel } from "./panels/about-panel";
 import { SETTINGS_GROUPS, type SettingsTab } from "./settings-nav";
@@ -95,14 +95,14 @@ export function SettingsCenter({
    * 键盘用户此前**没有出口**：这个模态只有右上角那个 ✕，而它比 `Dialog` 自绘
    * （`Dialog` 家族一直有 Escape）。
    *
-   * 有更内层的东西开着时让给它：面板里能再开对话框（供应商编辑等），那层自己会处理
-   * Escape——不判断的话按一次 Escape 会**同时**关掉内层对话框与整个设置中心，
-   * 用户丢的是刚填了一半的东西。
+   * 有更内层的东西开着时让给它：面板里能再开对话框（供应商编辑等），退出确认框
+   * 还会直接盖在整个设置中心之上——不判断的话按一次 Escape 会**同时**关掉内层
+   * 对话框与整个设置中心，用户丢的是刚填了一半的东西。
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (document.querySelector(".dialog-overlay, .popover")) return;
+      if (hasLayerAbove("modal")) return;
       onClose();
     };
     document.addEventListener("keydown", onKeyDown);

@@ -1,4 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect } from "react";
+
+import { hasLayerAbove } from "../components";
+import { useViewportMenuPosition } from "./viewport-menu";
 
 /**
  * 标签的右键菜单：**关闭其他 / 关闭全部**。
@@ -34,30 +37,6 @@ export type TabContextMenuProps = {
   onCloseMenu: () => void;
 };
 
-/** 把菜单夹在视口内。布局完成后才量得到尺寸，因此用 `useLayoutEffect`。 */
-function useViewportPosition(x: number, y: number) {
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [position, setPosition] = useState({ x, y });
-
-  useLayoutEffect(() => {
-    const clamp = () => {
-      const element = menuRef.current;
-      if (!element) return;
-      const rect = element.getBoundingClientRect();
-      const margin = 8;
-      setPosition({
-        x: Math.min(Math.max(x, margin), Math.max(margin, window.innerWidth - rect.width - margin)),
-        y: Math.min(Math.max(y, margin), Math.max(margin, window.innerHeight - rect.height - margin))
-      });
-    };
-    clamp();
-    window.addEventListener("resize", clamp);
-    return () => window.removeEventListener("resize", clamp);
-  }, [x, y]);
-
-  return { menuRef, position };
-}
-
 export function TabContextMenu({
   x,
   y,
@@ -69,12 +48,14 @@ export function TabContextMenu({
   onCloseAll,
   onCloseMenu
 }: TabContextMenuProps) {
-  const { menuRef, position } = useViewportPosition(x, y);
+  const { menuRef, position } = useViewportMenuPosition(x, y);
 
   // Escape 关闭。鼠标用户有「点别处」，键盘用户只有这一条路。
+  // 有模态/浮层压在上面时（退出确认框随时可能弹出来）让给它——两边都在 `document`
+  // 上监听，不判断的话一次按键会同时收掉菜单与那一层。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCloseMenu();
+      if (event.key === "Escape" && !hasLayerAbove("transient")) onCloseMenu();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);

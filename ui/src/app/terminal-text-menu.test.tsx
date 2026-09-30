@@ -82,6 +82,31 @@ describe("TerminalTextContextMenu", () => {
     });
     expect(handlers.onDismiss).toHaveBeenCalled();
   });
+
+  it("有模态/浮层压在上面时让给它——一次按键只收掉最上面那层", () => {
+    // 退出确认框（`.overlay` / `Dialog` 的 `.dialog-overlay`）随时可能从后端推来，
+    // 而它盖在菜单之上；两边都在 `document` 上监听。
+    const { handlers } = setup(true);
+    for (const layer of [".overlay", ".dialog-overlay"]) {
+      const modal = document.createElement("div");
+      modal.className = layer.slice(1);
+      document.body.appendChild(modal);
+      try {
+        act(() => {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+        expect(handlers.onDismiss, `${layer} 在场时不该收菜单`).not.toHaveBeenCalled();
+      } finally {
+        modal.remove();
+      }
+    }
+
+    // 那一层收掉之后，Escape 仍然是菜单的关闭键。
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(handlers.onDismiss).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("TerminalPasteDialog", () => {

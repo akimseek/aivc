@@ -108,6 +108,31 @@ describe("TabContextMenu", () => {
     expect(props.onCloseMenu).toHaveBeenCalled();
   });
 
+  it("有模态/浮层压在上面时让给它——一次按键只收掉最上面那层", async () => {
+    // 退出确认框（`.overlay` / `Dialog` 的 `.dialog-overlay`）随时可能从后端推来，
+    // 而它盖在菜单之上；两边都在 `document` 上监听。
+    const { props } = setup();
+    for (const layer of [".overlay", ".dialog-overlay"]) {
+      const modal = document.createElement("div");
+      modal.className = layer.slice(1);
+      document.body.appendChild(modal);
+      try {
+        await act(async () => {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+        expect(props.onCloseMenu, `${layer} 在场时不该收菜单`).not.toHaveBeenCalled();
+      } finally {
+        modal.remove();
+      }
+    }
+
+    // 那一层收掉之后，Escape 仍然是菜单的关闭键。
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(props.onCloseMenu).toHaveBeenCalledTimes(1);
+  });
+
   it("菜单有可访问名称，说明它是给哪张标签的", () => {
     const { view } = setup({ tabLabel: "重构会话" });
     expect(view.container.querySelector(".context-menu")!.getAttribute("aria-label")).toBe(

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { hasLayerAbove } from "../components";
 import { useViewportMenuPosition } from "./viewport-menu";
 
 import type { AiSession } from "../types";
@@ -97,9 +98,11 @@ export function SessionContextMenu({
   const { menuRef, position } = useViewportMenuPosition(x, y);
 
   // Escape 关闭。鼠标用户有「点别处」，键盘用户只有这一条路。
+  // 有模态/浮层压在上面时（退出确认框随时可能弹出来）让给它——两边都在 `document`
+  // 上监听，不判断的话一次按键会同时收掉菜单与那一层。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !hasLayerAbove("transient")) onClose();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -121,6 +124,7 @@ export function SessionContextMenu({
       <div
         className="context-menu"
         role="menu"
+        aria-label="会话操作"
         style={{ left: position.x, top: position.y }}
         ref={menuRef}
         onClick={(event) => event.stopPropagation()}

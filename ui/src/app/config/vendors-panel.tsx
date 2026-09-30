@@ -6,6 +6,7 @@ import {
   ChipGroup,
   EmptyState,
   Field,
+  HintBar,
   Icon,
   LoadingBlock,
   TextInput,
@@ -553,14 +554,8 @@ export function VendorsPanel({
 
   return (
     <div className="vendor-panel">
-      {toast.message && (
-        <div className="export-hint" role="status">
-          {toast.message}
-          <Button small onClick={toast.dismiss}>
-            知道了
-          </Button>
-        </div>
-      )}
+      {/* 余额刷新这类一次性的结果：说完自己消失，也可以立刻收掉。 */}
+      {toast.message && <HintBar message={toast.message} onDismiss={toast.dismiss} />}
 
       <PanelHeader
         title={`供应商管理 (${vendors.length})`}

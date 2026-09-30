@@ -128,4 +128,37 @@ describe("AttentionCenter", () => {
       expect(view.container.querySelector(".attention-popover")).toBeNull();
     });
   });
+
+  it("有模态/浮层压在上面时，Escape 让给它——一次按键只收掉最上面那层", async () => {
+    // 退出确认框（`.overlay` / `Dialog` 的 `.dialog-overlay`）随时可能从后端推来，
+    // 而它盖在铃铛之上。两边都在 `document` 上监听，不判断的话一次 Escape 会
+    // 同时收掉提醒弹层与那一次退出询问。
+    const { view } = setup({ entries: [entry()] });
+    await open(view);
+
+    for (const layer of [".overlay", ".dialog-overlay"]) {
+      const modal = document.createElement("div");
+      modal.className = layer.slice(1);
+      document.body.appendChild(modal);
+      try {
+        await act(async () => {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+        expect(
+          view.container.querySelector(".attention-popover"),
+          `${layer} 在场时不该收掉提醒弹层`
+        ).toBeTruthy();
+      } finally {
+        modal.remove();
+      }
+    }
+
+    // 那一层收掉之后，Escape 仍然是提醒弹层的关闭键。
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    await waitFor(() => {
+      expect(view.container.querySelector(".attention-popover")).toBeNull();
+    });
+  });
 });

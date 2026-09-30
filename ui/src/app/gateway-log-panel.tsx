@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   EmptyState,
+  HintBar,
   LoadingBlock,
   Select,
   Toolbar,
@@ -123,14 +124,8 @@ export function GatewayLogPanel({
 
   return (
     <div className="observability-panel">
-      {toast.message && (
-        <div className="export-hint" role="status">
-          {toast.message}
-          <Button small onClick={toast.dismiss}>
-            知道了
-          </Button>
-        </div>
-      )}
+      {/* 删除/清空这类一次性的结果：说完自己消失，也可以立刻收掉。 */}
+      {toast.message && <HintBar message={toast.message} onDismiss={toast.dismiss} />}
 
       {/* 面板头统一：标题、说明与「重新查询」从卡片头搬到这里（卡片本体只管内容）。 */}
       <PanelHeader

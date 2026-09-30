@@ -233,9 +233,10 @@ describe("VendorsPanel：跨平台列表与厂商过滤", () => {
 
   it("厂商过滤是 chips，默认选中「全部 (N)」，每家的条数按全量算", async () => {
     const { chip } = setup({ existing: mixed });
-    await waitFor(() => expect(chip("全部")).toBeTruthy());
+    // 等的是**算完条数**之后的那一份：chips 着一份空列表也会先渲染出来，
+    // 只等「按钮在不在」会在取数落地之前就往下走（这条断言曾因此偶发失败）。
+    await waitFor(() => expect(chip("全部")?.textContent).toBe("全部 (3)"));
     // 条数只有在**一次取全量**之后才算得出来——这正是这里不断言「筛选发给后端」的原因。
-    expect(chip("全部")!.textContent).toBe("全部 (3)");
     expect(chip("Codex")!.textContent).toBe("Codex (2)");
     expect(chip("Claude Code")!.textContent).toBe("Claude Code (1)");
     expect(chip("Gemini")!.textContent).toBe("Gemini (0)");
@@ -264,9 +265,13 @@ describe("VendorsPanel：跨平台列表与厂商过滤", () => {
     // chips 换掉了 `<select aria-label="按平台筛选供应商">`，这条信息不能跟着控件一起丢：
     // `role="group"` 没有名字时读屏只念出一串孤立的按钮。
     const { view } = setup({ existing: mixed });
+    // 顺带等条数算完（空列表下这一组也已经在 DOM 里，只等「组在不在」会在取数落地前
+    // 就继续往下走）。
     const group = await waitFor(() => {
       const found = view.container.querySelector('[role="group"][aria-label="按厂商筛选供应商"]');
-      if (!found) throw new Error("还没有带名字的 chips 组");
+      if (!found || !(found.textContent ?? "").includes("全部 (3)")) {
+        throw new Error("还没有带名字、且算完条数的 chips 组");
+      }
       return found;
     });
     expect(group.textContent).toContain("全部 (3)");

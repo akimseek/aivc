@@ -67,21 +67,19 @@ select {
   outline-offset: 1px;
 }
 
-/* 提示条是**浮层**，不是布局的一部分。
-   外壳是 100vh 的网格（40px / 1fr / 28px），正文里插进一条提示会把状态栏挤到屏幕外
-   （它此前是 `.shell` 的网格行，改造后那些行是固定高度）。固定在标题栏下方，
-   几秒后自己消失。
+/* 一句话提示条（`HintBar`）：**浮起来的那一档**。
+   外观（底色/字色/边框/圆角）只在 `.export-hint` 定义一次，这里只管位置——
+   此前这里把底色与边框又写了一遍，合起来用时与 `.export-hint` 的 `border-bottom`
+   互相压；同一件事在两处定义，改一处就会分叉。
 
-   底与文字色不在这里：它总是与 `.export-hint` 一起用，那一条在文件后面、同权重，
-   所以这里再写一遍 `background` 是**永远不生效**的死声明。 */
+   为什么必须浮起来：外壳是 100vh 的网格（40px / 1fr / 28px），正文里插进一条提示
+   会把状态栏挤到屏幕外。固定在标题栏下方，几秒后自己消失。 */
 .hint-float {
   position: fixed;
   top: calc(40px + var(--ui-space-2));
   right: var(--ui-space-3);
   z-index: var(--ui-z-toast);
   max-width: min(560px, calc(100vw - 48px));
-  border: 1px solid var(--ui-accent-border);
-  border-radius: var(--ui-radius-lg);
   box-shadow: var(--ui-shadow);
 }
 
@@ -1139,20 +1137,27 @@ select {
   color: var(--ui-accent);
 }
 
+/* 一句话提示条（`HintBar`）：面板内与浮层形态**共用这一份外观**。
+   与告警条（`.notice`）同一种做法：浅色底 + 同色描边。区别在它是**瞬时**的——
+   说完自己消失，一个「知道了」可以立刻收掉。
+   浮层形态只多 `.hint-float` 那一条位置规则（见文件开头）。 */
 .export-hint {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 22px;
-  border-bottom: 1px solid var(--ui-divider);
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-2) var(--ui-space-4);
+  border: 1px solid var(--ui-accent-border);
+  border-radius: var(--ui-radius-lg);
   background: var(--ui-accent-soft);
   color: var(--ui-accent-strong);
-  font-size: 12px;
+  font-size: var(--ui-text-sm);
 }
 
+/* 路径要能被认出来，又不能把提示条撑宽（浮层形态有 max-width）。 */
 .export-hint code {
+  min-width: 0;
   font-family: var(--ui-font-mono);
-  font-size: 11.5px;
+  font-size: var(--ui-text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1243,6 +1248,19 @@ select {
   color: var(--ui-accent-strong);
 }
 
+/* 不可用的项（终端文本菜单的「复制 / 粘贴」在条件不满足时禁用）。
+   灰掉而不是藏起来：那一行的位置固定，藏了会让菜单长短不一；灰掉同时告诉用户
+   「这个动作存在，只是此刻不行」。 */
+.context-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.context-menu button:disabled:hover {
+  background: transparent;
+  color: var(--ui-text);
+}
+
 /* 危险动作在菜单里也要能认出来。 */
 .context-menu button.danger:hover {
   background: var(--ui-danger-soft);
@@ -1271,75 +1289,6 @@ select {
 .wsl-home-form-actions {
   display: flex;
   gap: var(--ui-space-2);
-}
-
-/* ── 配置覆盖层 ──────────────────────────────────────── */
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  background: rgba(18, 24, 33, 0.34);
-}
-
-.overlay-panel {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  width: min(920px, calc(100vw - 64px));
-  height: min(660px, calc(100vh - 64px));
-  border: 1px solid var(--ui-border);
-  border-radius: 12px;
-  background: var(--ui-bg-card);
-  box-shadow: var(--ui-shadow);
-  overflow: hidden;
-}
-
-/*
- * 确认框变体：内容少，不该占满配置面板那块 920×660 的地方。
- * 行数也少一行（没有标签栏、多一个页脚），所以这里显式重排。
- */
-.overlay-panel-confirm {
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(440px, calc(100vw - 64px));
-  height: auto;
-}
-
-.overlay-copy {
-  margin: 0;
-  color: var(--ui-muted);
-  line-height: 1.7;
-}
-
-.overlay-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--ui-divider);
-}
-
-.overlay-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ui-divider);
-}
-
-.overlay-head h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.overlay-body {
-  overflow: auto;
-  padding: 16px;
-  display: grid;
-  gap: 14px;
-  align-content: start;
 }
 
 /* ── 数据表与行 ──────────────────────────────────────── */
@@ -2662,14 +2611,17 @@ select {
   cursor: not-allowed;
 }
 
+/* 弹层（`Dialog`）的外壳。遮罩与层级跟设置中心、消息弹框用**同一批 token**：
+   此前这里自己写了一个 rgba 遮罩、层级写死 60，同屏弹出两层时深浅与叠放都会看
+   出差别（与 `.settings-overlay` 一致才是「一套弹层」）。 */
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--ui-z-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 45%);
+  background: var(--ui-scrim);
 }
 
 .dialog-panel {
@@ -2680,7 +2632,7 @@ select {
   max-width: 560px;
   padding: var(--ui-space-4);
   border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 8px);
+  border-radius: var(--ui-radius-md);
   background: var(--ui-bg-card);
   box-shadow: var(--ui-shadow);
 }
@@ -2694,6 +2646,14 @@ select {
   display: flex;
   justify-content: flex-end;
   gap: var(--ui-space-2);
+}
+
+/* 弹层正文里的一段说明（退出确认的两句话）。`<p>` 自带的上下边距会在列向 flex 里
+   再叠一层空隙，因此归零；行高比正文松一点，它是**要读**的一段话。 */
+.dialog-copy {
+  margin: 0;
+  color: var(--ui-muted);
+  line-height: 1.7;
 }
 
 .missing-directory-notice {
@@ -2742,38 +2702,50 @@ select {
   right: 0;
   min-width: 15px;
   border-radius: 8px;
-  background: var(--ui-danger, #e5534b);
+  background: var(--ui-danger);
   color: var(--ui-on-accent);
   font-size: 10px;
   line-height: 15px;
   text-align: center;
 }
 
+/* 关注中心的弹层：与 `Popover`（`.popover`）**同一套外观**——描边、圆角、底色、
+   阴影、层级都用同一批 token。它挂在标题栏的铃铛下（`absolute`，由铃铛定位），
+   因此不套 `.popover` 那个 `fixed` 定位，只对齐外观。 */
 .attention-popover {
   position: absolute;
-  z-index: 50;
-  top: calc(100% + 6px);
+  z-index: var(--ui-z-overlay);
+  top: calc(100% + var(--ui-space-2));
   right: 0;
   width: 320px;
   padding: var(--ui-space-2);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-sm);
-  background: var(--ui-bg-card);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-bg-modal);
   box-shadow: var(--ui-shadow);
 }
 
+/* 标题行与下面那张清单分开：与设置中心/消息弹框的头部一样，用一条分隔线，
+   而不是靠留白。 */
 .attention-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--ui-space-2);
-  margin-bottom: var(--ui-space-2);
+  margin-bottom: var(--ui-space-1);
+  padding: var(--ui-space-1) var(--ui-space-2) var(--ui-space-2);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.attention-heading strong {
+  display: block;
+  font-size: var(--ui-text-md);
 }
 
 .attention-heading span {
   display: block;
   color: var(--ui-faint);
-  font-size: var(--ui-text-sm);
+  font-size: var(--ui-text-xs);
 }
 
 .attention-close,
@@ -2784,6 +2756,12 @@ select {
   color: var(--ui-faint);
   cursor: pointer;
   padding: 2px 6px;
+}
+
+.attention-close:hover,
+.attention-dismiss:hover {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
 }
 
 .attention-list {
@@ -2799,11 +2777,11 @@ select {
   align-items: center;
   gap: var(--ui-space-2);
   border-radius: var(--ui-radius-sm);
-  padding: 4px 2px;
+  padding: var(--ui-space-1) var(--ui-space-2);
 }
 
 .attention-item:hover {
-  background: var(--ui-bg-activity);
+  background: var(--ui-bg-card-hover);
 }
 
 .attention-open {
@@ -2818,7 +2796,7 @@ select {
 .attention-open span {
   display: block;
   color: var(--ui-faint);
-  font-size: var(--ui-text-sm);
+  font-size: var(--ui-text-xs);
 }
 
 /* ── 终端里的粘贴确认框 ──────────────────────────────────

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { Button, Dialog } from "../components";
+import { Button, Dialog, hasLayerAbove } from "../components";
 import { useViewportMenuPosition } from "./viewport-menu";
 
 /**
@@ -52,7 +52,8 @@ export function TerminalTextContextMenu({
       dismissRef.current();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dismissRef.current();
+      // 有模态/浮层压在上面时（退出确认框随时可能弹出来）让给那一次 Escape。
+      if (event.key === "Escape" && !hasLayerAbove("transient")) dismissRef.current();
     };
     const onScroll = () => dismissRef.current();
 
@@ -81,6 +82,7 @@ export function TerminalTextContextMenu({
       <div
         className="context-menu"
         role="menu"
+        aria-label="终端文本操作"
         style={{ left: position.x, top: position.y }}
         ref={menuRef}
         onClick={(event) => event.stopPropagation()}

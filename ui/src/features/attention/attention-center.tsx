@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { hasLayerAbove } from "../../components";
+
 /**
  * 会话提醒中心。
  *
@@ -63,7 +65,9 @@ export function AttentionCenter({ entries, onSelect, onDismiss }: AttentionCente
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      // 有模态/浮层压在它之上时（退出确认框随时可能弹出来）让那一次 Escape 给它：
+      // 都在 `document` 上监听，不判断的话一次按键会同时收掉两层。
+      if (event.key === "Escape" && !hasLayerAbove("transient")) setOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);

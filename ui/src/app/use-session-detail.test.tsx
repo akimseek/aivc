@@ -17,7 +17,7 @@ import { useSessionDetail } from "./use-session-detail";
 
 type Page = { offset: number; messages: unknown[]; hasMore: boolean; messageCount: number };
 
-function fakeRuntime(pages: Map<number, Page>, delayMs = 0) {
+function fakeRuntime(pages: Map<number, Page>) {
   const calls: { offset: number; limit: number }[] = [];
   window.__TAURI__ = {
     core: {
@@ -26,14 +26,54 @@ function fakeRuntime(pages: Map<number, Page>, delayMs = 0) {
         const offset = payload?.args?.offset ?? 0;
         const limit = payload?.args?.limit ?? 0;
         calls.push({ offset, limit });
-        const page = pages.get(offset) ?? { offset, messages: [], hasMore: false, messageCount: 0 };
-        if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
-        return page;
+        return pages.get(offset) ?? { offset, messages: [], hasMore: false, messageCount: 0 };
       }
     },
     event: { listen: async () => () => undefined }
   };
   return { calls };
+}
+
+/**
+ * 手动落地的假运行时：每个 offset 的响应先挂起，由测试决定什么时候、按什么顺序返回。
+ *
+ * # 为什么需要它
+ *
+ * 「后回的旧响应覆盖新结果」要求第 2 页的响应**晚于**第 3 页。固定延迟（或按调用序
+ * 给同一个延迟）的假运行时里，第 2 页必然先挂起、先返回——那一幕永远构造不出来，
+ * 断言恒真。只有把「谁先返回」交给测试，这条竞态才真的被测到。
+ */
+function deferredRuntime(pages: Map<number, Page>) {
+  const calls: { offset: number; limit: number }[] = [];
+  const pending = new Map<number, { resolve: () => void; reject: (reason: unknown) => void }[]>();
+  window.__TAURI__ = {
+    core: {
+      invoke: (_command: string, args?: unknown) => {
+        const payload = args as { args?: { offset: number; limit: number } } | undefined;
+        const offset = payload?.args?.offset ?? 0;
+        const limit = payload?.args?.limit ?? 0;
+        calls.push({ offset, limit });
+        return new Promise((resolve, reject) => {
+          const queue = pending.get(offset) ?? [];
+          queue.push({
+            resolve: () =>
+              resolve(pages.get(offset) ?? { offset, messages: [], hasMore: false, messageCount: 0 }),
+            reject
+          });
+          pending.set(offset, queue);
+        });
+      }
+    },
+    event: { listen: async () => () => undefined }
+  };
+  /** 让某个 offset 最近一次在途请求落地（或失败）；没有在途请求就是测试写错了。 */
+  function settle(offset: number, outcome: "resolve" | "reject" = "resolve", reason?: unknown) {
+    const next = pending.get(offset)?.shift();
+    if (!next) throw new Error(`offset ${offset} 没有在途请求可落地`);
+    if (outcome === "reject") next.reject(reason);
+    else next.resolve();
+  }
+  return { calls, settle };
 }
 
 const target = { id: "codex:local", provider: "codex" as const, label: "本机", kind: "local" as const, available: true };
@@ -123,29 +163,101 @@ describe("useSessionDetail", () => {
   });
 
   it("**连点翻页时后回的旧响应不覆盖新结果**", async () => {
-    // 用户点了 2、再点 3：如果第 2 页的响应比第 3 页晚到，界面会停在旧结果上。
-    const runtime = fakeRuntime(
+    // 用户点了 2、再点 3，再让第 3 页**先**回、第 2 页后回——网络乱序时这一幕真实存在。
+    // 旧实现里第 2 页会盖掉第 3 页，界面停在旧结果上。
+    const runtime = deferredRuntime(
       new Map([
-        [0, { offset: 0, messages: [], hasMore: true, messageCount: 300 }],
+        [0, { offset: 0, messages: [{ role: "user", text: "第一页" }], hasMore: true, messageCount: 300 }],
         [50, { offset: 50, messages: [{ role: "user", text: "第二页" }], hasMore: true, messageCount: 300 }],
         [100, { offset: 100, messages: [{ role: "user", text: "第三页" }], hasMore: true, messageCount: 300 }]
-      ]),
-      30
+      ])
     );
     const { get } = await renderDetail(50);
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 0)).toBe(true));
+    await act(async () => runtime.settle(0));
+    await waitFor(() => expect(get().messages[0]?.text).toBe("第一页"));
+
     await act(async () => {
       get().setPage(2);
     });
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 50)).toBe(true));
     await act(async () => {
       get().setPage(3);
     });
-    await waitFor(() => {
-      expect(runtime.calls.some((item) => item.offset === 100)).toBe(true);
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 100)).toBe(true));
+
+    // 后发的第 3 页先回来。
+    await act(async () => runtime.settle(100));
+    await waitFor(() => expect(get().messages[0]?.text).toBe("第三页"));
+
+    // 旧的第 2 页这时才回来——不允许落地（act 已把微任务放完，落地了这里就会看见）。
+    await act(async () => runtime.settle(50));
+    expect(get().messages[0]?.text).toBe("第三页");
+    expect(get().loading).toBe(false);
+  });
+
+  it("**旧响应被丢弃时把 loading 留给新请求**——不出现「旧响应把 loading 关掉」的闪烁", async () => {
+    const runtime = deferredRuntime(
+      new Map([
+        [0, { offset: 0, messages: [{ role: "user", text: "第一页" }], hasMore: true, messageCount: 300 }],
+        [50, { offset: 50, messages: [{ role: "user", text: "第二页" }], hasMore: true, messageCount: 300 }],
+        [100, { offset: 100, messages: [{ role: "user", text: "第三页" }], hasMore: true, messageCount: 300 }]
+      ])
+    );
+    const { get } = await renderDetail(50);
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 0)).toBe(true));
+    await act(async () => runtime.settle(0));
+    await waitFor(() => expect(get().loading).toBe(false));
+
+    await act(async () => {
+      get().setPage(2);
     });
-    // 最终落地的是第 3 页的内容。
-    await waitFor(() => {
-      expect(get().messages[0]?.text).toBe("第三页");
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 50)).toBe(true));
+    await act(async () => {
+      get().setPage(3);
     });
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 100)).toBe(true));
+
+    // 第 3 页还在路上，旧的第 2 页先回来了：它既不能覆盖内容，也不能替新请求把
+    // loading 关掉（否则界面闪一下「没在加载」又转回去）。
+    await act(async () => runtime.settle(50));
+    expect(get().loading).toBe(true);
+    expect(get().messages[0]?.text).toBe("第一页");
+
+    await act(async () => runtime.settle(100));
+    expect(get().messages[0]?.text).toBe("第三页");
+    expect(get().loading).toBe(false);
+  });
+
+  it("**旧响应失败也丢弃**——错误与清空都归最新一次请求", async () => {
+    const runtime = deferredRuntime(
+      new Map([
+        [0, { offset: 0, messages: [{ role: "user", text: "第一页" }], hasMore: true, messageCount: 300 }],
+        [100, { offset: 100, messages: [{ role: "user", text: "第三页" }], hasMore: true, messageCount: 300 }]
+      ])
+    );
+    const { get } = await renderDetail(50);
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 0)).toBe(true));
+    await act(async () => runtime.settle(0));
+    await waitFor(() => expect(get().loading).toBe(false));
+
+    await act(async () => {
+      get().setPage(2);
+    });
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 50)).toBe(true));
+    await act(async () => {
+      get().setPage(3);
+    });
+    await waitFor(() => expect(runtime.calls.some((item) => item.offset === 100)).toBe(true));
+
+    // 第 3 页已经落地。
+    await act(async () => runtime.settle(100));
+    await waitFor(() => expect(get().messages[0]?.text).toBe("第三页"));
+
+    // 旧的第 2 页这时失败：不能报错、更不能把第 3 页的结果清空。
+    await act(async () => runtime.settle(50, "reject", new Error("第 2 页读不了")));
+    expect(get().error).toBe("");
+    expect(get().messages[0]?.text).toBe("第三页");
   });
 
   it("读失败时报错，并把消息清空——不留上一页的内容冒充这一页", async () => {

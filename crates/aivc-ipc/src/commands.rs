@@ -13,7 +13,7 @@
 //! # 命名规律
 //!
 //! `<域>:<动作>`，动作部分一律 **kebab-case**（`get-session-messages-page`）。
-//! 全部 81 条命令与现网 `ipcMain.handle` 的注册名逐字一致。
+//! 全部 97 条命令与现网 `ipcMain.handle` 的注册名逐字一致。
 
 /// 命令所属的域。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -238,7 +238,7 @@ pub fn domain_of(command: &str) -> Option<CommandDomain> {
 
 /// 命令名前缀与声明域是否一致。
 ///
-/// 用于自检「表里的域和名字前缀对得上」——手工维护 81 条时最容易写错的就是这个。
+/// 用于自检「表里的域和名字前缀对得上」——手工维护 97 条时最容易写错的就是这个。
 #[must_use]
 pub fn prefix_matches_domain(command: &str, domain: CommandDomain) -> bool {
     command

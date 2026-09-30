@@ -72,14 +72,23 @@ export function TitleBar({
       {/* 拖拽留白。这一层必须真的在 DOM 里：靠 CSS 给别的元素加拖拽面会让
           按钮、徽章这些子元素一起变成拖拽面，点不动。
 
-          只看 `detail === 1`：双击的**第二次** mousedown 也带左键，若不排掉，
-          双击最大化会先被拖拽吃掉。 */}
+          拖拽与双击最大化**必须在同一次 mousedown 里分流**：后端的 `start_dragging()`
+          在 tao 内部是 `ReleaseCapture()` + `PostMessageW(WM_NCLBUTTONDOWN, HTCAPTION)`，
+          即第一次 mousedown 就进了系统的模态移动循环——循环期间事件还送不送得到 WebView
+          没有保证，把最大化挂在 `dblclick` 上等于赌它送得到（与 Tauri 官方 `drag.js` 同构：
+          也是按 `detail` 分流，不监听 `dblclick`）。
+
+          分流规则：`detail === 1` 是第一次按下 → 拖拽；`detail === 2` 是双击的第二次按下
+          → 最大化；除此之外**不再监听 `dblclick`**——再挂一个的话，一次双击会把最大化
+          切换两次（等于没切换）。 */}
       <div
         className="title-drag"
         onMouseDown={(event) => {
-          if (event.button === 0 && event.detail === 1) onStartDrag();
+          // 右键该走上下文菜单，不是挪窗口，也不该最大化。
+          if (event.button !== 0) return;
+          if (event.detail === 1) onStartDrag();
+          else if (event.detail === 2) onToggleMaximize();
         }}
-        onDoubleClick={onToggleMaximize}
       />
 
       <div className="title-actions">

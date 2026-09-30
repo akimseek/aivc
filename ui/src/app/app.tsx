@@ -232,7 +232,10 @@ export function App() {
         console.setError(error instanceof Error ? error.message : String(error))
       );
     },
-    [console]
+    // 依赖 `console.setError` 而不是整个 `console`：`useConsole()` 每次渲染都返回**新对象**，
+    // 依赖它等于这里每次渲染都重建，`quit` / 四个窗口回调跟着一起失效（记忆化白写）。
+    // `setError` 来自 `useState`，identity 恒定。
+    [console.setError]
   );
 
   /**

@@ -35,7 +35,6 @@ export type AppMenu = {
 
 /** 菜单项要触发的动作，由组装处注入。 */
 export type AppMenuActions = {
-  openCommandPalette: () => void;
   manageSkills: () => void;
   /** 设置会话（仅 WSL）。面还没实现时传 `undefined`，菜单项会显示为禁用。 */
   openSessionSettings?: () => void;
@@ -43,7 +42,6 @@ export type AppMenuActions = {
   exportSession: (format: "markdown" | "json" | "html") => void;
   quit: () => void;
   manageVendors: () => void;
-  openSystemTerminal: () => void;
   installCli: () => void;
   /** 打开日志目录。入口尚未接入 → 省略即为禁用。 */
   openLogDirectory?: () => void;
@@ -147,20 +145,9 @@ export function createAppMenus(
       ]
     },
     {
-      id: "terminal",
-      label: "终端",
-      items: [{ label: "新建终端", action: actions.openSystemTerminal }]
-    },
-    {
       id: "help",
       label: "帮助",
       items: [
-        {
-          label: "命令面板",
-          shortcut: "Ctrl + K",
-          action: actions.openCommandPalette
-        },
-        { separator: true, label: "" },
         { label: "安装 CLI", action: actions.installCli },
         { separator: true, label: "" },
         {

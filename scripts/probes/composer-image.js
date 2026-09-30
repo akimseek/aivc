@@ -17,6 +17,30 @@
   const out = { checks: [] };
   const check = (name, ok, detail) => out.checks.push({ name, ok: Boolean(ok), detail: detail ?? "" });
 
+  // 诊断用：把「开始操作之前」界面上有什么记下来，
+  // 免得失败时分不清是「终端没起来」还是「输入框没渲染」。
+  out.initialButtons = [...document.querySelectorAll("button")].map((item) =>
+    p.clean(item.textContent)
+  ).slice(0, 40);
+  out.initialDialogs = [...document.querySelectorAll("[role='dialog'], .dialog")].map((item) =>
+    p.clean(item.textContent).slice(0, 60)
+  );
+
+  // 探针启动时**没有任何平台 / 目标被选中**（刻意的：不替用户选），
+  // 因此「+ Codex」是禁用的，点了不会弹对话框。
+  // 这里先按用户真实路径选平台与目标——否则后面根本走不到终端。
+  const pickers = [...document.querySelectorAll(".sidebar .pickers select")];
+  const setSelect = async (element, value) => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(element, value);
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+    await p.sleep(1400);
+  };
+  const codex = [...(pickers[0]?.options ?? [])].find((item) => item.value === "codex");
+  if (codex) await setSelect(pickers[0], "codex");
+  const target = [...(pickers[1]?.options ?? [])].find((item) => item.value !== "");
+  if (target) await setSelect(pickers[1], target.value);
+  out.pickedTarget = target?.value ?? "";
+
   // ── 1. 后端：造一张真 PNG，落盘，再读回来 ────────────────
   //
   // 用 canvas 画一张 4×3 的纯色图（尺寸小、内容确定，便于断言）。
@@ -87,12 +111,17 @@
     refused.slice(0, 160)
   );
 
-  // ── 2b. 开一路终端，自管输入才会出现在 DOM 里 ────────────
+  // ── 2b. 开一路 Codex 终端，自管输入才会出现在 DOM 里 ──────
   //
-  // 自管输入只在前台的终端里渲染。探针启动时工作区是恢复出来的会话
-  // （它的输入框要等第一段输出才露出来），因此必须先自己开一路。
-  const NEW_SHELL_LABELS = ["+ Shell", "新建终端"];
-  for (const label of NEW_SHELL_LABELS) {
+  // 自管输入只在前台的终端里渲染，因此必须先有终端。
+  //
+  // 这里原来点的是「+ Shell」（系统终端）。那个功能已按用户要求整体移除，
+  // 改成点「+ Codex」——**同一个探针验的东西没变**（自管输入框与图片面），
+  // 只是用现在唯一存在的终端类型把它开出来。
+  //
+  // 「+ Codex」会先弹「新会话」对话框（工作目录 + 提示词），要再点一次「打开」。
+  const NEW_TERMINAL_LABELS = ["+ Codex", "新建终端"];
+  for (const label of NEW_TERMINAL_LABELS) {
     const button = [...document.querySelectorAll("button")].find(
       (item) => p.clean(item.textContent) === label
     );
@@ -101,6 +130,13 @@
       break;
     }
   }
+  await p.sleep(1200);
+  // 对话框出现就确认它（默认目录是后端给的当前会话目录，可直接用）。
+  const confirm = [...document.querySelectorAll("button")].find(
+    (item) => p.clean(item.textContent) === "打开"
+  );
+  out.confirmedNewSession = Boolean(confirm);
+  if (confirm) confirm.click();
   for (let index = 0; index < 30 && !document.querySelector(".composer"); index += 1) {
     await p.sleep(500);
   }

@@ -214,11 +214,6 @@ impl CommandRouter {
                 let distro = self.target_distro(args).await;
                 self.terminal.start(args, distro.as_deref()).await
             }
-            // 系统终端：跑用户本来就在用的那个 shell，而不是 Codex。
-            "terminal:start-system" => {
-                let distro = self.target_distro(args).await;
-                self.terminal.start_system(args, distro.as_deref()).await
-            }
             // 写入与调整尺寸都只回 `null`：前端不消费返回值。
             "terminal:write" => self.terminal.write(args).await.map(|()| Value::Null),
             "terminal:resize" => self.terminal.resize(args).await.map(|()| Value::Null),
@@ -542,11 +537,9 @@ impl CommandRouter {
                 Ok(Value::Null)
             }
             // --- 终端 ---
-            "terminal:start"
-            | "terminal:start-system"
-            | "terminal:write"
-            | "terminal:resize"
-            | "terminal:stop" => self.dispatch_terminal(command, &args).await,
+            "terminal:start" | "terminal:write" | "terminal:resize" | "terminal:stop" => {
+                self.dispatch_terminal(command, &args).await
+            }
             // --- 供应商查询 ---
             "vendor:list-models" => Ok(VendorCommands::list_models(ctx, &args).await?),
             // 主目录**显式传进去**：这条命令会读用户 HOME 下的配置文件。
@@ -1034,9 +1027,10 @@ mod tests {
     /// 上面那条不变式只覆盖了「命令表 vs PENDING」这一层，而 `dispatch` 还有一层
     /// **外层路由**（一张字面量清单）。两者可以脱节：
     ///
-    /// `terminal:start-system` 曾经同时满足「在命令表里」与「不在 PENDING 里」，
+    /// 曾经有一条命令同时满足「在命令表里」与「不在 PENDING 里」，
     /// 却没有任何 arm 接住它——于是落到外层 match 的兜底 `Err(pending(other))`，
     /// 报「命令尚未接线」。**测试全绿，功能完全不可用**。
+    /// （那条命令是 `terminal:start-system`，后来整个系统终端模块都删掉了。）
     ///
     /// 这条测试专门堵那个缺口：以**空参数**调用每条已实现的命令，只断言它没有落到
     /// 「尚未接线」的兜底。参数校验失败、目标不存在、探测不到——都是正常结果。
@@ -1094,8 +1088,6 @@ mod tests {
         assert!(is_implemented("vendor:list"));
         assert!(is_implemented("codex:set-wsl-codex-home"));
         assert!(is_implemented("terminal:start"));
-        // 系统终端：跑用户本来的 shell，与 Codex 终端是两条独立路径。
-        assert!(is_implemented("terminal:start-system"));
         assert!(is_implemented("skill:list"));
         // 需要发起 HTTP 的供应商命令仍未接线。
         assert!(is_implemented("vendor:refresh-balance"));

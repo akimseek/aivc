@@ -557,10 +557,6 @@ impl GatewayError {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum TerminalError {
-    /// 未找到 Git Bash。
-    #[error("未找到 Git Bash。")]
-    GitBashNotFound,
-
     /// 未找到 Codex CLI。
     #[error("未找到 Codex CLI。请在新电脑安装 Codex CLI，并重启应用使 PATH 生效。")]
     CodexCliNotFound,

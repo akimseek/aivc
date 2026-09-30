@@ -223,7 +223,20 @@ export function Sidebar({
             disabled={state.targets.length === 0}
             onChange={(event) => state.selectTarget(event.target.value)}
           >
-            {state.targets.length === 0 && <option value="">暂无可用目标</option>}
+            {/*
+              **占位项：没有选中时显示「请选择目标」。**
+              
+              与平台那个同理：少了它，`value=""` 而 option 里没有空值时浏览器会**视觉上
+              高亮第一项**——「没选目标」看起来像「选了本机 Codex」。
+              
+              平台没选时「暂无可用目标」（那是另一句话：目标列表还没被拉取），
+              两者不能混成一个。
+            */}
+            {state.targets.length === 0 ? (
+              <option value="">暂无可用目标</option>
+            ) : (
+              <option value="">请选择目标</option>
+            )}
             {state.targets.map((target) => (
               <option key={target.id} value={target.id}>
                 {/* 不可用的目标在选择列表里就标出来——等选中了才发现，用户已经先点了一次。 */}

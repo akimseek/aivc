@@ -18,13 +18,11 @@ import { createAppMenus, type AppMenuActions, type AppMenuConditions } from "./a
 
 function actions(overrides: Partial<AppMenuActions> = {}): AppMenuActions {
   return {
-    openCommandPalette: vi.fn(),
     manageSkills: vi.fn(),
     openGatewaySettings: vi.fn(),
     exportSession: vi.fn(),
     quit: vi.fn(),
     manageVendors: vi.fn(),
-    openSystemTerminal: vi.fn(),
     installCli: vi.fn(),
     openLogDirectory: vi.fn(),
     clearGatewayLogs: vi.fn(),
@@ -48,9 +46,11 @@ function item(menus: ReturnType<typeof createAppMenus>, menuId: string, label: s
 }
 
 describe("createAppMenus（结构）", () => {
-  it("四个菜单，顺序与旧平台一致", () => {
+  it("三个菜单：文件 / 工具箱 / 帮助", () => {
+    // 旧平台有四个（多一个「终端」），而那个菜单里唯一的项是**新建终端**——
+    // 它调的就是系统终端。系统终端已按用户要求整体移除，因此这个菜单也去掉了。
     const menus = createAppMenus(ALL_SUPPORTED, actions());
-    expect(menus.map((menu) => menu.label)).toEqual(["文件", "工具箱", "终端", "帮助"]);
+    expect(menus.map((menu) => menu.label)).toEqual(["文件", "工具箱", "帮助"]);
   });
 
   it("导出是子菜单，含三种格式", () => {
@@ -95,10 +95,10 @@ describe("createAppMenus（结构）", () => {
     expect(item(menus, "file", "管理 skill").disabled).toBe(true);
   });
 
-  it("退出是危险项，命令面板显示 Ctrl + K", () => {
+  it("退出是危险项", () => {
+    // 「命令面板 Ctrl + K」那一条随命令面板一起删掉了。
     const menus = createAppMenus(ALL_SUPPORTED, actions());
     expect(item(menus, "file", "退出").danger).toBe(true);
-    expect(item(menus, "help", "命令面板").shortcut).toBe("Ctrl + K");
   });
 
   it("分隔符与项都在（结构里没有漏项）", () => {
@@ -107,9 +107,6 @@ describe("createAppMenus（结构）", () => {
     expect(menus.find((menu) => menu.id === "file")?.items.some((entry) => entry.separator)).toBe(
       true
     );
-    expect(menus.find((menu) => menu.id === "terminal")?.items.map((entry) => entry.label)).toEqual([
-      "新建终端"
-    ]);
     expect(
       menus.find((menu) => menu.id === "toolbox")?.items.map((entry) => entry.label)
     ).toEqual(["供应商管理", "网关"]);

@@ -1,4 +1,4 @@
-//! IPC 入参校验。
+﻿//! IPC 入参校验。
 //!
 //! # 为什么这一层不能省
 //!
@@ -253,38 +253,6 @@ fn require_bounded_integer(
         return Err(invalid_value(message));
     }
     Ok(number as usize)
-}
-
-/// 系统终端类型白名单。
-const SYSTEM_TERMINAL_KINDS: [&str; 9] = [
-    "auto",
-    "powershell",
-    "cmd",
-    "git-bash",
-    "wsl",
-    "wsl-default",
-    "bash",
-    "zsh",
-    "fish",
-];
-
-/// 系统终端类型。
-pub fn require_system_terminal_kind(value: Option<&Value>) -> Result<Option<String>> {
-    let Some(text) = value.and_then(Value::as_str) else {
-        // 未提供、null 或空串都视为「未指定」。
-        return match value {
-            None | Some(Value::Null) => Ok(None),
-            _ => Err(invalid("system terminal kind")),
-        };
-    };
-    if text.is_empty() {
-        return Ok(None);
-    }
-    if SYSTEM_TERMINAL_KINDS.contains(&text) {
-        Ok(Some(text.to_owned()))
-    } else {
-        Err(invalid("system terminal kind"))
-    }
 }
 
 /// 终端数据：允许空串之外的一切字符串。
@@ -557,27 +525,6 @@ mod tests {
             error.to_string(),
             "熔断持续时间必须是 10 到 86400 秒之间的整数。"
         );
-    }
-
-    #[test]
-    fn system_terminal_kinds_are_whitelisted() {
-        assert_eq!(
-            require_system_terminal_kind(Some(&json!("auto"))).expect("ok"),
-            Some("auto".to_owned())
-        );
-        // 未提供、null、空串都表示「未指定」。
-        assert_eq!(require_system_terminal_kind(None).expect("ok"), None);
-        assert_eq!(
-            require_system_terminal_kind(Some(&json!(null))).expect("ok"),
-            None
-        );
-        assert_eq!(
-            require_system_terminal_kind(Some(&json!(""))).expect("ok"),
-            None
-        );
-        // 白名单之外一律拒绝。
-        assert!(require_system_terminal_kind(Some(&json!("tcsh"))).is_err());
-        assert!(require_system_terminal_kind(Some(&json!(42))).is_err());
     }
 
     #[test]

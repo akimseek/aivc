@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 基础控件的样式。
  *
  * 这一层的价值是**一致性**：按钮、下拉、搜索框、标签的边框、圆角、字号、悬停与聚焦
@@ -321,82 +321,6 @@
   margin-left: auto;
   padding: 0 0 6px 8px;
 }
-
-/* ── 命令面板 ────────────────────────────────────────── */
-
-.palette {
-  align-self: start;
-  margin-top: 12vh;
-  width: min(560px, calc(100vw - 48px));
-  max-height: 60vh;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  border: 1px solid var(--ui-border);
-  border-radius: 12px;
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow);
-  overflow: hidden;
-}
-
-.palette-input {
-  height: 44px;
-  border: 0;
-  border-bottom: 1px solid var(--ui-divider);
-  padding: 0 15px;
-  background: var(--ui-surface);
-  color: var(--ui-text);
-  font-size: 14px;
-}
-
-.palette-input:focus {
-  outline: none;
-}
-
-.palette-list {
-  overflow: auto;
-  padding: 6px;
-}
-
-.palette-item {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  padding: 8px 10px;
-  text-align: left;
-  color: var(--ui-text);
-  cursor: pointer;
-}
-
-.palette-item.on {
-  background: var(--ui-accent-soft);
-  color: var(--ui-accent-strong);
-}
-
-.palette-group {
-  flex: 0 0 auto;
-  min-width: 52px;
-  color: var(--ui-faint);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.palette-label {
-  min-width: 0;
-  font-size: 13px;
-}
-
-.palette-empty {
-  padding: 18px;
-  color: var(--ui-faint);
-  text-align: center;
-  font-size: 12.5px;
-}
-
 /* ── 加载态 ──────────────────────────────────────────── */
 
 /*

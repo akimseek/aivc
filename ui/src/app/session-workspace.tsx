@@ -254,17 +254,15 @@ function UsagePills({ usage, model }: { usage: NonNullable<AiSession["usage"]>; 
   );
 }
 
-/** 工作区标签条的尾部按钮：新建 Codex / 新建系统终端。 */
+/** 工作区标签条的尾部按钮：详情 + 新建 Codex。 */
 export function WorkspaceTrailing({
   canStartCodex,
   onNewCodex,
-  onNewShell,
   detailSession,
   onOpenDetail
 }: {
   canStartCodex: boolean;
   onNewCodex: () => void;
-  onNewShell: () => void;
   /**
    * 「详情」要看的会话：**当前终端那条会话优先**，否则当前选中的会话。
    *
@@ -280,9 +278,6 @@ export function WorkspaceTrailing({
       <SessionDetailButton session={detailSession} onOpenDetail={onOpenDetail} />
       <Button small disabled={!canStartCodex} onClick={onNewCodex} title="在目标里启动 Codex">
         + Codex
-      </Button>
-      <Button small onClick={onNewShell} title="启动系统 shell（WSL 目标会开该发行版的 shell）">
-        + Shell
       </Button>
     </>
   );

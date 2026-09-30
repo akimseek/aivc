@@ -7,6 +7,11 @@
 //! - [`status`]：从 PTY 输出流中识别「等待确认 / 出错 / 本轮已完成」。
 //! - `session`：PTY 会话生命周期与输出批处理 —— **需要 `pty` 特性**。
 //!
+//! 这里原来还有一个 `shell` 模块：解析「用户想开哪个 shell」并拼出系统终端的命令。
+//! 整个**系统终端**功能已按用户要求移除（它是「随手敲命令的窗口」，
+//! 与本工程的用途——跑 AI CLI——无关），因此那个模块连同它的 `ShellKind` /
+//! `resolve_shell` / `build_system_shell_command` 一起删掉了。
+//!
 //! # 为什么状态检测是纯函数
 //!
 //! 它的输入是「任意切分的输出批次」，输出是「要不要提醒用户」。把它做成纯状态机之后，
@@ -29,7 +34,6 @@ pub mod command;
 pub mod locate;
 #[cfg(feature = "pty")]
 pub mod session;
-pub mod shell;
 pub mod status;
 
 pub use command::{
@@ -38,10 +42,6 @@ pub use command::{
 };
 #[cfg(feature = "pty")]
 pub use session::{FLUSH_INTERVAL_MS, OutputBatcher, PtySession, SessionRegistry};
-pub use shell::{
-    ShellChoice, ShellKind, auto_kind_for, build_system_shell_command, find_on_path,
-    git_bash_candidates, resolve_shell,
-};
 pub use status::{
     TerminalAttention, TerminalStatus, TerminalStatusDetector, TerminalStatusEvent,
     detect_attention, has_user_input, strip_ansi,

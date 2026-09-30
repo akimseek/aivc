@@ -81,10 +81,10 @@ async function render(current: () => ReturnType<typeof useTerminals>) {
   return view;
 }
 
-/** 开一路系统终端，返回它的 id。 */
+/** 开一路 Codex 终端，返回它的 id。 */
 async function openTerminal(result: { current: ReturnType<typeof useTerminals> }) {
   await act(async () => {
-    await result.current.openSystemTerminal(null);
+    await result.current.openTerminal(null);
   });
   return result.current.terminals.at(-1)!.id;
 }
@@ -228,7 +228,7 @@ describe("useTerminals 的事件装配", () => {
     });
 
     await act(async () => {
-      await expect(view.result.current.openSystemTerminal(null)).rejects.toThrow();
+      await expect(view.result.current.openTerminal(null)).rejects.toThrow();
     });
 
     expect(view.result.current.terminals.at(-1)!.running).toBe(false);

@@ -1,15 +1,17 @@
 /**
- * 第一批量验收：A3 费率 / A5 高级 JSON / A7 终端类型 / A4 文案。
+ * 第一批量验收：A3 费率 / A5 高级 JSON / A4 文案。
  *
  * # 为什么必须实测
  *
  * 这一批全是「界面读的字段必须与后端发的一致」：
  * - 费率：后端 `VendorPricing { inputPerMillionUsd, outputPerMillionUsd }`；
  * - 高级 JSON：后端要的是**结构化对象**，界面递的是解析后的对象；
- * - 终端类型：后端 `ShellKind::parse` 认九个确切字符串，**未知直接报错**；
  * - A4：那句文案说的是不是真的，只有对着后端的实际行为才知道。
  *
  * 因此判据是**写进去、从后端读回来、再对一遍**，而不是只看界面显示什么。
+ *
+ * （原先还有 A7「终端类型」一段：那时它验的是系统终端的类型选择。该功能已整体
+ * 移除，那一段随之删掉——不是放宽断言。）
  */
 (async () => {
   const p = window.__p;
@@ -185,69 +187,16 @@
   const deleted = await p.invoke("vendor:delete", { id: saved.id });
   check("探针造的那条供应商已删掉（不污染真实数据）", deleted === true, String(deleted));
 
-  // ── A7：终端类型 ────────────────────────────────────────
-  //
-  // 后端对未知类型**直接报错**，因此这里用两条：一个合法值应当成功，
-  // 一个非法值必须失败——后者证明「界面能选到的值必须是那九个之一」不是空话。
-  // 合法值走界面（点「新建」），非法值直接打后端（只验契约，不真开终端）。
-  const shellButton = [...document.querySelectorAll("button")].find(
-    (item) => clean(item) === "+ Shell"
-  );
-  if (shellButton) {
-    shellButton.click();
-    for (let index = 0; index < 30 && !document.querySelector(".system-dock"); index += 1) {
-      await p.sleep(500);
-    }
-  }
-  await p.sleep(2500);
+  /*
+    A7「终端类型」那一段删掉了。
 
-  const kindSelect = document.querySelector(".system-dock-kind select");
-  out.kindOptions = kindSelect ? [...kindSelect.options].map((item) => item.value) : null;
-  check("停靠面板里有「系统终端类型」下拉", Boolean(kindSelect), String(Boolean(kindSelect)));
-  check(
-    "选项里有默认与 Windows 上的几种 shell",
-    (out.kindOptions ?? []).includes("auto") &&
-      ((out.kindOptions ?? []).includes("powershell") || (out.kindOptions ?? []).includes("bash")),
-    JSON.stringify(out.kindOptions)
-  );
+   它验的是系统终端的类型下拉（默认 / PowerShell / CMD / Git Bash / WSL）与
+   后端 `ShellKind::parse` 的九个取值——**整个系统终端功能已按用户要求移除**，
+   连同那个下拉、`ShellKind`、「+ Shell」入口与 `terminal:start-system` 一起。
 
-  // 先记下当前的终端数，再用下拉选一个类型点「新建」，看是不是真的多了一路。
-  const before = document.querySelectorAll(".system-dock .xterm").length;
-  const targetKind = (out.kindOptions ?? []).includes("cmd") ? "cmd" : "auto";
-  if (kindSelect) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
-    setter.call(kindSelect, targetKind);
-    kindSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    await p.sleep(300);
-  }
-  const newButton = [...document.querySelectorAll(".system-dock button")].find(
-    (item) => clean(item) === "新建"
-  );
-  if (newButton) {
-    newButton.click();
-    await p.sleep(4000);
-  }
-  const after = document.querySelectorAll(".system-dock .xterm").length;
-  out.terminals = { before, after, targetKind };
-  check(
-    `按选中的类型（${targetKind}）新建后真的多了一路终端`,
-    after > before,
-    JSON.stringify(out.terminals)
-  );
+   因此这里不再有可验的东西：不是把断言放宽，而是功能不存在了。
+  */
 
-  // 非法类型必须被后端拒绝——这条是「取值必须逐字一致」的反向证明。
-  let rejected = "";
-  try {
-    await p.invoke("terminal:start-system", { terminalId: "probe-bogus", kind: "powershell7" });
-  } catch (error) {
-    rejected = String(error);
-  }
-  out.rejectedBogusKind = rejected.slice(0, 140);
-  check(
-    "非法类型被后端拒绝（证明界面只能从那九个里选）",
-    rejected.includes("未知的系统终端类型"),
-    rejected.slice(0, 140)
-  );
 
   // ── A4：那句文案 ────────────────────────────────────────
   const stillOpen = await openConfigTab("供应商管理");

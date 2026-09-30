@@ -44,7 +44,6 @@ function terminal(overrides: Partial<TerminalSession> = {}): TerminalSession {
     id: "term-1",
     title: "终端",
     running: true,
-    kind: "codex",
     providerId: "codex",
     ...overrides
   };
@@ -90,11 +89,12 @@ describe("VendorRoutePicker", () => {
     expect(view.container.textContent).toBe("");
   });
 
-  it("系统终端不显示供应商", () => {
-    // 系统终端不注入环境、也不绑路由，没有供应商可言。
+  it("没有 providerId 时不显示供应商", () => {
+    // 终端都不知道自己属于哪个平台时，取不到供应商列表，选择器无从谈起。
+    // （这条原来测的是「系统终端不显示供应商」——那类终端已整体移除。）
     const view = render(
       <VendorRoutePicker
-        terminal={terminal({ kind: "system", providerId: "" })}
+        terminal={terminal({ providerId: "" })}
         onSwitch={vi.fn()}
         onSetMode={vi.fn()}
       />

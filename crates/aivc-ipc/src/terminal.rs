@@ -21,7 +21,6 @@
 //! 的：`terminal:start` 返回后输出仍在到达。
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use aivc_core::error::{Error, IpcError, Result};
@@ -30,10 +29,6 @@ use aivc_terminal::command::{
     CommandParams, LaunchTarget, TerminalCommand, build_command, extra_args,
 };
 use aivc_terminal::session::{DEFAULT_COLS, DEFAULT_ROWS, PtySession, SessionRegistry};
-use aivc_terminal::shell::{
-    ShellKind, auto_kind_for, build_system_shell_command, find_on_path, git_bash_candidates,
-    resolve_shell,
-};
 use aivc_terminal::status::{TerminalStatusDetector, TerminalStatusEvent};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -58,27 +53,6 @@ use crate::validate::require_terminal_id;
 /// 只做输出侧检测也补不回来：没有「用户提交了什么」这个起点，就无法区分「新一轮开始了」
 /// 与「上一轮留在屏幕上的旧提示符」——后者会把每一帧重绘都误报成「本轮已完成」。
 type DetectorHandle = Arc<Mutex<TerminalStatusDetector>>;
-
-/// 找一个「可能不在 PATH 里」的 shell。
-///
-/// Git Bash 单独处理：它**默认不在 PATH 里**（Git for Windows 的安装器只把 `cmd`
-/// 目录加进去），因此先找常见安装位置，找不到再退回 PATH。
-fn locate_shell(kind: ShellKind, program: &str) -> Option<PathBuf> {
-    if kind == ShellKind::GitBash {
-        let found = git_bash_candidates(
-            std::env::var("ProgramFiles").ok().as_deref(),
-            std::env::var("LOCALAPPDATA").ok().as_deref(),
-        )
-        .into_iter()
-        .find(|path| path.is_file());
-        if found.is_some() {
-            return found;
-        }
-    }
-    std::env::var("PATH")
-        .ok()
-        .and_then(|path_env| find_on_path(program, &path_env))
-}
 
 /// 输出事件通道。
 pub const CHANNEL_DATA: &str = "terminal:data";
@@ -354,61 +328,6 @@ impl TerminalCommands {
             output,
         ));
         Ok(json!({ "terminalId": terminal_id, "cols": cols, "rows": rows }))
-    }
-
-    /// 启动一路**系统终端**。
-    ///
-    /// 与 [`Self::start`] 的区别：那个跑的是 Codex（带网关路由与配置注入），这个跑的是
-    /// **用户本来就在用的那个 shell**——因此它**不注入任何环境变量**。
-    ///
-    /// `distro` 由调用方从 `targetId` 解出：目标是 WSL 目标、而用户没指定 shell 时，
-    /// 应当开那个发行版里的 shell，在本机开一个 PowerShell 是答非所问。
-    ///
-    /// # Errors
-    ///
-    /// 参数非法、指定的 shell 在本机找不到、或 PTY 启动失败时返回错误。
-    pub async fn start_system(&self, args: &Value, distro: Option<&str>) -> Result<Value> {
-        let terminal_id = require_terminal_id(args.get("terminalId"))?;
-        let kind = match args.get("kind").and_then(Value::as_str) {
-            Some(value) => ShellKind::parse(value)?,
-            None => auto_kind_for(distro),
-        };
-        let choice = resolve_shell(kind, cfg!(windows), distro);
-        // 只有「可能不在 PATH 里」的 shell 才需要查找；`cmd.exe` / `wsl.exe` 由系统保证。
-        let program = if choice.search_path {
-            locate_shell(kind, choice.program)
-        } else {
-            None
-        };
-        let home = home_dir();
-        // 系统终端开在**用户主目录**，不是应用的工作目录。
-        //
-        // 这里原本用 `default_work_dir(&home)`（即 `<home>/.akim`），那个目录是给 Codex
-        // 用的，**在没跑过 Codex 的机器上根本不存在**——而 PTY 用不存在的目录启动会直接
-        // 失败。更糟的是失败被后续的 `resize`（"终端会话不存在"）盖住，界面只剩一句
-        // 和原因毫无关系的报错。
-        let cwd = optional_string(args, "cwd").unwrap_or_else(|| {
-            if home.trim().is_empty() {
-                // 连主目录都取不到时用临时目录：它是**必然存在**的。
-                std::env::temp_dir().to_string_lossy().into_owned()
-            } else {
-                home
-            }
-        });
-        let command = build_system_shell_command(kind, program, &cwd, distro, cfg!(windows))?;
-
-        let cols = args
-            .get("cols")
-            .and_then(Value::as_u64)
-            .and_then(|value| u16::try_from(value).ok())
-            .unwrap_or(DEFAULT_COLS);
-        let rows = args
-            .get("rows")
-            .and_then(Value::as_u64)
-            .and_then(|value| u16::try_from(value).ok())
-            .unwrap_or(DEFAULT_ROWS);
-        self.spawn_session(terminal_id, &command, cols, rows, ProviderId::Codex)
-            .await
     }
 
     /// 把输入写入 PTY。

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 应用外壳与功能区的样式。
  *
  * 这里**只放布局与功能区**：设计令牌在 `styles/tokens.css`，按钮/下拉/搜索框/标签/
@@ -1744,10 +1744,12 @@ select {
   opacity: 0.45;
   cursor: not-allowed;
 }
-/* ══ 工作区与底部系统终端 ═══════════════════════════════════
-   .main 是「侧栏 | 内容」的两列网格。内容那一列自己再上下排：
-   上面是工作区（标签 + 终端 + 会话正文），下面是系统终端的停靠面板。
-   没有系统终端时停靠面板不渲染，这一列就只有工作区。 */
+/* ══ 工作区 ═════════════════════════════════════════════════
+   .main 是「侧栏 | 内容」的两列网格；内容那一列是工作区。
+
+   这里原来还有底部**系统终端**停靠面板的一整套样式（`.system-dock*`）。
+   那个功能已按用户要求整体移除，因此这些规则也删掉了——
+   留着只会让后来的人以为还有一块面板没渲染出来。 */
 .workarea {
   display: flex;
   flex-direction: column;
@@ -1756,49 +1758,12 @@ select {
   overflow: hidden;
 }
 
-/* 工作区吃掉除停靠面板之外的全部高度。 */
+/* 工作区吃掉内容列的全部高度。 */
 .workarea > .workspace {
   flex: 1 1 auto;
   min-height: 0;
 }
 
-.system-dock {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  /* 高度由内联样式给（可拖动）；这是上限兜底，防止布局算出个负数。 */
-  flex: 0 0 auto;
-  border-top: 1px solid var(--ui-border);
-  background: var(--ui-surface);
-  overflow: hidden;
-}
-
-/* 最小化：只留那条标签与按钮。 */
-.system-dock.minimized {
-  height: auto;
-}
-.system-dock.minimized .system-dock-body {
-  display: none;
-}
-
-/* 拖上边缘改高度。命中区比视觉线宽——1px 的线抓不住。 */
-.system-dock-resize {
-  height: 6px;
-  margin-bottom: -3px;
-  cursor: row-resize;
-  background: transparent;
-  flex: 0 0 auto;
-}
-.system-dock-resize:hover {
-  background: var(--ui-accent);
-  opacity: 0.35;
-}
-
-.system-dock-body {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-}
 /* ── 自管输入的图片面 ────────────────────────────────────
    附件里的图片要能一眼认出是图（而不是一条路径），并且点得开。 */
 .composer-attachment.is-image {
@@ -1858,16 +1823,6 @@ select {
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-sm, 4px);
   background: var(--ui-surface-sunken, #0f172a);
-}
-/* ── 系统终端类型下拉 ────────────────────────────────────
-   与「新建」并排：先选类型再点新建，而不是让新开那一路自己去弹选择框。 */
-.system-dock-kind {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.system-dock-kind select {
-  min-width: 110px;
 }
 
 /* ── 供应商的高级配置 ────────────────────────────────────

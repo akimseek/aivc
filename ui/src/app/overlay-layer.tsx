@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { Button, CommandPalette, type Command } from "../components";
+import { Button } from "../components";
 import type { AiProviderId, AiProviderSummary, AiSession, AiTarget } from "../types";
 import { AboutDialog } from "./about-dialog";
 import { ConfigOverlay, type ConfigTab } from "./config-overlay";
@@ -24,7 +24,6 @@ export type NewSessionDraft = {
 
 /** 全部弹层的**状态**。收成一个对象，调用方一眼能看出这些是弹层的开关。 */
 export type OverlaysState = {
-  paletteOpen: boolean;
   aboutOpen: boolean;
   /** 版本号；还没读到是空串，对话框会显示「正在读取」。 */
   appVersion: string;
@@ -52,7 +51,6 @@ export type OverlaysState = {
  * 因此这里的每一项都必填，漏接会被类型检查挡住。
  */
 export type OverlaysActions = {
-  closePalette: () => void;
   closeAbout: () => void;
   closeToast: () => void;
   closeExported: () => void;
@@ -116,7 +114,6 @@ export type OverlaysActions = {
 export function AppOverlays({
   state,
   actions,
-  commands,
   providers,
   providerId,
   targetId,
@@ -131,8 +128,6 @@ export function AppOverlays({
 }: {
   state: OverlaysState;
   actions: OverlaysActions;
-  /** 命令面板的命令表。 */
-  commands: Command[];
   /** 全部平台：供应商页要用它显示厂商名。 */
   providers: AiProviderSummary[];
   providerId: AiProviderId | "";
@@ -160,7 +155,6 @@ export function AppOverlays({
 
   return (
     <>
-      {state.paletteOpen && <CommandPalette commands={commands} onClose={actions.closePalette} />}
 
       {state.aboutOpen && <AboutDialog version={state.appVersion} onClose={actions.closeAbout} />}
 

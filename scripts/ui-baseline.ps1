@@ -1,4 +1,4 @@
-﻿# 界面基线集：每个视图各截一张，落在 `shots/baseline/`。
+# 界面基线集：每个视图各截一张，落在 `shots/baseline/`。
 #
 # # 为什么需要它
 #
@@ -64,7 +64,10 @@ $steps = @(
     },
     @{
         Name  = "03-终端"
-        Probe = '(async()=>{const b=[...document.querySelectorAll("button")].find(x=>/Shell/.test(x.textContent));if(!b)return "NO-BUTTON";b.click();for(let i=0;i<40;i++){await new Promise(t=>setTimeout(t,250));if(document.querySelector(".xterm-helper-textarea"))break;}return JSON.stringify({term:!!document.querySelector(".xterm")});})()'
+        # 这里原本找的是「+ Shell」（系统终端）。那个功能已按用户要求整体移除，
+        # 改成「+ Codex」再确认「新会话」对话框——用现在唯一存在的终端类型
+        # 把终端开出来，验的东西没变（终端能不能起、xterm 有没有挂上）。
+        Probe = '(async()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="+ Codex");if(!b)return "NO-BUTTON";b.click();await new Promise(t=>setTimeout(t,1200));const c=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="打开");if(c)c.click();for(let i=0;i<40;i++){await new Promise(t=>setTimeout(t,250));if(document.querySelector(".xterm-helper-textarea"))break;}return JSON.stringify({term:!!document.querySelector(".xterm")});})()'
     },
     @{
         Name  = "04-配置"

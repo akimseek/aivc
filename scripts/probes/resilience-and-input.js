@@ -25,6 +25,29 @@
   try {
     await p.waitForTargets();
 
+    /*
+      **先自己选平台与目标。**
+      
+      本应用现在**启动后什么都不选**（刻意如此：此前三处「还原不上就挑第一个」）。
+      而 A11 那一段要开一路终端，那需要当前目标——没选时「+ Codex」是禁用的。
+    */
+    {
+      const pickers = [...document.querySelectorAll(".sidebar .pickers select")];
+      const setSelect = async (element, value) => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+          element,
+          value
+        );
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+        await p.sleep(1400);
+      };
+      const codex = [...(pickers[0]?.options ?? [])].find((item) => item.value === "codex");
+      if (codex) await setSelect(pickers[0], "codex");
+      const target = [...(pickers[1]?.options ?? [])].find((item) => item.value !== "");
+      if (target) await setSelect(pickers[1], target.value);
+      out.pickedTarget = target?.value ?? "";
+    }
+
     // ── A6：三个阈值 ─────────────────────────────────────
     //
     // 三条命令都在命令表里，因此这里直接打后端——它们此前**根本不存在**，
@@ -149,12 +172,21 @@
 
     // ── A11：终端输入模式切换 ───────────────────────────
     //
-    // 先开一路系统终端（它会渲染输入框）。
-    const shell = [...document.querySelectorAll("button")].find(
-      (item) => clean(item) === "+ Shell"
+    // 先开一路 Codex 终端（它会渲染输入框）。
+    //
+    // 这里原来点的是「+ Shell」（系统终端）。那个功能已按用户要求整体移除，
+    // 改成「+ Codex」——A11 验的是**输入模式切换**，与终端类型无关。
+    // 「+ Codex」会先弹「新会话」对话框，要再点一次「打开」。
+    const newTerminal = [...document.querySelectorAll("button")].find(
+      (item) => clean(item) === "+ Codex"
     );
-    if (shell) {
-      shell.click();
+    if (newTerminal) {
+      newTerminal.click();
+      await p.sleep(1200);
+      const confirm = [...document.querySelectorAll("button")].find(
+        (item) => clean(item) === "打开"
+      );
+      if (confirm) confirm.click();
       for (let index = 0; index < 40 && !document.querySelector(".composer-actions"); index += 1) {
         await p.sleep(500);
       }
@@ -163,7 +195,7 @@
 
     const composerActions = document.querySelector(".composer-actions");
     out.composerPresent = Boolean(composerActions);
-    check("系统终端下出现了自管输入框", Boolean(composerActions), String(Boolean(composerActions)));
+    check("终端下出现了自管输入框", Boolean(composerActions), String(Boolean(composerActions)));
 
     /** 工具条里那个切换按钮：字只可能是这两个之一。 */
     const toggleButton = () => {

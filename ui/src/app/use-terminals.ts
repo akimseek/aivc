@@ -18,9 +18,11 @@ export type { TerminalSink } from "./terminal-output";
  * 每个终端各自订阅一次也能work，但那样事件监听会随终端数增长，且关闭时漏掉一个就会
  * 留下一个永不触发的监听。
  *
- * # 系统终端与 Codex 终端
+ * # 终端只有一种：Codex 终端
  *
- * 两者只有「起什么命令」不同，标签、输出、尺寸、关闭流程完全一样，因此共用一套状态。
+ * 这里原来还有一类「系统终端」（跑用户平时的 shell）。它已按用户要求**整体移除**，
+ * 连同后端命令、底部停靠面板与类型下拉一起。因此 `kind` 字段也没了——
+ * 只剩下的那一种不需要一个恒为同一个值的判别字段。
  *
  * # 缓冲与分发在 [`TerminalOutputRouter`] 里
  *
@@ -44,13 +46,10 @@ export type TerminalSession = {
   title: string;
   /** PTY 是否还活着。收到退出事件后置 false。 */
   running: boolean;
-  /** Codex 终端还是系统终端（只影响展示）。 */
-  kind: "codex" | "system";
   /**
    * 这路终端属于哪个平台。
    *
-   * 界面要用它去取该平台的供应商列表（状态栏的选择器）。系统终端没有平台概念，
-   * 因此是空串。
+   * 界面要用它去取该平台的供应商列表（状态栏的选择器）。
    */
   providerId: string;
   /**
@@ -305,7 +304,7 @@ export function useTerminals() {
    * 新开一路终端。
    *
    * `start` 负责实际启动；这里统一处理「先入列表、失败标记、绑定后端选定的供应商」
-   * 的公共部分——两条路径（Codex / 系统）的差别只有那一行调用。
+   * 的公共部分。
    *
    * # 界面上不挑供应商
    *
@@ -316,17 +315,16 @@ export function useTerminals() {
   const open = useCallback(
     async (options: {
       title: string;
-      kind: TerminalSession["kind"];
       providerId: string;
       start: (terminalId: string) => Promise<unknown>;
       /** 「启动提示词」：会话可交互之后自动发一次，见 `pendingPrompts`。 */
       prompt?: string;
     }): Promise<string> => {
-      const { title, kind, providerId, start, prompt } = options;
+      const { title, providerId, start, prompt } = options;
       const id = nextId();
       // 先入列表再启动：启动失败时用户至少能看到这一路的存在与失败原因，
       // 而不是「点了没反应」。
-      setTerminals((current) => [...current, { id, title, running: true, kind, providerId }]);
+      setTerminals((current) => [...current, { id, title, running: true, providerId }]);
       if (prompt?.trim()) {
         pendingPrompts.current.set(id, prompt.trim());
       }
@@ -383,7 +381,6 @@ export function useTerminals() {
     ): Promise<string> =>
       open({
         title: target ? `终端 · ${target.label}` : "终端",
-        kind: "codex",
         providerId: target?.provider ?? "codex",
         prompt,
         start: (terminalId) =>
@@ -404,30 +401,6 @@ export function useTerminals() {
             // 后端这边 (`aivc-ipc/src/terminal.rs`) 已经收 `cliArgs`，这里只是把它递下去。
             ...(cliArgs?.trim() ? { cliArgs: cliArgs.trim() } : {}),
             ...(target?.codexHome ? { codexHome: target.codexHome } : {})
-          })
-      }),
-    [open]
-  );
-
-  /**
-   * 新开一路系统终端。
-   *
-   * `kind` 省略时由后端按平台决定；若 `target` 是 WSL 目标，后端会开**那个发行版的**
-   * shell——在本机开一个 PowerShell 是答非所问。
-   */
-  const openSystemTerminal = useCallback(
-    (target: AiTarget | null, cwd?: string, kind?: string): Promise<string> =>
-      open({
-        title: "系统终端",
-        kind: "system",
-        // 系统终端不注入任何环境、也不绑路由，因此没有供应商可言。
-        providerId: "",
-        start: (terminalId) =>
-          api.startSystemTerminal({
-            terminalId,
-            ...(kind ? { kind } : {}),
-            ...(target ? { targetId: target.id } : {}),
-            ...(cwd ? { cwd } : {})
           })
       }),
     [open]
@@ -467,7 +440,6 @@ export function useTerminals() {
     terminals,
     attention,
     openTerminal,
-    openSystemTerminal,
     closeTerminal,
     clearAttention,
     registerSink,

@@ -790,20 +790,6 @@ export const startTerminal = (request: {
     vendorMode?: "dynamic" | "locked";
   }>("terminal:start", request);
 
-/**
- * 启动一路**系统终端**：跑用户本来就在用的那个 shell，而不是 Codex。
- *
- * 它**不注入任何环境变量**——注入会让它不再是用户平时那个 shell。
- */
-export const startSystemTerminal = (request: {
-  terminalId: string;
-  kind?: string;
-  targetId?: string;
-  cwd?: string;
-  cols?: number;
-  rows?: number;
-}) => invoke<{ terminalId: string; cols: number; rows: number }>("terminal:start-system", request);
-
 /** 把输入写进 PTY。xterm 对 `ESC[6n` 等查询的应答正是走这里回去的。 */
 export const writeTerminal = (terminalId: string, data: string) =>
   invoke<void>("terminal:write", { terminalId, data });

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { Button, ToolbarSpacer, useToast, type Command } from "../components";
+import { Button, ToolbarSpacer, useToast } from "../components";
 import * as api from "../ipc/commands";
 import type { AiSession, AiTarget, ApiVendor } from "../types";
 import { AppMenubar } from "./app-menubar";
@@ -9,8 +9,6 @@ import { AppOverlays } from "./overlay-layer";
 import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
-import { SystemTerminalDock } from "./system-terminal-dock";
-import type { TerminalKind } from "./terminal-kinds";
 import { displayTitle } from "./session-display";
 import { Sidebar } from "./sidebar";
 import { StatusBar } from "./status-bar";
@@ -86,7 +84,6 @@ export function App() {
 
   const [configOpen, setConfigOpen] = useState(false);
   const [configTab, setConfigTab] = useState<ConfigTab>("vendors");
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
@@ -263,18 +260,6 @@ export function App() {
     };
   }, []);
 
-  /** ⌘K / Ctrl+K 打开命令面板。 */
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setPaletteOpen((current) => !current);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
   /* ── 终端 ─────────────────────────────────────────────── */
 
   /**
@@ -322,30 +307,6 @@ export function App() {
       cliArgs: ""
     });
   }, [console.selectedSession?.cwd]);
-
-  /**
-   * 开一路系统终端。
-   *
-   * `kind` 由调用方给：底部的类型下拉选的就是它。此前这里**从来不传**，
-   * 于是用户只能拿到平台默认的那个 shell——而后端一直支持指定类型。
-   * 不传时后端按平台决定（`auto`），这与旧平台的默认项一致。
-   */
-  const openSystemTerminal = useCallback(
-    async (kind?: TerminalKind) => {
-      try {
-        // 系统终端不依赖目标：没选目标时也能开一个本机 shell。
-        const id = await terminals.openSystemTerminal(
-          selectedTarget,
-          console.selectedSession?.cwd,
-          kind
-        );
-        workspace.addTerminalTab(id, "系统终端");
-      } catch (error) {
-        console.setError(error instanceof Error ? error.message : String(error));
-      }
-    },
-    [terminals, selectedTarget, console, workspace]
-  );
 
   /**
    * 点历史会话：**恢复那次会话并进入终端**（旧平台 `openResumeWithDirectory`）。
@@ -418,36 +379,6 @@ export function App() {
     [console]
   );
 
-  /* ── 命令面板 ─────────────────────────────────────────── */
-
-  /**
-   * 命令面板的命令表。
-   *
-   * 这里**只放界面上确实存在的动作**：面板不是第二套实现，它只是同一批动作的另一个
-   * 入口。多出一条「看起来能用但其实没接线」的命令，比少一条更糟。
-   */
-  const commands = useMemo<Command[]>(
-    () => [
-      { id: "pane.sessions", group: "视图", label: "显示会话列表", run: () => { console.setPane("sessions"); console.setView("active"); } },
-      { id: "pane.favorites", group: "视图", label: "显示收藏夹", run: () => console.setPane("favorites") },
-      { id: "pane.search", group: "视图", label: "显示全局搜索", run: () => console.setPane("search") },
-      { id: "view.active", group: "视图", label: "切换到当前会话", run: () => { console.setPane("sessions"); console.setView("active"); } },
-      { id: "view.trash", group: "视图", label: "切换到回收站", run: () => { console.setPane("sessions"); console.setView("trash"); } },
-      { id: "term.codex", group: "终端", label: "新建 Codex 终端", run: beginNewSession },
-      { id: "term.shell", group: "终端", label: "新建系统终端", run: () => void openSystemTerminal() },
-      { id: "targets.reload", group: "动作", label: "重新探测目标", run: () => void console.reloadTargets() },
-      { id: "sessions.reload", group: "动作", label: "刷新会话列表", run: () => void console.reloadSessions() },
-      { id: "export.md", group: "动作", label: "导出当前会话为 Markdown", run: () => void runExport("markdown") },
-      { id: "export.json", group: "动作", label: "导出当前会话为 JSON", run: () => void runExport("json") },
-      { id: "config.vendors", group: "配置", label: "供应商", run: () => openConfig("vendors") },
-      { id: "config.skills", group: "配置", label: "技能", run: () => openConfig("skills") },
-      { id: "config.gateway", group: "配置", label: "网关", run: () => openConfig("gateway") },
-      { id: "config.environment", group: "配置", label: "CLI 环境", run: () => openConfig("environment") },
-      { id: "config.diagnostics", group: "配置", label: "诊断（全部目标状态）", run: () => openConfig("diagnostics") }
-    ],
-    [console, beginNewSession, openSystemTerminal, runExport, openConfig]
-  );
-
   /* ── 组装 ─────────────────────────────────────────────── */
 
   const trash = console.view === "trash";
@@ -477,7 +408,6 @@ export function App() {
         }}
         onDismissAttention={(terminalId) => terminals.clearAttention(terminalId)}
         actions={{
-          openCommandPalette: () => setPaletteOpen(true),
           manageSkills: () => openConfig("skills"),
           openGatewaySettings: () => openConfig("gateway"),
           manageVendors: () => openConfig("vendors"),
@@ -492,7 +422,6 @@ export function App() {
               : undefined,
           installCli: () => openConfig("environment"),
           exportSession: (format) => void runExport(format),
-          openSystemTerminal: () => void openSystemTerminal(),
           showAbout: () => {
             setAboutOpen(true);
             void api
@@ -519,7 +448,6 @@ export function App() {
 
       <AppOverlays
         state={{
-          paletteOpen,
           aboutOpen,
           appVersion,
           toastMessage: toast.message,
@@ -534,7 +462,6 @@ export function App() {
           configTab
         }}
         actions={{
-          closePalette: () => setPaletteOpen(false),
           closeAbout: () => setAboutOpen(false),
           closeToast: toast.dismiss,
           closeExported: () => setExportedTo(""),
@@ -618,7 +545,6 @@ export function App() {
           reportError: console.setError,
           notify: toast.show
         }}
-        commands={commands}
         providers={console.providers}
         providerId={console.providerId}
         targetId={console.targetId}
@@ -656,8 +582,7 @@ export function App() {
         */}
         <div className="workarea">
           <SessionWorkspace
-          // 工作区标签条**不含系统终端**：那些在下面的停靠面板里。
-          tabItems={workspace.workspaceTabItems}
+          tabItems={workspace.tabItems}
           activeKey={workspace.activeKey}
           activeTab={workspace.activeTab}
           terminalItems={terminals.terminals}
@@ -679,7 +604,6 @@ export function App() {
               <WorkspaceTrailing
                 canStartCodex={canStartCodex(selectedTarget)}
                 onNewCodex={beginNewSession}
-                onNewShell={() => void openSystemTerminal()}
                 /*
                   「详情」要看的会话。
 
@@ -715,31 +639,6 @@ export function App() {
             api.listSessionChildren(parentSessionId, selectedTarget?.id)
           }
         />
-
-          {/*
-            系统终端是**底部一块独立的板**，不是工作区的一张标签。
-            摆进同一排标签意味着同一时刻只能看一个，而真实用法是
-            「一边看 Codex 在跑，一边在下面敲命令」。旧平台也是这个形状。
-          */}
-          <SystemTerminalDock
-            items={workspace.systemTabItems}
-            activeKey={workspace.activeKey}
-            terminals={terminals.terminals}
-            registerSink={terminals.registerSink}
-            unregisterSink={terminals.unregisterSink}
-            onActivate={workspace.setActiveKey}
-            onClose={workspace.closeTab}
-            // 「关闭面板」= 关掉里面每一路终端。只把面板藏起来会让 PTY 留在后台，
-            // 而用户以为已经结束了。
-            onClosePanel={() => {
-              for (const key of workspace.systemTabItems.map((item) => item.key)) {
-                workspace.closeTab(key);
-              }
-            }}
-            onNew={(kind) => void openSystemTerminal(kind)}
-            isWslTarget={selectedTarget?.kind === "wsl"}
-            onError={console.setError}
-          />
         </div>
       </div>
 

@@ -608,8 +608,9 @@ export function App() {
               <aside className="sidebar hidden" aria-label="侧栏（已折叠）" />
             ) : (
               /* 工作台**整块替换**会话侧栏——活动栏切的是「哪一处地方」。
-                 `WorkbenchSidebar` 自带 `<aside className="sidebar workbench">`
-                 与滚动容器（R24），这里不再包一层 <aside>。 */
+                 `WorkbenchSidebar` 自带 `<aside className="sidebar workbench-pane">`
+                 与滚动容器（R24），这里不再包一层 <aside>。
+                 类名不是 `workbench`——那是会话头用量胶囊的类，理由见组件头部注释。 */
               <WorkbenchSidebar
                 provider={console.providers.find((item) => item.id === console.providerId)}
                 target={selectedTarget}

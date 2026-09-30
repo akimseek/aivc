@@ -77,6 +77,36 @@ export function rateLimitText(item: Pick<RateWindow, "usedPercent" | "windowMinu
 }
 
 /**
+ * 距重置还有多久，形如 `3h 12m`。
+ *
+ * # 为什么返回 `null` 而不是编一个字符串
+ *
+ * 两种情况下这里给不出一个**说得出口**的时长：时间戳解析不出来（`new Date("oops")`
+ * 算出 `NaN`，逐层算下去会印出 `NaNh NaNm`），以及那个时刻已经过去了（「还有 -3 分钟」
+ * 不是人话）。两种都交给调用方回退到绝对时间——它至少是真的。
+ *
+ * `now` 由调用方传进来而不是在这里读 clock：这样这条判断不渲染、不等真实时间就能断言。
+ */
+export function resetCountdown(resetsAt: string, now: number): string | null {
+  const target = Date.parse(resetsAt);
+  if (!Number.isFinite(target)) return null;
+  const remaining = target - now;
+  if (remaining <= 0) return null;
+
+  const totalMinutes = Math.floor(remaining / 60_000);
+  if (totalMinutes <= 0) {
+    // 最后一分钟给秒：`0m` 读起来像「已经重置了」，而它还在跑。
+    return `${Math.max(1, Math.floor(remaining / 1000))}s`;
+  }
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+/**
  * 供应商编号 → 名字。
  *
  * 只显示 `vendor-3f2a` 用户认不出那是谁，所以能翻就翻；翻不出来**退回编号**，

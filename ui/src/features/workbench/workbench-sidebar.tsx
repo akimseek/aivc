@@ -18,8 +18,17 @@ import { getRateLimitWindows, type RouteChange } from "./workbench-cards";
  * # 它与会话侧栏的关系
  *
  * 活动栏切的是「哪一处地方」——工作台与会话是两块**整块替换**的侧栏内容。
- * 因此它自带 `<aside className="sidebar workbench">`（与会话侧栏同一套网格列，
+ * 因此它自带 `<aside className="sidebar workbench-pane">`（与会话侧栏同一套网格列，
  * 只宽 30px），而不是被谁包在一个壳里。
+ *
+ * # 为什么这个类名不叫 `workbench`
+ *
+ * `workbench` 已经被占用了：会话头里那三粒用量数字（`session-workspace.tsx`）带着它，
+ * `app.css` 里那条 `.workbench { display:flex; gap:12px; color: var(--ui-muted);
+ * font-size:12px; white-space:nowrap }` 是给那些数字写的。侧栏挂上同名类，那四条声明会
+ * **继承进整棵工作台子树**：标题与数字变灰、卡片说明不再换行（长句被 `overflow: hidden`
+ * 裁掉且没有省略号）、头部与滚动区之间多出一条 12px 的缝。所以侧栏另起一个名字。
+ * 想要「宽 340px」那条规则的人，找 `.sidebar.workbench-pane`。
  *
  * # 滚动容器与内边距为什么是它自己的事（R24）
  *
@@ -96,7 +105,7 @@ export function WorkbenchSidebar({
   const rateWindows = getRateLimitWindows(session);
 
   return (
-    <aside className="sidebar workbench" aria-label="工作台侧栏">
+    <aside className="sidebar workbench-pane" aria-label="工作台侧栏">
       <div className="workbench-head">
         <div className="workbench-head-row">
           <Icon name="chart" size={16} />

@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { createElement, type ComponentProps } from "react";
-import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   describeSwitchReason,
   getRateLimitWindows,
   progressTone,
   rateLimitText,
+  resetCountdown,
   sessionLabel,
   successRateText,
   vendorName
@@ -84,6 +85,11 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkbenchSidebar
   );
 }
 
+/** 倒计时那两条断言要冻结时钟；其它用例一律回到真实计时器。 */
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("sessionLabel", () => {
   it("没有会话时说「未打开」", () => {
     expect(sessionLabel(null)).toBe("未打开");
@@ -151,6 +157,27 @@ describe("rateLimitText", () => {
   });
 });
 
+describe("resetCountdown", () => {
+  const now = Date.parse("2026-09-30T12:00:00Z");
+
+  it("把「什么时候重置」说成「还有多久」", () => {
+    // 绝对时刻要用户自己做减法，跨天时连日期都没有；倒计时才是这一格要回答的问题。
+    const threeHoursLater = new Date(now + 3 * 3_600_000 + 12 * 60_000).toISOString();
+    expect(resetCountdown(threeHoursLater, now)).toBe("3h 12m");
+  });
+
+  it("**解析不出来时给 `null`**，绝不逐层算出 `NaNh NaNm`", () => {
+    expect(resetCountdown("不是时间", now)).toBeNull();
+    expect(resetCountdown("", now)).toBeNull();
+  });
+
+  it("已经过去的时刻也给 `null`——「还有 -3 分钟」不是人话", () => {
+    expect(resetCountdown(new Date(now - 60_000).toISOString(), now)).toBeNull();
+    // 正正好到点也算过去：剩下 0 分钟没有可说的话。
+    expect(resetCountdown(new Date(now).toISOString(), now)).toBeNull();
+  });
+});
+
 describe("vendorName", () => {
   it("认得出就翻成名字，认不出退回编号", () => {
     const vendors = base.vendors;
@@ -209,6 +236,51 @@ describe("WorkbenchSidebar", () => {
       session: { usage: { rateLimits: { primary: { usedPercent: 42 } } } } as never
     });
     expect(view.container.textContent).toContain("42%");
+  });
+
+  it("卡名是 `CLI 速率限制监控`", () => {
+    const view = renderSidebar({
+      session: { usage: { rateLimits: { primary: { usedPercent: 42 } } } } as never
+    });
+    expect(view.container.textContent).toContain("CLI 速率限制监控");
+  });
+
+  it("**重置时间是倒计时**（裁定 R25）", () => {
+    // 固定一个未来时刻：`3h 12m` 是构造出来的，不会随跑测试的钟点变。
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-09-30T12:00:00Z"));
+    const view = renderSidebar({
+      session: {
+        usage: {
+          rateLimits: { primary: { usedPercent: 42, resetsAt: "2026-09-30T15:12:05Z" } }
+        }
+      } as never
+    });
+    expect(view.container.textContent).toContain("将于 3h 12m 后重置");
+
+    // 秒针走一分钟：倒计时自己少一格，而且**一个新请求都没发**（它只在本地算）。
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(view.container.textContent).toContain("将于 3h 11m 后重置");
+
+    // 卸载即清：挂载期只有它一个定时器（就是那根秒针），关掉之后不该还剩。
+    expect(vi.getTimerCount()).toBe(1);
+    cleanup();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("**重置时间解析不出来时退回绝对时间**，不显示 `NaN`", () => {
+    const view = renderSidebar({
+      session: {
+        usage: { rateLimits: { primary: { usedPercent: 42, resetsAt: "不是时间" } } }
+      } as never
+    });
+    const text = view.container.textContent ?? "";
+    expect(text).toContain("重置");
+    // 倒计时算得出来才算——算不出来时不能只剩一个「后重置」的空壳。
+    expect(text).not.toContain("后重置");
+    expect(text).not.toContain("NaN");
   });
 
   it("有路由变更时说明原因", () => {
@@ -278,7 +350,8 @@ describe("WorkbenchSidebar", () => {
     // 而 jsdom 不算样式——这里守住结构：头部与内容区都在侧栏自己的 `<aside>` 里。
     // 结构在，样式规则就挂得上；结构没了，规则写得再对也没用。
     const view = renderSidebar();
-    const aside = view.container.querySelector("aside.sidebar.workbench")!;
+    // 类名是 `workbench-pane`：`workbench` 是会话头用量胶囊的（全局规则会渗进子树）。
+    const aside = view.container.querySelector("aside.sidebar.workbench-pane")!;
     expect(aside).toBeTruthy();
     expect(aside.querySelector(".workbench-head")).toBeTruthy();
     expect(aside.querySelector(".workbench-body")).toBeTruthy();

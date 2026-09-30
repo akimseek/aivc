@@ -935,6 +935,14 @@ select {
 
 /* ── 工作台要点（上下文 / token / 模型）────────────────── */
 
+/*
+ * 这是**会话头里那三粒用量数字**的类（`session-workspace.tsx` 的 `UsagePills`）。
+ *
+ * 名字里的「工作台」是旧平台的叫法，与工作台侧栏无关：侧栏用的是
+ * `workbench-pane`。两边**不能同名**——这里的 `color` / `white-space` / `gap`
+ * 是给三粒数字写的，挂到侧栏上会继承进整棵子树（标题变灰、卡片说明不换行、
+ * 头部与滚动区之间多一条缝）。
+ */
 .workbench {
   display: flex;
   gap: 12px;
@@ -1205,10 +1213,13 @@ select {
  * 310px 会把读数和条挤到换行。宽度写在侧栏自己身上（`.app-body` 那一列是 `auto`），
  * 与会话侧栏同一个道理。
  *
- * 折叠态走 `.sidebar.hidden`（宽度归零），那个节点上**没有** `workbench` 类，
+ * 折叠态走 `.sidebar.hidden`（宽度归零），那个节点上**没有** `workbench-pane` 类，
  * 因此这条规则不会把折叠态又撑开。
+ *
+ * 类名是 `workbench-pane` 而**不是** `workbench`：后者是会话头用量胶囊的类
+ * （见上面「工作台要点」那一段），挂在侧栏上会让那四条声明渗进整棵工作台子树。
  */
-.sidebar.workbench {
+.sidebar.workbench-pane {
   width: 340px;
 }
 
@@ -1219,12 +1230,15 @@ select {
  * 裸 `.sidebar` 里，窗口一矮卡片就被压缩、末两张根本滚不到。
  * 滚动容器因此是侧栏**自己的事**：`flex: 1` 拿走剩余高度，`min-height: 0` 让它
  * 真的缩得下去（flex 项默认 `min-height: auto`，不写这行它会把侧栏整个撑高）。
+ *
+ * 头部与 `.sidebar-head`（会话侧栏）**逐项对齐**：同一个网格列里的两块侧栏互相切换，
+ * 标题的左缘差 4px 就是在「跳」。所以水平内边距用同一个 `--ui-space-4`。
  */
 .workbench-head {
   display: flex;
   flex-direction: column;
   gap: var(--ui-space-2);
-  padding: var(--ui-space-4) var(--ui-space-3) var(--ui-space-3);
+  padding: var(--ui-space-4) var(--ui-space-4) var(--ui-space-3);
   border-bottom: 1px solid var(--ui-divider);
 }
 

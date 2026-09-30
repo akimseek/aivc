@@ -252,6 +252,7 @@ export function MessagesModal({
             onClose={() => setExportOpen(false)}
             anchorRef={exportRef}
             className="messages-export-menu"
+            ariaLabel="导出格式"
           >
             {/* 三种格式与右键菜单、被移除的菜单栏那份**逐字一致**（旧平台就是这样三项）。 */}
             {(

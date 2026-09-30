@@ -291,9 +291,6 @@ export function AppOverlays({
         />
       )}
 
-      {/* 退出确认由**后端**发起（它拦得住窗口关闭），这里只负责显示与回答。 */}
-      <ExitConfirm onError={actions.reportError} />
-
       {/* 标签右键菜单：开了七八路终端之后，一个一个点 ✕ 很难受。 */}
       {state.tabMenu && (
         <TabContextMenu
@@ -347,6 +344,21 @@ export function AppOverlays({
           onNotify={actions.notify}
         />
       )}
+
+      {/*
+        退出确认框**必须排在最后**，由**后端**发起（它拦得住窗口关闭），
+        这里只负责显示与回答。
+
+        # 为什么它的位置是有讲究的
+
+        这几个弹层同属 `--ui-z-overlay=60` 这一档：**同一档里 DOM 顺序决定谁盖住谁**。
+        它此前排在设置中心与消息弹框之前，于是那两个一开就把它压在下面——
+        用户点了窗口关闭，看到的却是一个看不见的问题：「后端是不是没反应？」
+        而框就在下面等着回答，后端一直等。
+        排到最后就等于「它在最上面」——这正是它该有的位置：它问的是**要不要退出整个
+        应用**，比任何一个面板都更需要被看见。
+      */}
+      <ExitConfirm onError={actions.reportError} />
     </>
   );
 }

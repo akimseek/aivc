@@ -26,21 +26,47 @@
  *
  * `.overlay` 是退出确认框从前的自绘外壳类：判定不留着它，R35 那条白名单
  * （按它描述）就形同虚设。
+ *
+ * # 与 `dialog.tsx` 的实例栈怎么分工
+ *
+ * 这里回答的是**跨类**的问题：Dialog 之上还压着 `.popover` 吗、模态之上还压着
+ * 右键菜单吗。**同类之间**（Dialog 压 Dialog）它答不了——名单只认类名，而调用方
+ * 自己也是那一类，于是它看见的是「我自己」。那一路由 `dialog.tsx` 里的实例栈决定：
+ * 同类之间只有**挂载顺序**知道谁在最上面，栈顶才响应 Escape。
  */
 export type EscapeLayer = "modal" | "transient";
 
-const LAYERS_ABOVE: Record<EscapeLayer, string> = {
-  modal: [".dialog-overlay", ".overlay", ".popover"].join(", "),
+const LAYERS_ABOVE: Record<EscapeLayer, string[]> = {
+  modal: [".dialog-overlay", ".overlay", ".popover"],
   transient: [
     ".dialog-overlay",
     ".overlay",
     ".popover",
     ".settings-overlay",
     ".messages-overlay"
-  ].join(", ")
+  ]
 };
 
-/** 有没有比调用方更内层的浮层；有就让出这一次 Escape。 */
-export function hasLayerAbove(own: EscapeLayer): boolean {
-  return document.querySelector(LAYERS_ABOVE[own]) !== null;
+/**
+ * 有没有比调用方更内层的浮层；有就让出这一次 Escape。
+ *
+ * # 两个可选参数都在解决「名单里有我自己」
+ *
+ * - `self`：调用方**自己那一个类名**，从名单里剔掉。`.popover` 同时出现在两档的
+ *   名单里（菜单与模态都要注意别被浮层盖住），浮层自己调用时不剔掉就会看见自己，
+ *   Escape 再也送不出去。其余调用方（设置中心 / 消息与分支弹框 / 三个右键菜单 /
+ *   关注中心 / `Dialog`）的类名本来就不在名单里，不传即可。
+ * - `panel`：调用方的面板元素。**包含它**的那一层是它的容器，不是压在它上面的层
+ *   ——消息与分支弹框的导出浮层就挂在 `.messages-overlay` **里面**。不跳过容器的话
+ *   两者会互相让位，Escape 谁都不响应（浮层关不掉，弹框也关不掉）。
+ */
+export function hasLayerAbove(
+  own: EscapeLayer,
+  self?: string,
+  panel?: HTMLElement | null
+): boolean {
+  const selector = LAYERS_ABOVE[own].filter((cls) => cls !== self).join(", ");
+  const layers = Array.from(document.querySelectorAll<HTMLElement>(selector));
+  if (!panel) return layers.length > 0;
+  return layers.some((element) => !element.contains(panel));
 }

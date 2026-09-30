@@ -398,6 +398,7 @@ export function ComposerInput({
             onClose={() => setMenuOpen(false)}
             anchorRef={menuAnchorRef}
             className="composer-menu"
+            ariaLabel="附件菜单"
           >
             <button
               type="button"

@@ -1,5 +1,30 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { hasLayerAbove } from "./overlay-stack";
+
+/**
+ * 同类 `Dialog` 之间的实例栈。
+ *
+ * # 为什么类名单在这里不够用
+ *
+ * `.dialog-overlay` 是**每一个** `Dialog` 的类名。拿类名问「上面还有没有 `.dialog-overlay`」
+ * 只会得到「有」——那是我自己。同类之间谁在最上面，只有**挂载顺序**说得清：
+ * 退出确认框由后端推来（`app:request-exit`），永远比用户先打开的新会话弹框挂得晚，
+ * 所以那一次 Escape 该归它；反过来，新会话弹框盖在退出确认框上时（用户先点了窗口
+ * 关闭、又点了「＋」）也按同一份顺序判定。
+ *
+ * # 与 `overlay-stack.ts` 的分工
+ *
+ * **同类之间用这个栈，跨类仍用类名单**：`.popover` / 右键菜单之类压在上面时，
+ * 判定仍交给 `hasLayerAbove`（见那里的说明）。两者缺一不可——只有类名单，
+ * 一次 Escape 会把叠着的两层 `Dialog` 一起收掉（用户刚填了一半的表单跟着没）；
+ * 只有实例栈，压在上面的浮层会被无视。
+ */
+const dialogStack: string[] = [];
+
+/** 实例编号的自增源。编号只用来在栈里认出自己，不参与渲染。 */
+let dialogSeq = 0;
+
 /**
  * 弹层外壳。
  *
@@ -44,10 +69,33 @@ export function Dialog({
   size?: "sm" | "md" | "lg";
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
+  /** 本实例在栈里的编号。惰性生成一次，卸载前不变。 */
+  const idRef = useRef("");
+  if (idRef.current === "") idRef.current = `dialog-${++dialogSeq}`;
+
+  // 挂载进栈、卸载出栈。放在键处理之前：同一次提交里先有位置，再接听按键。
+  useEffect(() => {
+    const id = idRef.current;
+    dialogStack.push(id);
+    return () => {
+      // 从**后**往前找：同一个编号只会在栈里出现一次，`lastIndexOf` 与 `indexOf`
+      // 等价，但它对「重复挂载」这种不该发生的情形也不会误删别人的位置。
+      const index = dialogStack.lastIndexOf(id);
+      if (index >= 0) dialogStack.splice(index, 1);
+    };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      // 同类：只有栈顶（挂得最晚的那一层）才回答。栈为空时（不该发生）不拦，
+      // 保持这个组件在测试与单独使用时的原行为。
+      const top = dialogStack[dialogStack.length - 1];
+      if (top !== undefined && top !== idRef.current) return;
+      // 跨类：`.popover` 之类压在我上面时让给它。`.dialog-overlay` 是我自己那一类，
+      // 必须剔掉——否则每个 Dialog 都会看见「上面有 Dialog」，Escape 谁也收不掉。
+      if (hasLayerAbove("modal", ".dialog-overlay")) return;
+      onClose();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);

@@ -226,6 +226,8 @@ export function VendorRoutePicker({
         onClose={() => setOpen(false)}
         anchorRef={anchorRef}
         className="vendor-popover"
+        // 面板是 `role="dialog"`，名字与触发按钮上的文字一致：读屏是从按钮跳进来的。
+        ariaLabel="切换供应商"
       >
         <div className="vendor-pop-head">
           <strong>{currentName}</strong>

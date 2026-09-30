@@ -28,10 +28,11 @@ describe("planResume", () => {
   });
 
   it("**判断不出来时按「还在」处理**，不宣布目录丢了", async () => {
-    // WSL 目标上 `shell:path-exists` 尚未接线，后端显式报错。
+    // WSL 目标上 `shell:path-exists` 的支线尚未接线，后端**显式拒绝**
+    // （`crates/aivc-ipc/src/shell.rs` 的 `require_local`，错误原文如下）。
     // 把它当成「不存在」会让用户在 WSL 上永远看到「原工作目录不存在」。
     const failing = async () => {
-      throw new Error("该检查尚未支持 WSL 目标");
+      throw new Error("暂不支持 WSL 目标的路径操作。");
     };
     expect(await planResume("\\\\wsl$\\Ubuntu\\home\\me", failing)).toEqual({
       kind: "terminal",

@@ -460,8 +460,17 @@ export function App() {
       workspace.selectSession(session);
 
       const cwd = session.cwd ?? "";
-      // 决策本身在 `resume-session.ts` 里，**有四条分支**且逐条有测试。
-      const plan = await planResume(cwd || undefined, (path) => api.pathExists(path));
+      /*
+        决策本身在 `resume-session.ts` 里，**有四条分支**且逐条有测试。
+
+        `target.id` **必须带上**：后端按目标分流，不带时 `shell:path-exists`
+        按本机路径判断——WSL 会话的 `/home/...` 在本机看来不存在，用户每次恢复
+        都被弹「原目录丢失」。带上之后 WSL 目标会显式报错，由 `planResume`
+        的 catch 落进「按还在」（`resume-session.ts` 的最后一条分支）。
+      */
+      const plan = await planResume(cwd || undefined, (path) =>
+        api.pathExists(path, target.id)
+      );
       if (plan.kind === "dialog") {
         setNewSession({
           cwd: plan.cwd,

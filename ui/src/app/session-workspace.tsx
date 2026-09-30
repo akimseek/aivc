@@ -53,6 +53,7 @@ export function SessionWorkspace({
   vendors,
   onResumeSession,
   session,
+  infoSession,
   messageTotal,
   messages,
   hasEarlier,
@@ -107,12 +108,17 @@ export function SessionWorkspace({
   /** 历史视图头部的「继续会话」；没有可恢复的东西时不传。 */
   onResumeSession?: () => void;
   /**
-   * **活动标签真正挂着的那条**会话；新标签还没有编号时是 `null`。
-   *
-   * 信息条与历史视图都用它。不能用列表的选中项顶替：那会让新终端的标签顶着另一条
-   * 会话的标题与编号（判据与理由在 `app.tsx` 的 `tabSession` 那里）。
+   * **历史视图**要的会话：列表的**选中项**（与 `messages` / `messageTotal` 同源）。
    */
   session: AiSession | null;
+  /**
+   * **终端信息条**要的会话：活动标签真正挂着的那条；新标签还没有编号时是 `null`。
+   *
+   * 两个来源会分叉（右键菜单的导出 / 打开目录 / 重命名 / 复制只改选中项），
+   * 因此分成两个 prop 各自往下递——合成一个必有一边是错的。判据与理由在
+   * `app.tsx` 的 `tabSession` 那里。
+   */
+  infoSession: AiSession | null;
   messageTotal: number | null;
   messages: AiMessage[];
   hasEarlier: boolean;
@@ -151,6 +157,7 @@ export function SessionWorkspace({
         resolvedTheme={resolvedTheme}
         findSignal={findSignal}
         session={session}
+        infoSession={infoSession}
         target={target}
         gateway={gateway}
         vendors={vendors}

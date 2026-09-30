@@ -529,14 +529,18 @@ export function App() {
     sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession;
 
   /**
-   * 画布（信息条 / 历史视图）要用的会话。
+   * **终端信息条**要用的会话：活动标签自己挂着的那条。
    *
    * 判据是**这张标签自己有没有会话编号**：全新会话的标签还没有编号（`sessionId` 缺席），
    * 此刻传给画布的必须是 `null`——信息条于是退回显示这一路终端自己的标题与编号。
    *
-   * 这里**不能**直接用 `activeSession`：它对没有编号的标签会回退到**当前选中项**，
-   * 那张标签上就会顶着另一条会话的标题与编号（而那条会话与这一路终端毫无关系）。
-   * 历史视图只会对**有编号的标签**渲染（`stage-content.ts`），因此同一个值对它也成立。
+   * 这里**不能**直接用 `activeSession`（它带「找不到就回退到选中项」）：信息条讲的是
+   * **这一路终端属于谁**，读选中项会让它顶到另一条会话的标题与编号上（T9 要修的场景）。
+   *
+   * 历史视图**不**吃这个值——它吃 `console.selectedSession`，与消息列表同源：
+   * 两者一旦分叉（右键菜单的导出 / 打开目录 / 重命名 / 复制只改选中项、不动标签），
+   * 历史视图就会出现「S 的标题 + R 的消息」。画布该跟标签还是跟选中，是更上一层
+   * 的设计问题（批次二再议）。
    */
   const tabSession = workspace.activeTab?.sessionId ? activeSession : null;
 
@@ -757,7 +761,18 @@ export function App() {
                 不在就弹「设置工作目录」）。`undefined` = 这一刻没有可恢复的东西。
               */
               onResumeSession={canResumeSession ? resumeActiveSession : undefined}
-              session={tabSession}
+              /*
+                会话有两个来源，**不能像从前那样合成一个**：
+
+                - 历史视图（含它下面的消息列表）跟**选中项**走——标题与正文必须同源，
+                  否则右键菜单那几条只改选中项的动作会让画布出「S 的标题 + R 的消息」；
+                - 终端信息条跟**标签**走（`tabSession`）——它讲的是这一路终端属于谁。
+
+                消息类 props（`messageTotal` / `messages` / `hasEarlier` / …）在
+                `use-console` 里就是按选中项取的，因此与 `session` 天然同源。
+              */
+              session={console.selectedSession}
+              infoSession={tabSession}
               messageTotal={console.messageTotal}
               messages={console.messages}
               hasEarlier={console.hasEarlier}

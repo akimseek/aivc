@@ -35,7 +35,8 @@ import { resolveModelSource } from "./models";
  *
  * `source`（哪一家供应商 / 哪个目标）变化时状态复位为 `idle`：供应商可能被**自动**
  * 故障转移换掉（用户什么都没做），列着上一家的模型只会让人选到一个不再服务这一路的
- * 供应商上去。
+ * 供应商上去。复位只管得住**已经显示出来**的那一份；**在飞**的那次请求由 `load` 里
+ * 的来源核对丢弃（响应回来时来源已经换掉就不许它写状态）。
  *
  * # 没有来源就什么都不渲染
  *
@@ -99,6 +100,15 @@ export function ModelSelect({
 
   const load = useCallback(async () => {
     if (!source) return;
+    /*
+      这一次请求属于哪个来源。
+
+      取数最长要 20 秒（Qoder 那一路要起一次 CLI），其间供应商可能被**自动**故障
+      转移换掉——上面那段复位清了状态，而旧家的响应如果照样 `setState`，就会在
+      复位之后把旧家的清单重新填上，正是复位要防的结果（用户选到的模型发给一家
+      已经不再服务这一路的供应商）。因此响应回来时对一下来源：不等就整条丢弃。
+    */
+    const requested = sourceKey;
     setState({ status: "loading" });
     try {
       const models: ModelOption[] =
@@ -111,15 +121,19 @@ export function ModelSelect({
               id: model.id,
               label: model.id
             }));
+      if (appliedSourceRef.current !== requested) return;
       setState({ status: "ready", models });
     } catch {
       /*
         失败**不往上抛**：这只是输入区里的一个小控件，弹一条全局错误会盖住用户正在
         看的东西；而他能做的补救动作（再展开一次）就写在下拉里。
+
+        失败同样要对来源：旧家的失败若写进来，会把**新**来源标成「无法获取模型」。
       */
+      if (appliedSourceRef.current !== requested) return;
       setState({ status: "failed" });
     }
-  }, [source]);
+  }, [source, sourceKey]);
 
   const expand = useCallback(() => {
     // 已经取到就不再取：清单在一次会话里不会变，重复取只让用户多等一次。

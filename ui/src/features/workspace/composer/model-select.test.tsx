@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelSelect } from "./model-select";
@@ -193,5 +193,63 @@ describe("ModelSelect", () => {
     fireEvent.pointerDown(select(view.container)!);
     await waitFor(() => expect(ipc.listVendorModels).toHaveBeenCalledWith("v2"));
     await waitFor(() => expect(select(view.container)!.textContent).toContain("claude-sonnet"));
+  });
+
+  it("在飞的旧来源请求返回时被丢弃（不把旧家的模型填回来）", async () => {
+    // 为什么这条要紧：Qoder 那一路取一次模型要起一次 CLI（最长 20 秒），而供应商
+    // 被自动故障转移换掉是**瞬间**发生的。旧家的响应晚一步回来就把复位清掉的清单
+    // 又填上了——用户会在新来源下看到并选中旧家的模型。
+    let settle: (models: Array<{ id: string; name?: string }>) => void = () => {};
+    ipc.listVendorModels.mockImplementationOnce(
+      () => new Promise((resolve) => (settle = resolve))
+    );
+    const view = render(
+      <ModelSelect terminalId="t1" providerId="codex" vendorId="v1" onError={vi.fn()} />
+    );
+
+    // 向 v1 发起加载，请求挂住不返回。
+    fireEvent.pointerDown(select(view.container)!);
+    await waitFor(() => expect(ipc.listVendorModels).toHaveBeenCalledWith("v1"));
+    expect(select(view.container)!.textContent).toContain("加载中…");
+
+    // 自动故障转移：来源换成 v2，状态复位（清清单、清选中）。
+    view.rerender(
+      <ModelSelect terminalId="t1" providerId="codex" vendorId="v2" onError={vi.fn()} />
+    );
+    await waitFor(() => expect(select(view.container)!.textContent).toContain("选择模型"));
+
+    // 旧请求这时才回来：必须整条丢弃——仍停在复位后的「没取过」，而不是列出 v1 的模型。
+    await act(async () => {
+      settle([{ id: "gpt-5", name: "旧家的模型" }]);
+    });
+    expect(select(view.container)!.options).toHaveLength(1);
+    expect(select(view.container)!.textContent).not.toContain("旧家的模型");
+    expect(select(view.container)!.textContent).toContain("选择模型");
+  });
+
+  it("在飞的旧来源请求失败时也不写状态（新来源仍是「没取过」）", async () => {
+    // 与上一条同一个道理的另一半：旧家的失败若写进来，新来源会凭空显示
+    // 「无法获取模型」——那会把「重新展开即重试」的入口也一并藏掉（状态不是 failed）。
+    let fail: (problem: Error) => void = () => {};
+    ipc.listVendorModels.mockImplementationOnce(
+      () => new Promise((_resolve, reject) => (fail = reject))
+    );
+    const view = render(
+      <ModelSelect terminalId="t1" providerId="codex" vendorId="v1" onError={vi.fn()} />
+    );
+
+    fireEvent.pointerDown(select(view.container)!);
+    await waitFor(() => expect(ipc.listVendorModels).toHaveBeenCalledWith("v1"));
+
+    view.rerender(
+      <ModelSelect terminalId="t1" providerId="codex" vendorId="v2" onError={vi.fn()} />
+    );
+    await waitFor(() => expect(select(view.container)!.textContent).toContain("选择模型"));
+
+    await act(async () => {
+      fail(new Error("旧家的请求超时"));
+    });
+    expect(select(view.container)!.textContent).toContain("选择模型");
+    expect(select(view.container)!.textContent).not.toContain("无法获取模型");
   });
 });

@@ -13,7 +13,7 @@ import type {
   SessionQuickAccess,
   SessionView
 } from "../types";
-import type { SidebarPane } from "./sidebar-nav";
+import type { SidebarPane, SidebarView } from "./sidebar-nav";
 import { scopeTargets } from "./search-scope";
 
 /**
@@ -87,12 +87,32 @@ export function toRefs(sessions: AiSession[], ids: string[]): SessionMutationRef
 }
 
 /**
- * 侧栏当前显示哪一类列表。
+ * 侧栏当前是「哪一处地方」与「哪一类列表」。
  *
- * `workbench` 是**概览**而不是列表：点它时侧栏整块换成运行概览
+ * `workbench` 是**概览**而不是列表：切到它时侧栏整块换成运行概览
  * （旧平台的 `SidebarWorkbench` 就是一级视图之一，位置在「会话」之前）。
+ *
+ * `view` 里现在有三个取值：`active` / `trash` 走会话列表，`favorites`
+ * 走的是 `quickAccess`（收藏 + 最近打开）——它是**另一处内容**，不是
+ * 当前目标列表的一个筛选，因此切到它时见下面的列表加载 effect。
  */
-export type { SidebarPane };
+export type { SidebarPane, SidebarView };
+
+/**
+ * 切到某个 `view` 时，要不要去取会话列表。
+ *
+ * # 为什么收藏夹不发请求
+ *
+ * 「收藏夹」的内容是 `quickAccess`（跨目标的「收藏」与「最近打开」两组，
+ * 只读缓存、按需刷新），与会话列表接口取的是**两批数据**。此前收藏夹是另一个
+ * `pane`，靠 `pane` 判断；现在它与「全部 / 回收站」并排成 chips，判据只剩 `view`，
+ * 因此这条规则必须显式写出来，并且**只写一处**（effect 与 `loadSessions` 都用它）。
+ *
+ * 抽成导出函数是为了能直接断言：这是一个「不发请求」的约定，没有第二个地方能证明它。
+ */
+export function shouldLoadSessionList(view: SidebarView): boolean {
+  return view !== "favorites";
+}
 
 /**
  * 打开一条会话时，平台与目标该不该真的换。
@@ -160,7 +180,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
   const [targets, setTargets] = useState<AiTarget[]>([]);
   const [targetId, setTargetId] = useState("");
   const [sessions, setSessions] = useState<AiSession[]>([]);
-  const [view, setView] = useState<SessionView>("active");
+  const [view, setView] = useState<SidebarView>("active");
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -292,24 +312,33 @@ export function useConsole(options: { notify?: Notify } = {}) {
    */
   const requestSeqRef = useRef(0);
   const loadSessions = useCallback(
-    async (wantedTarget: string, wantedView: SessionView, wantedQuery: string) => {
+    async (wantedTarget: string, wantedView: SidebarView, wantedQuery: string) => {
       if (!wantedTarget) {
         setSessions([]);
         setSelectedId("");
         return;
       }
+      /*
+        收藏夹**不发会话列表请求**：它的内容来自 `quickAccess`，只有 `active` / `trash`
+        才对应这个接口。这里再挡一次（effect 里也挡）是因为 `loadSessions` 还有别的
+        调用点（批量操作后、重命名后…）：它们带着当时的 `view` 进来，而那时完全可能
+        已经站在收藏夹上——少这一层就会用收藏夹的 `view` 去发一个列表请求。
+      */
+      if (!shouldLoadSessionList(wantedView)) return;
+      // 列表接口只认 `active` / `trash`；收藏夹在上面已经返回了。
+      const listView: SessionView = wantedView === "trash" ? "trash" : "active";
       const seq = ++requestSeqRef.current;
       const keyword = wantedQuery.trim();
       if (keyword) setSearching(true);
       try {
         if (!keyword) {
-          const cached = await api.listCachedSessions(wantedTarget, wantedView);
+          const cached = await api.listCachedSessions(wantedTarget, listView);
           // 只有最新那次请求可以落地；否则旧结果会把新结果盖掉。
           if (seq === requestSeqRef.current && cached.length > 0) setSessions(cached);
         }
         const fresh = keyword
-          ? await api.searchSessions(wantedTarget, wantedView, keyword)
-          : wantedView === "trash"
+          ? await api.searchSessions(wantedTarget, listView, keyword)
+          : listView === "trash"
             ? await api.listTrashSessions(wantedTarget)
             : await api.listSessions(wantedTarget);
         if (seq !== requestSeqRef.current) return;
@@ -339,6 +368,9 @@ export function useConsole(options: { notify?: Notify } = {}) {
 
   // 搜索防抖：连续输入只发最后一次。
   useEffect(() => {
+    // 收藏夹的数据来自 `quickAccess`（它自己按 view 变化取一次），**不发列表请求**；
+    // 从收藏夹切回全部 / 回收站时这个 effect 会重跑，列表照常刷新。
+    if (!shouldLoadSessionList(view)) return;
     const timer = window.setTimeout(() => {
       void loadSessions(targetId, view, query);
     }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
@@ -749,17 +781,24 @@ export function useConsole(options: { notify?: Notify } = {}) {
   }, []);
 
   useEffect(() => {
-    if (pane === "favorites") void loadQuickAccess();
-  }, [pane, loadQuickAccess]);
+    // 收藏夹自己按需刷新：它取的是缓存里的快捷访问，与会话列表是两批数据。
+    if (view === "favorites") void loadQuickAccess();
+  }, [view, loadQuickAccess]);
 
   /* ── 跨平台搜索 ──
    *
    * 后端一次只搜一个目标（`codex:search-sessions` 的 `targetId` 是必填的），因此
    * 跨平台 = 逐个目标发。并发发出去，并且**一个目标失败不拖垮整次搜索**——
    * 某台发行版进不去是常态，不该让本机的结果也看不见。
+   *
+   * # 触发条件只有 `globalQuery` 非空
+   *
+   * 它此前挂在一个「搜索 pane」上（一级导航里的第三处地方）。搜索区不占一级导航之后，
+   * 唯一进入跨目标搜索的动作是搜索结果区里的「在所有目标中搜索」——那个按钮做的事
+   * 就是**把当前关键词写进 `globalQuery`**。因此这里只看关键词：有就搜（防抖后），
+   * 清空就撤掉结果（列表区随之回到当前目标）。
    */
   useEffect(() => {
-    if (pane !== "search") return;
     const keyword = globalQuery.trim();
     if (!keyword) {
       setGlobalResults([]);
@@ -795,14 +834,8 @@ export function useConsole(options: { notify?: Notify } = {}) {
       })();
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [pane, globalQuery, targets, searchTargetId, searchProviderId]);
+  }, [globalQuery, targets, searchTargetId, searchProviderId]);
 
-  /**
-   * 打开一条来自其它视图的结果。
-   *
-   * 先切到它所属的目标与平台，再选中会话，最后回到会话视图——否则用户会看到
-   * 「选中了但列表里没有这条」。
-   */
   /**
    * 打开一条会话：切到它所属的平台与目标，选中它，回到会话视图。
    *
@@ -830,9 +863,20 @@ export function useConsole(options: { notify?: Notify } = {}) {
       if (plan.target) selectTarget(plan.target);
       setSelectedId(session.id);
       setPane("sessions");
+      /*
+        从**收藏夹**打开一条会话时回到当前会话列表。
+
+        旧模型里收藏夹是另一个 pane，这条路会顺手把侧栏切回会话列表；并进 chips
+        之后 `view` 不再跟着 pane 变，所以这一步要显式做——否则用户看到的是
+        「选中了，但列表里没有这条」（收藏夹是缓存里的另一批数据）。
+
+        回收站**不切**：它与当前会话是同一批数据的两处筛选，打开一条就跳走
+        会让人丢掉刚才的位置。
+      */
+      setView((current) => (current === "favorites" ? "active" : current));
       void api.markSessionOpened(target.id, session.id).catch(() => undefined);
     },
-    [providerId, targetId, selectProvider, selectTarget]
+    [providerId, targetId, selectProvider, selectTarget, setView]
   );
 
   return {

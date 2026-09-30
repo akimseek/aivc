@@ -1,95 +1,18 @@
 import { ListRow, MetaItem } from "../components";
 import type { AiMessage, AiSession, AiTarget, SessionQuickAccessItem } from "../types";
-import { displayTitle, formatWhen, pickPreview } from "./session-display";
+import { displayTitle, formatWhen } from "./session-display";
 
 /**
- * 会话行。出现在**四个**地方：会话列表、收藏、最近打开、全局搜索结果。
+ * 会话的**参考形态**行：收藏、最近打开、全局搜索结果三处共用。
  *
- * # 为什么把它抽出来
+ * # 为什么主列表那一行不在这里了
  *
- * 这四个地方的行此前各写了一遍，于是「有几处显示了预览、有几处没显示」这类
- * 不一致就出现了。行本身只有两种形态，用 `variant` 区分：
- *
- * | 形态 | 有复选框/收藏星 | 元信息 |
- * | --- | --- | --- |
- * | `session` | 有 | 时间 + 模型 |
- * | `reference` | 无 | 它属于哪个目标 + 时间 |
- *
- * 参考形态（收藏/最近/搜索）**必须标出目标**：这些列表是跨目标的，
- * 不标出来同名会话分不清。
+ * 会话列表现在用 `features/sessions/session-card.tsx`：它三行结构、带状态点与
+ * 悬停动作，与这里的「引用一行」是两种东西。此前两者挤在同一个文件里靠
+ * `variant` 区分，结果是「有哪些按钮」和「元信息写什么」两件不相关的事混在一个参数里。
+ * 这里剩下的是**只回答「这是哪条会话、它在哪」**的行——它们都跨目标，
+ * 必须标出目标，否则同名会话分不清。
  */
-
-/** 会话列表里的一行。 */
-export function SessionRow({
-  session,
-  active,
-  checked,
-  /** 平台支不支持批量操作。不支持时**不渲染勾选框**——一个勾不出结果的框是误导。 */
-  selectable = true,
-  onOpen,
-  onToggle,
-  onFavorite,
-  onMenu
-}: {
-  session: AiSession;
-  active: boolean;
-  checked: boolean;
-  selectable?: boolean;
-  onOpen: () => void;
-  onToggle: () => void;
-  onFavorite: () => void;
-  onMenu: (x: number, y: number) => void;
-}) {
-  const preview = pickPreview(session);
-  const favorite = session.metadata?.favorite === true;
-  // 标题退化成了编号时显示「目录 · 时间」——列表要能区分会话，UUID 不能。
-  const title = displayTitle(session);
-
-  return (
-    <ListRow
-      active={active}
-      titleAttr={title}
-      onClick={onOpen}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        onMenu(event.clientX, event.clientY);
-      }}
-      leading={
-        selectable ? (
-          <input
-            type="checkbox"
-            checked={checked}
-            aria-label="选择会话"
-            // 勾选不该顺带把会话也打开——那是两件事。
-            onClick={(event) => event.stopPropagation()}
-            onChange={onToggle}
-          />
-        ) : undefined
-      }
-      title={title}
-      trailing={
-        <button
-          type="button"
-          className={`star${favorite ? " on" : ""}`}
-          aria-label={favorite ? "取消收藏" : "收藏"}
-          onClick={(event) => {
-            event.stopPropagation();
-            onFavorite();
-          }}
-        >
-          {favorite ? "★" : "☆"}
-        </button>
-      }
-      preview={preview}
-      meta={
-        <>
-          <MetaItem>{formatWhen(session.updatedAt ?? session.createdAt)}</MetaItem>
-          {session.model && <MetaItem>{session.model}</MetaItem>}
-        </>
-      }
-    />
-  );
-}
 
 /**
  * 快捷访问里的一组（收藏 / 最近）。
@@ -109,9 +32,9 @@ export function QuickGroup({
   onOpen: (target: AiTarget, session: AiSession) => void;
 }) {
   return (
-    <div className="quick-group">
-      <div className="group-title">{title}</div>
-      {items.length === 0 && <div className="group-empty">{empty}</div>}
+    <div className="session-group">
+      <div className="session-group-title">{title}</div>
+      {items.length === 0 && <div className="session-group-empty">{empty}</div>}
       {items.map((item) => (
         <ListRow
           key={`${item.target.id}:${item.session.id}`}
@@ -137,7 +60,12 @@ export function QuickGroup({
   );
 }
 
-/** 全局搜索的一条结果。**必须标出它属于哪个目标**。 */
+/**
+ * 全局搜索的一条结果。
+ *
+ * 外面这层 `.session-result` 是给新侧栏的样式留的钩子：它只影响搜索结果这一处，
+ * 不必去改公共的 `ListRow`（那是所有行共用的构件的类名）。
+ */
 export function SearchResultRow({
   target,
   session,
@@ -148,12 +76,14 @@ export function SearchResultRow({
   onOpen: () => void;
 }) {
   return (
-    <ListRow
-      titleAttr={displayTitle(session)}
-      onClick={onOpen}
-      title={displayTitle(session)}
-      meta={<MetaItem>{target.label}</MetaItem>}
-    />
+    <div className="session-result">
+      <ListRow
+        titleAttr={displayTitle(session)}
+        onClick={onOpen}
+        title={displayTitle(session)}
+        meta={<MetaItem>{target.label}</MetaItem>}
+      />
+    </div>
   );
 }
 

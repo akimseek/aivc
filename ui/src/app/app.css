@@ -240,12 +240,16 @@ select {
 /*
  * 侧栏宽度。
  *
- * 310px（spec §6）：会话行的标题 + 时间 + 预览一行要有地方落。
+ * 310px（spec §6）：会话卡片的标题 + 时间 + 预览要有地方落。
  * **宽度写在侧栏自己身上**（`.app-body` 那一列是 `auto`）：折叠与展开是侧栏的状态，
  * 让网格列也跟着写一遍就会有两处真相。
  *
- * 折叠仍是**旧形态**（36px 竖边 + 一个展开按钮）。收进活动栏的新形态随
- * 会话侧栏的重做一起做（T7），此刻改它会白做——那一整块马上要被替换。
+ * # 折叠**不再留竖边**
+ *
+ * 旧的 `.sidebar.collapsed` 是 36px 宽的一条竖边，里面只有一个 `»` 按钮——
+ * 一整条边只为放一个按钮，而它恰恰吃掉了终端最缺的宽度。现在折叠 = 宽度归零，
+ * 折叠按钮在侧栏头右侧（`panel-left` 图标），展开的入口在**活动栏**
+ * （点「会话」或「工作台」都会把侧栏叫回来，见 `app.tsx`）。
  */
 .sidebar {
   display: flex;
@@ -258,12 +262,10 @@ select {
   overflow: hidden;
 }
 
-/* 侧栏折起来时只留一条能放按钮的竖边——`0px` 会让按钮也没地方站。 */
-.sidebar.collapsed {
-  width: 36px;
-  align-items: center;
-  padding-top: var(--ui-space-3);
-  gap: var(--ui-space-2);
+/* 折叠态：整个侧栏收掉。**节点仍然渲染**——它是外壳网格的第二列（`auto`），
+   不留节点的话主区会掉进那一列里去。 */
+.sidebar.hidden {
+  display: none;
 }
 
 /* ── 侧栏 ────────────────────────────────────────────── */
@@ -278,28 +280,74 @@ select {
  * 用户的眼睛应当落在内容上，导航是「背景」。基底差比任何边框都更能表达分区。
  */
 
+/*
+ * 侧栏头：一行（标题 / 新建 / 折叠）+ 网关胶囊。
+ *
+ * 用两行而不是一行塞下全部：网关胶囊说的是**运行状态**，与「新建会话」这种动作
+ * 不是一类东西，挤在同一行会让标题那一行看起来像工具栏。
+ */
 .sidebar-head {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--ui-space-2);
   padding: var(--ui-space-4) var(--ui-space-4) var(--ui-space-3);
   border-bottom: 1px solid var(--ui-divider);
 }
 
-.sidebar-head .title {
+.sidebar-head-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  /* 折叠按钮贴到右端：两者之间留出空白，按错了不会误触。 */
-  margin-right: auto;
+  gap: var(--ui-space-2);
+  min-width: 0;
 }
 
-.sidebar-head h1 {
+.sidebar-title {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--ui-text-lg);
   font-weight: 700;
   letter-spacing: -0.015em;
 }
+
+/*
+ * 网关胶囊：网关有没有在跑、在哪个端口。
+ *
+ * 端口用等宽（`.ui-mono`）——一串数字在比例字体里每次宽度都不一样，
+ * 而它是要被**读出来**（甚至抄进外部客户端配置）的。
+ * 三种状态只改边与底：胶囊本身的位置与形状不变，扫一眼就知道状态变没变。
+ */
+.gateway-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-1) var(--ui-space-2);
+  border: 1px solid var(--ui-accent-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+  font-size: var(--ui-text-xs);
+}
+
+.gateway-pill.tone-warn {
+  border-color: var(--ui-warn-border);
+  background: var(--ui-warn-soft);
+  color: var(--ui-warn);
+}
+
+.gateway-pill.tone-off {
+  border-color: var(--ui-border);
+  background: var(--ui-bg-card);
+  color: var(--ui-muted);
+}
+
+.gateway-pill-label {
+  font-weight: 600;
+}
+
+/* 端口贴到右端：同一个侧栏里两行胶囊的左边缘对齐，数字才有列的感觉。 */
+.gateway-pill-port {
+  margin-left: auto;
+}
+
 
 .status-dot {
   display: inline-block;
@@ -317,14 +365,12 @@ select {
 /*
  * 平台 / 目标选择器。
  *
- * 它们此前是**上下堆叠**的（`.field` 是 `display: grid; gap: 5px`，标签一行、下拉一行），
- * 两个选择器吃掉侧栏上半屏——而这两项**很少改**，却占了最贵的位置，把会话列表挤到
- * 下面去。这是看图时侧栏最大的浪费。
+ * 它们此前是**上下堆叠**的（标签一行、下拉一行），两个选择器吃掉侧栏上半屏——
+ * 而这两项**很少改**，却占了最贵的位置，把会话列表挤到下面去。这是看图时侧栏
+ * 最大的浪费。
  *
- * 在侧栏里改成两列：标签贴文字宽度、下拉吃掉剩余空间。垂直占用减半。
- *
- * **只覆盖 `.pickers` 以内的 `.field`**：配置面板里的表单仍然上下堆叠——那里的标签
- * 更长、控件也更复杂，横排反而会挤。
+ * 改成两列：`1. 平台` / `2. 目标` 贴文字宽度、下拉吃掉剩余空间，垂直占用减半。
+ * 序号不是装饰——它是**顺序**：先有平台才有目标列表，按这个次序填下来最快。
  */
 .pickers {
   padding: var(--ui-space-3) var(--ui-space-4) var(--ui-space-2);
@@ -332,17 +378,31 @@ select {
   gap: var(--ui-space-2);
 }
 
-.pickers .field {
-  grid-template-columns: auto minmax(0, 1fr);
+.picker-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--ui-space-2);
 }
 
-.pickers .field-label {
-  /* 「平台」「目标」都是两个字，给一个下限让两个下拉的**左边缘对齐**——
+.picker-label {
+  /* 「1. 平台」比两个字宽一点，给一个下限让两个下拉的**左边缘对齐**——
      对不齐的控件列是「没调过」最明显的信号。 */
-  min-width: 2.5em;
-  font-size: var(--ui-text-sm);
+  min-width: 3.6em;
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+}
+
+/* 右端提示：选中的目标此刻进不去（下拉收起后那一行看不见）。 */
+.picker-hint {
+  font-size: var(--ui-text-xs);
+  color: var(--ui-muted);
+}
+
+.picker-hint.bad {
+  color: var(--ui-warn);
+  font-weight: 600;
 }
 
 /* 目标状态说明：把「为什么不可用」放在选择器正下方，而不是藏在别处。 */
@@ -367,113 +427,243 @@ select {
 }
 
 .sidebar-notice {
-  padding: 0 18px;
-  margin-bottom: 10px;
+  padding: 0 var(--ui-space-4);
+  margin-bottom: var(--ui-space-2);
 }
 
-.list-head {
-  padding: 0 18px 10px;
-  display: grid;
-  gap: 9px;
+/*
+ * 搜索行与过滤 chips。
+ *
+ * 两者都**只服务这一批列表**，因此挨着列表上方、占一行高度。
+ * 一级导航（工作台 / 会话）不在这里了——它上收到活动栏。
+ */
+.sidebar-search {
+  padding: 0 var(--ui-space-4) var(--ui-space-2);
+}
+
+.filter-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: 0 var(--ui-space-4) var(--ui-space-2);
+}
+
+/*
+ * 回收站：一个图标按钮，与两个 chip 并排。
+ *
+ * 它此前是二级导航里并列的第三个 chip——但它是**过滤 chips 里唯一带破坏性的那个**
+ * （进去是为了删东西），与「全部 / 收藏」同等重量会让人误点。
+ * 收成图标之后它仍然在同一行，位置没变，只是不再抢注意力。
+ */
+.icon-btn.on {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+}
+
+/* 搜索结果区的头部：动作与筛选。允许换行——关键词长、目标名长时挤在一行会溢出。 */
+.search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: 0 var(--ui-space-4) var(--ui-space-2);
+}
+
+.search-actions .search-select {
+  flex: 1 1 96px;
+  min-width: 0;
+}
+
+/* 「搜索消息正文」开关 + 文字：点文字也要能切，因此包在 `<label>` 里。 */
+.search-body {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  cursor: pointer;
 }
 
 .batchbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 9px 18px;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-2) var(--ui-space-4);
   border-bottom: 1px solid var(--ui-divider);
   background: var(--ui-accent-soft);
   color: var(--ui-accent-strong);
-  font-size: 12px;
+  font-size: var(--ui-text-xs);
   font-weight: 600;
 }
 
+/*
+ * 列表区。
+ *
+ * `flex: 1` 让它在侧栏里吃掉剩余高度，滚动**只发生在这里**——
+ * 头部与底部摘要不跟着滚，用户永远看得见「这是哪一批、有多少条」。
+ */
 .rows {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 6px 12px 14px;
+  padding: var(--ui-space-2) var(--ui-space-3) var(--ui-space-3);
 }
 
-/* ── 侧栏两级导航 ─────────────────────────────────────── */
+/* 底部摘要：`{平台} · 共 {N} 条会话` + 刷新。 */
+.sidebar-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-2) var(--ui-space-4);
+  border-top: 1px solid var(--ui-divider);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+}
+
+/* ── 会话卡片 ────────────────────────────────────────── */
 
 /*
- * 两级此前用的是同一个 `ChipGroup`，**看上去一模一样**——用户分不出「换一处地方」
- * 和「换一个筛选」。
+ * 会话卡片：三行结构（标题 / 预览 / 条数与动作）。
  *
- * 用**形态**表达层级，不用颜色深浅：
+ * 与 `.row`（收藏、最近打开、搜索结果那些**引用行**）分开写：卡片是主列表的行，
+ * 每一行都要承担三件事——认出是哪条、聊到哪了、就着它动手。塞进 `ListRow` 的骨架里
+ * 也可以，但那张行是四处共用的，改它等于把别处一起改。
  *
- * - 一级 = **分段控件**：有底、有边、等宽、选中项整块高亮。它的意思是「切换目的地」。
- * - 二级 = **文字标签**：无底无边，选中项只加一条下划线。它的意思是「筛同一批内容」。
- *
- * 只覆盖侧栏内的这两个容器——配置面板里的 `ChipGroup` 不受影响。
+ * 卡片用**卡片色 + 边框**：侧栏是浅灰底，白底就浮起来了。选中态换强调色底，
+ * 与当前标签同一套语言。
  */
-.pane-nav {
+.session-card {
+  display: grid;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-bg-card);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.session-card + .session-card {
+  margin-top: var(--ui-space-2);
+}
+
+.session-card:hover {
+  background: var(--ui-bg-card-hover);
+}
+
+.session-card.on {
+  background: var(--ui-bg-card-active);
+  border-color: var(--ui-accent-border);
+}
+
+.session-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
   min-width: 0;
 }
 
-.pane-nav .chip-group {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md);
-  background: var(--ui-bg-card);
+.session-card-check {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--ui-accent);
 }
 
-.pane-nav .chip {
+.session-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text);
+  font-size: var(--ui-text-md);
+  font-weight: 600;
+}
+
+.session-card.on .session-card-title {
+  color: var(--ui-accent-strong);
+}
+
+/* 时间靠右、数字等宽：一列时间不会左右参差。 */
+.session-card-time {
+  flex: 0 0 auto;
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+}
+
+/* 预览：压暗一档——它是会话的真实内容，不能删，但也不能与标题同深。 */
+.session-card-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+}
+
+.session-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  /* 动作出现时不把卡片撑高：悬停只是在同一行里换内容。 */
+  min-height: 22px;
+}
+
+.session-card-meta {
+  flex: 1;
+  min-width: 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+}
+
+/*
+ * 悬停动作：**默认透明**，鼠标移上来才出现。
+ *
+ * 三个按钮常驻会让列表看起来一直在闪（每一行都有三块可点区域）。
+ * 触屏没有悬停（`@media (hover: none)` 常显）、键盘靠 `:focus-within`——
+ * 藏起来的按钮点不到也看不到。
+ */
+.session-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.session-card:hover .session-card-actions,
+.session-card:focus-within .session-card-actions {
+  opacity: 1;
+}
+
+.session-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   border: 0;
   border-radius: var(--ui-radius-sm);
   background: transparent;
-  padding: 5px 10px;
   color: var(--ui-muted);
   cursor: pointer;
-  font-weight: 500;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
 }
 
-.pane-nav .chip:hover {
+.session-card-actions button:hover {
   background: var(--ui-bg-activity);
   color: var(--ui-text);
 }
 
-.pane-nav .chip.on {
-  background: var(--ui-accent-soft);
-  color: var(--ui-accent-strong);
-  font-weight: 600;
+/* 已收藏的星是金色（与 `.star` 同一条约定：极小面积上表达状态）。 */
+.session-card-actions button.on {
+  color: var(--ui-star);
 }
 
-.view-nav .chip-group {
-  display: flex;
-  gap: var(--ui-space-4);
-}
-
-.view-nav .chip {
-  border: 0;
-  /* 下划线占位：未选中时也留着边框位，选中时不会把相邻项挤动。 */
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  padding: 3px 0;
-  color: var(--ui-faint);
-  cursor: pointer;
-  transition:
-    color 140ms ease,
-    border-color 140ms ease;
-}
-
-.view-nav .chip:hover {
-  color: var(--ui-text-soft);
-}
-
-.view-nav .chip.on {
-  border-bottom-color: var(--ui-accent);
-  color: var(--ui-accent-strong);
-  font-weight: 600;
+@media (hover: none) {
+  .session-card-actions {
+    opacity: 1;
+  }
 }
 
 /* ── 会话行 ──────────────────────────────────────────── */
@@ -581,7 +771,7 @@ select {
   gap: var(--ui-space-2);
 }
 
-/* ── 分组（快捷访问的「收藏 / 最近打开」）───────────────── */
+/* ── 分组（收藏夹的「收藏 / 最近打开」）───────────────── */
 
 /*
  * 每组**各自封顶、独立滚动**（L3）。
@@ -591,26 +781,35 @@ select {
  *
  * 封顶之后，翻收藏时最近区不会跟着跑；这是「一组一组看」和「一根长列表」的区别。
  */
-.quick-group {
+.session-group {
   max-height: 34vh;
   overflow: auto;
   /* 组与组之间留出间隔，否则两组的边界只有一行标题，容易看成一整列。 */
   margin-bottom: var(--ui-space-3);
 }
 
-.group-title {
-  margin: 12px 8px 5px;
+.session-group-title {
+  margin: var(--ui-space-3) var(--ui-space-2) var(--ui-space-1);
   color: var(--ui-faint);
-  font-size: 10.5px;
+  font-size: var(--ui-text-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.group-empty {
-  padding: 4px 11px 8px;
+/* 全局搜索的一条结果：外面这层只给**搜索结果**加边距，
+   不去动公共的 `ListRow`（那是所有行共用的构件）。 */
+.session-result {
+  margin-bottom: var(--ui-space-1);
+}
+
+/* `.group-empty` 的那份在网关规则面板里也在用（`config/gateway-panel.tsx`），
+   因此两个类名共用一条规则，而不是抄两遍。 */
+.group-empty,
+.session-group-empty {
+  padding: var(--ui-space-1) var(--ui-space-3) var(--ui-space-2);
   color: var(--ui-faint);
-  font-size: 12px;
+  font-size: var(--ui-text-xs);
 }
 
 /* ── 工作区 ──────────────────────────────────────────── */
@@ -798,15 +997,15 @@ select {
 
 /* ── WSL 目录手动指定 ────────────────────────────────── */
 
-.wsl-home {
+.wsl-home-form {
   display: grid;
-  gap: 7px;
+  gap: var(--ui-space-2);
   width: 100%;
 }
 
-.wsl-home-actions {
+.wsl-home-form-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--ui-space-2);
 }
 
 /* ── 配置覆盖层 ──────────────────────────────────────── */
@@ -1911,19 +2110,6 @@ select {
   font-size: 12px;
   white-space: pre;
 }
-/* ── 会话搜索行（输入框 + 「全部会话」按钮）──────────────
-   旧平台的形状：搜索当前平台的会话，旁边一个按钮跳到全局搜索。
-   两者必须挨着——它们是「在当前这个列表里找不到，去别处找」的同一件事。 */
-.session-search-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.session-search-row .search-input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 /* 禁用的分段项：要能看出不能点，但仍要看得见——
    隐藏会让那一行在不同平台上长度不一样，用户会以为功能被删了。 */
 .chip:disabled {

@@ -1,0 +1,601 @@
+import { useState } from "react";
+
+import {
+  Button,
+  ChipGroup,
+  EmptyState,
+  Icon,
+  List,
+  Notice,
+  SearchInput,
+  Select,
+  StatusDot,
+  ToolbarSpacer,
+  Toggle
+} from "../../components";
+import type {
+  AiProviderId,
+  AiProviderSummary,
+  AiSession,
+  AiTarget,
+  GatewayPortStatus,
+  SessionQuickAccessItem
+} from "../../types";
+import { gatewayPortLabel, gatewayTone } from "../../app/gateway-address";
+import { emptySessionMessage } from "../../app/session-display";
+import { QuickGroup, SearchResultRow } from "../../app/session-row";
+import { supportsBatchActions, supportsTrash } from "../../app/sidebar-nav";
+import type { useConsole } from "../../app/use-console";
+import { matchesSessionSummary, resolveSidebarListMode } from "./sidebar-search";
+import { SessionCard } from "./session-card";
+import { WslHomeForm } from "./wsl-home-form";
+
+/** 侧栏需要的那部分 console 状态与动作。用具名类型而不是 `any`，字段改名时会编译报错。 */
+export type SessionsSidebarConsole = Pick<
+  ReturnType<typeof useConsole>,
+  | "providers"
+  | "providerId"
+  | "selectProvider"
+  | "targets"
+  | "targetId"
+  | "selectTarget"
+  | "view"
+  | "setView"
+  | "query"
+  | "setQuery"
+  | "searching"
+  | "sessions"
+  | "selectedId"
+  | "selectedIds"
+  | "toggleSelected"
+  | "toggleSelectAll"
+  | "toggleFavorite"
+  | "reloadTargets"
+  | "reloadSessions"
+  | "configureWslCodexHome"
+  | "clearWslCodexHomeOverride"
+  | "quickAccess"
+  | "globalQuery"
+  | "setGlobalQuery"
+  | "globalSearching"
+  | "searchTargetId"
+  | "setSearchTargetId"
+  | "searchProviderId"
+  | "setSearchProviderId"
+  | "globalResults"
+  | "restoreSelected"
+  | "purgeSelected"
+  | "deleteSelected"
+>;
+
+/** 没有终端在跑的会话集合。模块级常量：每次渲染新造一个 `Set` 会让卡片白白重渲染。 */
+const NO_RUNNING_SESSIONS: ReadonlySet<string> = new Set();
+
+/**
+ * 会话侧栏。
+ *
+ * # 它现在只管「会话」这一件事
+ *
+ * 「工作台 / 会话」是两块**整块替换**的侧栏内容，由活动栏切换（`pane`）：
+ * 工作台那一块在 `app.tsx` 里就地替换掉本组件（见那边的侧栏槽位）。
+ * 侧栏内部只剩「同一批内容的筛选」（chips）。此前一级、二级、搜索各占一行，
+ * 顶掉了列表三行的位置——列表是这里唯一被反复读的东西。
+ *
+ * 自上而下：头部（网关胶囊 / 新建 / 折叠）→ 平台与目标 → 目标不可用告警 →
+ * 搜索 → 过滤 chips → 列表区 → 批量条 → 底部摘要。
+ *
+ * # 单击与双击是两件事
+ *
+ * 单击 `onOpen` = 打开/激活标签（终端没在跑就显示历史）；**双击** `onResume` =
+ * 在终端中恢复。旧侧栏单击就起终端，那正是用户抱怨的「既慢又意外」——
+ * 看一眼不该付一个进程的代价。恢复仍然显式（双击、或标签栏的「继续会话」），
+ * 而且这条会话的终端正在跑时双击不接任何动作。
+ */
+export function SessionsSidebar({
+  console: state,
+  selectedTarget,
+  onOpen,
+  onResume,
+  onMenu,
+  onNewSession,
+  onDetail,
+  providers,
+  gateway,
+  runningSessionIds = NO_RUNNING_SESSIONS,
+  collapsed = false,
+  onToggleCollapsed
+}: {
+  console: SessionsSidebarConsole;
+  selectedTarget: AiTarget | null;
+  /** 打开一条会话的标签（历史）。**只回传编号**：侧栏不持有会话内容。 */
+  onOpen: (target: AiTarget, sessionId: string) => void;
+  /** 在终端中恢复这条会话（双击卡片）。与标签栏的「继续会话」同一个动作。 */
+  onResume: (target: AiTarget, sessionId: string) => void;
+  /** 右键菜单：坐标由侧栏回传，菜单开着鼠标的位置。 */
+  onMenu: (x: number, y: number, sessionId: string) => void;
+  /** 「新建会话」：打开新会话对话框（与工作区那个 +Codex 同一个入口）。 */
+  onNewSession: () => void;
+  /** 「消息与分支」：打开会话详情（消息列表与分支关系都在那里）。 */
+  onDetail: (session: AiSession) => void;
+  providers: AiProviderSummary[];
+  /**
+   * 网关状态。
+   *
+   * 用**真实类型**而不是手抄一个子集：此前这里是
+   * `{ enabled; activePort; configuredPort }`，抄漏了后端实际发的字段名，
+   * 于是「字段名对不上」这件事被类型系统放过去了——两边都编译得过，
+   * 运行时那一格永远显示错的。
+   */
+  gateway: GatewayPortStatus | null;
+  /** 有终端在跑的会话编号：卡片左上角那个点按它亮起来。 */
+  runningSessionIds?: ReadonlySet<string>;
+  /** 折起来把宽度全让给终端。展开的入口在活动栏（见 `app.tsx`）。 */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+}) {
+  /**
+   * 「搜索消息正文」。
+   *
+   * 开（默认）= 连正文一起搜：后端本来就是两段式（先摘要、摘要不中读整个文件），
+   * 结果里既有摘要命中的、也有只在正文里命中的。关 = 只留摘要命中的那些。
+   * 它是**展示层的筛子**，不是请求参数——后端没有对应的开关，也不该为一个
+   * 展示选项加一个（筛法在 `sidebar-search.ts` 里与后端的 haystack 逐字对齐）。
+   */
+  const [searchBody, setSearchBody] = useState(true);
+
+  const trash = state.view === "trash";
+  const selectedCount = state.selectedIds.length;
+  const quickCount = state.quickAccess.favorites.length + state.quickAccess.recent.length;
+  const provider = providers.find((item) => item.id === state.providerId);
+  /**
+   * 当前平台支不支持回收站与批量操作。
+   *
+   * 这两个判断**必须走能力矩阵**，不能写死：Qoder 不支持回收站
+   * （`ProviderCapabilities::trash == false`），写死的话它的用户会看到一个
+   * 点下去必然报错的「回收站」。
+   */
+  const canUseTrash = supportsTrash(providers, state.providerId);
+  const canBatch = supportsBatchActions(providers, state.providerId);
+  /** 新建会话要有一个能进去的目标——与工作区那个按钮同一条判据（`canStartCodex`）。 */
+  const canStart = Boolean(selectedTarget?.available);
+  /** 网关胶囊的状态色（`off` 落到状态点的 `idle`）。 */
+  const gwTone = gatewayTone(gateway);
+
+  /** 列表区该显示什么：全局 > 收藏夹 > 过滤 > 普通列表（顺序即理由，见 `sidebar-search.ts`）。 */
+  const mode = resolveSidebarListMode({
+    view: state.view,
+    query: state.query,
+    globalSearching: state.globalSearching,
+    globalQuery: state.globalQuery
+  });
+  const global = mode.kind === "global";
+
+  /**
+   * 「按目标筛选」里该列哪些目标。
+   *
+   * 选了平台之后只列那个平台的目标——这正是「先按平台再按目标」的意义，
+   * 否则第二个下拉里全是别的平台的目标，挑起来和没有筛选一样。
+   */
+  const scopedTargets = state.searchProviderId
+    ? state.targets.filter((target) => target.provider === state.searchProviderId)
+    : state.targets;
+
+  /** 「搜索消息正文」关掉时，只留下摘要命中的结果（其余的可能只命中了正文）。 */
+  const visibleResults = searchBody
+    ? state.globalResults
+    : state.globalResults.filter((result) =>
+        matchesSessionSummary(result.session, state.globalQuery)
+      );
+
+  /** 收藏夹里的本地筛选：在收藏里打字就是在**这两组里**筛。 */
+  const filterQuick = (items: SessionQuickAccessItem[]) =>
+    state.query.trim()
+      ? items.filter((item) => matchesSessionSummary(item.session, state.query))
+      : items;
+
+  /** 底部摘要的数：说的是**眼前这批**，不是当前目标的会话总数。 */
+  const visibleCount =
+    mode.kind === "global"
+      ? visibleResults.length
+      : mode.kind === "favorites"
+        ? quickCount
+        : state.sessions.length;
+
+  /**
+   * 折起来**什么也不留**（宽度归零）。
+   *
+   * 这里必须继续渲染一个 `<aside>`：它是外壳网格的第二列，不留节点的话
+   * 主区会掉到那一列（`auto` → 0 宽）里去。展开的入口在**活动栏**——
+   * 点「会话」或「工作台」都会把侧栏叫回来（见 `app.tsx` 的 `onActivity`）；
+   * 旧的 36px 竖条里那个 `»` 按钮随之删掉：它占着一整条竖边只为放一个按钮。
+   */
+  if (collapsed) {
+    return <aside className="sidebar hidden" aria-label="会话侧栏（已折叠）" />;
+  }
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-head">
+        <div className="sidebar-head-row">
+          <h1 className="sidebar-title">会话</h1>
+          <ToolbarSpacer />
+          <Button
+            small
+            disabled={!canStart}
+            title={canStart ? "新建会话" : "请先选择一个可用的目标"}
+            onClick={onNewSession}
+          >
+            <Icon name="plus" size={13} />
+            新建会话
+          </Button>
+          <button
+            type="button"
+            className="icon-btn"
+            title="折叠侧栏"
+            aria-label="折叠侧栏"
+            onClick={onToggleCollapsed}
+          >
+            <Icon name="panel-left" size={16} />
+          </button>
+        </div>
+        {/* 网关胶囊：网关有没有在跑、在哪个端口，是这一屏最常被问的一件事。
+            点它不跳转（跳转入口在设置中心），只把状态说全。 */}
+        <div
+          className={`gateway-pill tone-${gwTone}`}
+          title={`网关${gateway?.enabled ? "已启用" : "未启用"}：${gatewayPortLabel(gateway)}`}
+        >
+          <StatusDot
+            tone={gwTone === "ok" ? "ok" : gwTone === "warn" ? "warn" : "idle"}
+            pulse={gwTone === "ok"}
+            size={8}
+          />
+          <span className="gateway-pill-label">网关</span>
+          <span className="gateway-pill-port ui-num ui-mono">{gatewayPortLabel(gateway)}</span>
+        </div>
+      </div>
+
+      <div className="pickers">
+        <div className="picker-row">
+          <span className="picker-label">1. 平台</span>
+          <Select
+            value={state.providerId}
+            aria-label="平台"
+            onChange={(event) => state.selectProvider(event.target.value as AiProviderId | "")}
+          >
+            {/*
+              **占位项：没有选中时显示「请选择平台」。**
+
+              少了它，`value=""` 而 option 里没有空值时浏览器会**视觉上高亮第一项**
+              ——于是「没选平台」看起来像「选了 Codex」。用户报的正是这个：
+              应用状态其实已经是空的（目标没被拉取、侧栏写着「暂无可用目标」），
+              但下拉框里显示着 Codex。
+
+              文案与旧平台一致（它有 `请选择平台` / `请选择一个目标`）。
+            */}
+            <option value="">请选择平台</option>
+            {state.providers.length === 0 && <option value="">加载中…</option>}
+            {state.providers.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        <div className="picker-row">
+          <span className="picker-label">2. 目标</span>
+          <Select
+            value={state.targetId}
+            aria-label="目标"
+            disabled={state.targets.length === 0}
+            onChange={(event) => state.selectTarget(event.target.value)}
+          >
+            {/*
+              **占位项：没有选中时显示「请选择目标」。**
+
+              与平台那个同理：少了它，`value=""` 而 option 里没有空值时浏览器会**视觉上
+              高亮第一项**——「没选目标」看起来像「选了本机 Codex」。
+
+              平台没选时「暂无可用目标」（那是另一句话：目标列表还没被拉取），
+              两者不能混成一个。
+            */}
+            {state.targets.length === 0 ? (
+              <option value="">暂无可用目标</option>
+            ) : (
+              <option value="">请选择目标</option>
+            )}
+            {state.targets.map((target) => (
+              <option key={target.id} value={target.id}>
+                {/* 不可用的目标在选择列表里就标出来——等选中了才发现，用户已经先点了一次。 */}
+                {target.available ? target.label : `${target.label}（不可用）`}
+              </option>
+            ))}
+          </Select>
+          {/* 右端提示：选中的目标此刻进不去。选择器里那一项已经带了「（不可用）」，
+              但下拉收起之后那一行看不见，所以这里再标一次。 */}
+          {selectedTarget && !selectedTarget.available && (
+            <span className="picker-hint bad">不可用</span>
+          )}
+        </div>
+
+        {/* 目标状态说明。后端给出了四态 detail，界面必须显示：
+            否则用户只看到「列表是空的」，分不清是**没有会话**还是**这个目标进不去**。 */}
+        {selectedTarget && (
+          <div className={`target-detail${selectedTarget.available ? "" : " bad"}`}>
+            <span title={selectedTarget.detail ?? ""}>
+              {selectedTarget.detail ?? "（无状态说明）"}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {selectedTarget && !selectedTarget.available && (
+        <div className="sidebar-notice">
+          <Notice
+            message={selectedTarget.detail || "此目标当前不可用。"}
+            actions={
+              <>
+                <Button small onClick={() => void state.reloadTargets()}>
+                  重新探测
+                </Button>
+                {selectedTarget.kind === "wsl" && selectedTarget.distro && (
+                  <WslHomeForm
+                    distro={selectedTarget.distro}
+                    onSave={(home) =>
+                      void state.configureWslCodexHome(selectedTarget.distro!, home)
+                    }
+                    onClear={() => void state.clearWslCodexHomeOverride(selectedTarget.distro!)}
+                  />
+                )}
+              </>
+            }
+          />
+        </div>
+      )}
+
+      {/*
+        搜索框只有**一个**。进入跨目标搜索之后同一个框改搜全局（值换成 `globalQuery`）：
+        两个框并排会让人以为要填两次，而它们本来就是同一个意图的两段路。
+      */}
+      <div className="sidebar-search">
+        <SearchInput
+          value={global ? state.globalQuery : state.query}
+          onChange={global ? state.setGlobalQuery : state.setQuery}
+          placeholder={global ? "搜索全部活跃会话" : "搜索当前平台会话"}
+          busy={global ? state.globalSearching : state.searching}
+        />
+      </div>
+
+      {/* 过滤 chips：同一批会话的三种看法。收藏夹与回收站此前是二级导航里的一行，
+          现在它们是**这个列表的筛选**，与列表挨在一起才不会以为是别的地方。 */}
+      <div className="filter-chips">
+        <ChipGroup
+          // 回收站由右侧的图标按钮表示，那时两个 chip 都不高亮。
+          value={trash ? "" : state.view}
+          options={[
+            { value: "active", label: `全部 ${state.sessions.length}` },
+            { value: "favorites", label: `★ 收藏 ${quickCount}` }
+          ]}
+          onChange={(value) => {
+            // 换一处地方看 = 退出跨目标搜索，否则点了 chip 界面不动（全局优先）。
+            state.setGlobalQuery("");
+            state.setView(value === "favorites" ? "favorites" : "active");
+          }}
+        />
+        <ToolbarSpacer />
+        <button
+          type="button"
+          className={`icon-btn${trash ? " on" : ""}`}
+          aria-label="回收站"
+          aria-pressed={trash}
+          // 平台不支持回收站时**禁用并说明原因**，而不是给一个点了会报错的按钮。
+          disabled={!canUseTrash}
+          title={canUseTrash ? (trash ? "返回当前会话" : "查看回收站") : "请选择支持回收站的平台"}
+          onClick={() => {
+            state.setGlobalQuery("");
+            state.setView(trash ? "active" : "trash");
+          }}
+        >
+          <Icon name="trash" size={15} />
+        </button>
+      </div>
+
+      {/*
+        搜索结果区的头部。
+
+        「在所有目标中搜索」是**一个动作**，不是一处地方：它把当前关键词送进
+        `globalQuery`（`use-console` 里那条跨目标搜索随之启动）。进了全局之后，
+        这里换成两个筛选（平台 / 目标，与旧平台 `global-session-search-panel` 一致）
+        与「搜索消息正文」开关，并给一条回到当前列表的出路。
+      */}
+      {(mode.kind === "filtered" || global) && (
+        <div className="search-actions">
+          {mode.kind === "filtered" ? (
+            <Button
+              small
+              title="把当前关键词发给所有目标"
+              onClick={() => state.setGlobalQuery(state.query)}
+            >
+              在所有目标中搜索
+            </Button>
+          ) : (
+            <>
+              <Select
+                value={state.searchProviderId}
+                aria-label="按平台筛选"
+                className="search-select"
+                onChange={(event) => {
+                  state.setSearchProviderId(event.target.value as AiProviderId | "");
+                  // 换了平台，之前挑的目标多半已经不在范围内了，清掉免得看起来「没结果」。
+                  state.setSearchTargetId("");
+                }}
+              >
+                <option value="">全部平台</option>
+                {state.providers.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                value={state.searchTargetId}
+                aria-label="按目标筛选"
+                className="search-select"
+                onChange={(event) => state.setSearchTargetId(event.target.value)}
+              >
+                <option value="">全部目标（{scopedTargets.length}）</option>
+                {scopedTargets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.available ? target.label : `${target.label}（不可用）`}
+                  </option>
+                ))}
+              </Select>
+              <label className="search-body">
+                <Toggle
+                  checked={searchBody}
+                  onChange={setSearchBody}
+                  label="搜索消息正文"
+                  title="连消息正文一起搜；关掉只看摘要命中的"
+                />
+                <span>搜索消息正文</span>
+              </label>
+              <Button small onClick={() => state.setGlobalQuery("")}>
+                返回当前列表
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 批量条只在**平台支持批量操作**且有勾选时出现。
+          不支持批量操作的平台（例如 Qoder）上，勾选框本身也不渲染——
+          那条规则在卡片那边，由 `selectable` 控制。 */}
+      {canBatch && selectedCount > 0 && mode.kind !== "favorites" && mode.kind !== "global" && (
+        <div className="batchbar">
+          <span>已选 {selectedCount} 项</span>
+          <ToolbarSpacer />
+          <Button small onClick={state.toggleSelectAll}>
+            全选
+          </Button>
+          {trash ? (
+            <>
+              <Button small onClick={() => void state.restoreSelected()}>
+                恢复
+              </Button>
+              <Button small variant="danger" onClick={() => void state.purgeSelected()}>
+                彻底删除
+              </Button>
+            </>
+          ) : (
+            <Button small variant="danger" onClick={() => void state.deleteSelected()}>
+              移入回收站
+            </Button>
+          )}
+        </div>
+      )}
+
+      <List
+        empty={
+          mode.kind === "favorites" ? undefined : mode.kind === "global" ? (
+            state.globalResults.length === 0 ? (
+              <EmptyState
+                message={
+                  state.globalQuery.trim() ? "没有匹配的会话。" : "输入关键词，在所有目标里搜索。"
+                }
+                hint={
+                  state.globalQuery.trim()
+                    ? "后端会先匹配摘要，摘要不中再读整个文件——因此结果可能稍慢。"
+                    : undefined
+                }
+              />
+            ) : visibleResults.length === 0 ? (
+              // 有结果但都被「只留摘要命中」筛掉了：说清开关在哪，而不是显示「没有结果」。
+              <EmptyState message="没有摘要命中的会话。" hint="打开「搜索消息正文」可以看到这些。" />
+            ) : undefined
+          ) : state.sessions.length === 0 ? (
+            <EmptyState
+              message={
+                state.query.trim() ? "没有匹配的会话。" : emptySessionMessage(state.targetId, selectedTarget, trash)
+              }
+            />
+          ) : undefined
+        }
+      >
+        {(mode.kind === "list" || mode.kind === "filtered") &&
+          state.sessions.map((session) => {
+            const running = runningSessionIds.has(session.id);
+            return (
+              <SessionCard
+                key={session.id}
+                session={session}
+                active={session.id === state.selectedId}
+                checked={state.selectedIds.includes(session.id)}
+                selectable={canBatch}
+                running={running}
+                onOpen={() => {
+                  if (selectedTarget) onOpen(selectedTarget, session.id);
+                }}
+                // 终端已经在跑就不接双击：再起一路只会把它替换掉。
+                onResume={
+                  running || !selectedTarget
+                    ? undefined
+                    : () => onResume(selectedTarget, session.id)
+                }
+                onToggle={() => state.toggleSelected(session.id)}
+                onFavorite={() => void state.toggleFavorite(session)}
+                onBranch={() => onDetail(session)}
+                onMenu={(x, y) => onMenu(x, y, session.id)}
+              />
+            );
+          })}
+
+        {mode.kind === "favorites" && (
+          <>
+            <QuickGroup
+              title="收藏"
+              items={filterQuick(state.quickAccess.favorites)}
+              empty={
+                state.query.trim() ? "没有匹配的收藏。" : "还没有收藏。在会话卡片上点 ☆ 收藏它。"
+              }
+              onOpen={(target, session) => onOpen(target, session.id)}
+            />
+            <QuickGroup
+              title="最近打开"
+              items={filterQuick(state.quickAccess.recent)}
+              empty={state.query.trim() ? "没有匹配的最近打开。" : "还没有打开过会话。"}
+              onOpen={(target, session) => onOpen(target, session.id)}
+            />
+          </>
+        )}
+
+        {global &&
+          visibleResults.map((result) => (
+            <SearchResultRow
+              key={`${result.target.id}:${result.session.id}`}
+              target={result.target}
+              session={result.session}
+              onOpen={() => onOpen(result.target, result.session.id)}
+            />
+          ))}
+      </List>
+
+      {/* 底部摘要：说的是**眼前这批**有多少条（收藏夹 / 搜索结果各算各的），
+          并给一个手动刷新。刷新走 `reloadSessions`——它按当前目标与视图重取。 */}
+      <div className="sidebar-foot">
+        <span className="ui-num">
+          {provider?.label ?? "未选择平台"} · 共 {visibleCount} 条会话
+        </span>
+        <ToolbarSpacer />
+        <button
+          type="button"
+          className="icon-btn"
+          title="刷新列表"
+          aria-label="刷新列表"
+          onClick={() => void state.reloadSessions()}
+        >
+          <Icon name="refresh" size={14} />
+        </button>
+      </div>
+    </aside>
+  );
+}

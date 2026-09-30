@@ -1,73 +1,38 @@
-import type { SessionView } from "../types";
-
 /**
- * 侧栏的两级导航。
+ * 侧栏的「地方」与「列表内容」。
  *
- * # 为什么把它抽成纯函数
+ * # 一级只剩一处控件，两个取值
  *
- * 一级与二级是**两个控件**，但它们要表达的是同一件事的两个层次：
- * 「工作台 / 会话」是地方，「当前会话 / 收藏夹 / 回收站」是同一批内容的筛选。
- * 两处各写一遍映射，就会出现「二级说在收藏夹、一级还高亮着会话」这种自相矛盾的状态。
+ * 「工作台 / 会话」此前是侧栏里的一组 chip（一级导航），现在由**活动栏**承担：
+ * 它切的是整块侧栏，与「筛同一批内容」不是一类动作，摆在一起会让人以为层级相同。
+ * 于是这里只剩一个 `SidebarPane` 类型，**不再有映射函数**——一级导航的映射
+ * （`paneForViewNav` / `showsViewNav` / `viewNavKey`）随旧的两级控件一起删掉了：
+ * 两级控件被过滤 chips 取代，chips 直接读写 `view`，中间不需要一层换算。
  *
- * 所以状态只有一份（`pane` + `view`），两个控件都从它派生，改变也都回到它。
+ * # 收藏夹为什么是 `view` 而不是 `pane`
  *
- * # 旧平台的形状（`sidebar-controls.tsx`）
- *
- * - 一级 `sidebar-navigation`：**工作台 / 会话**（只有两个）
- * - 二级 `view-switch has-trash`：**当前会话 / 收藏夹 / 回收站**
- * - 搜索行：输入框 + **全部会话**按钮（全局搜索）
- *
- * 此前我这里是「工作台 / 会话 / 快捷 / 搜索」四个一级项——收藏与全局搜索
- * 被当成了一级地方，而它们在旧平台是**二级筛选**与**一个按钮**。
+ * 它看起来像「另一处地方」，但数据来源与筛选都不是按目标取的会话列表：
+ * 收藏夹来自 `quickAccess`（跨目标、只读缓存）。因此它留在 `view` 里
+ * （用户能一眼看到它与「全部 / 回收站」并列），但由 `use-console` 保证
+ * **切到它时不发会话列表请求**。
  */
 
-/** 侧栏一级「地方」。 */
-export type SidebarPane = "workbench" | "sessions" | "favorites" | "search";
+/** 侧栏一级「地方」。活动栏按它推导当前亮着哪一个。 */
+export type SidebarPane = "sessions" | "workbench";
 
 /**
- * 二级导航的取值。
+ * 会话列表当前显示哪一类内容。
  *
- * 它**不是** `pane`：收藏夹与回收站分属不同的 `pane`/`view` 组合，
- * 但在二级导航上它们是并排的三个按钮。
+ * `favorites` 的内容来自 `quickAccess`（收藏 + 最近打开两组），不是当前目标的
+ * 会话列表——这一点决定了「切到收藏夹不发列表请求」。
  */
-export type ViewNavKey = "active" | "favorites" | "trash";
-
-/** 从状态算出二级导航该高亮哪一个。 */
-export function viewNavKey(pane: SidebarPane, view: SessionView): ViewNavKey {
-  if (pane === "favorites") return "favorites";
-  return view === "trash" ? "trash" : "active";
-}
-
-/** 二级导航被点时，状态该变成什么。 */
-export function paneForViewNav(key: ViewNavKey): { pane: SidebarPane; view: SessionView } {
-  if (key === "favorites") return { pane: "favorites", view: "active" };
-  return { pane: "sessions", view: key === "trash" ? "trash" : "active" };
-}
-
-/**
- * 二级导航那一行该不该出现。
- *
- * 工作台是一处**独立的地方**（它不列会话，也就没有「哪种会话」可筛）；
- * 全局搜索也是。旧平台的条件是 `!workbenchOpen && !globalSearchOpen`。
- */
-export function showsViewNav(pane: SidebarPane): boolean {
-  return pane === "sessions" || pane === "favorites";
-}
-
-/**
- * 搜索行（输入框 + 「全部会话」按钮）该不该出现。
- *
- * 旧平台在收藏夹里把它藏起来：收藏夹是「我已经挑好的那几条」，
- * 在那里再放一个搜索框会让人以为搜的是收藏夹内部。
- */
-export function showsSessionSearchRow(pane: SidebarPane): boolean {
-  return pane === "sessions";
-}
+export type SidebarView = "active" | "favorites" | "trash";
 
 /**
  * 当前平台支不支持回收站与批量操作。
  *
  * 实现搬到 `provider-capabilities.ts`：那些能力不只侧栏在用
- * （右键菜单的「复制会话」、详情里的「从此处分支」也按能力门控）。
+ * （右键菜单的「复制会话」、详情里的「从此处分支」也按能力门控），
+ * 这里只是把它按侧栏的历史路径再导出一次。
  */
 export { supportsBatchActions, supportsTrash } from "./provider-capabilities";

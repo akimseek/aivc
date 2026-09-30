@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pickTarget, planTargetSwitch, toRefs } from "./use-console";
+import { pickTarget, planTargetSwitch, shouldLoadSessionList, toRefs } from "./use-console";
 import type { AiSession, AiTarget } from "../types";
 
 const target = (id: string, available: boolean): AiTarget => ({
@@ -105,5 +105,23 @@ describe("打开会话时的目标切换", () => {
       provider: "claude",
       target: "local"
     });
+  });
+});
+
+/**
+ * 收藏夹是一处**独立的内容**，不是当前目标列表的一个筛选。
+ *
+ * 它是 chips 里的一个 `view`，与「全部 / 回收站」并排，所以「切过去要不要发会话列表
+ * 请求」不能再靠 pane 判断——这条断言就是那个约定的唯一守卫：收藏夹的数据来自
+ * `quickAccess`，请求列表既多余，结果也不是用户要的那一批。
+ */
+describe("哪些 view 需要取会话列表", () => {
+  it("收藏夹**不发**列表请求", () => {
+    expect(shouldLoadSessionList("favorites")).toBe(false);
+  });
+
+  it("全部与回收站照常刷新列表", () => {
+    expect(shouldLoadSessionList("active")).toBe(true);
+    expect(shouldLoadSessionList("trash")).toBe(true);
   });
 });

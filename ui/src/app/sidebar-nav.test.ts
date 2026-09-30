@@ -1,23 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderSummary } from "../types";
-import {
-  paneForViewNav,
-  showsSessionSearchRow,
-  showsViewNav,
-  supportsBatchActions,
-  supportsTrash,
-  viewNavKey
-} from "./sidebar-nav";
+import { resolveSidebarListMode } from "../features/sessions/sidebar-search";
+import { supportsBatchActions, supportsTrash } from "./sidebar-nav";
+import { shouldLoadSessionList } from "./use-console";
 
 /**
- * 侧栏两级导航的映射。
+ * 侧栏的「地方 → 内容」映射与平台能力门控。
  *
  * # 为什么值得单测
  *
- * 一级与二级是**两个控件**，表达的是同一件事的两个层次。两处各写一遍映射，
- * 就会出现「二级说在收藏夹、一级还高亮着会话」这种自相矛盾的状态——
- * 而这种错在界面上很难一眼看出（两个控件都在，只是高亮不对）。
+ * 一级导航上收到活动栏之后，侧栏里描述「显示什么」的只剩 `view` 与关键词两条输入。
+ * 它们的组合直接决定列表区渲染哪一批数据，而**收藏夹那一支最特别**：
+ * 它看起来像另一个筛选，实际是另一批数据（`quickAccess`）——判错了不会报错，
+ * 只会在界面上显示一批不该出现的会话。
  */
 
 const PROVIDERS: AiProviderSummary[] = [
@@ -25,61 +21,31 @@ const PROVIDERS: AiProviderSummary[] = [
   { id: "qoder", label: "Qoder CN", capabilities: { trash: false, batchActions: false } }
 ];
 
-describe("二级导航高亮", () => {
-  it("会话 + 活跃 → 当前会话", () => {
-    expect(viewNavKey("sessions", "active")).toBe("active");
+describe("view 到列表内容的映射", () => {
+  const base = { query: "", globalSearching: false, globalQuery: "" };
+
+  it("全部（active）→ 当前目标的会话列表", () => {
+    expect(resolveSidebarListMode({ ...base, view: "active" })).toEqual({ kind: "list" });
   });
 
-  it("会话 + 回收站 → 回收站", () => {
-    expect(viewNavKey("sessions", "trash")).toBe("trash");
+  it("回收站（trash）→ 会话列表（回收站那一份）", () => {
+    expect(resolveSidebarListMode({ ...base, view: "trash" })).toEqual({ kind: "list" });
   });
 
-  it("收藏夹 → 收藏夹，**不受 view 影响**", () => {
-    // 收藏夹与回收站是两个不同的 pane；view 那个值此时不该影响高亮。
-    expect(viewNavKey("favorites", "active")).toBe("favorites");
-    expect(viewNavKey("favorites", "trash")).toBe("favorites");
-  });
-});
-
-describe("点二级导航后的状态", () => {
-  it("当前会话 → sessions/active", () => {
-    expect(paneForViewNav("active")).toEqual({ pane: "sessions", view: "active" });
+  it("收藏夹（favorites）→ quickAccess 两组，**不发会话列表请求**", () => {
+    expect(resolveSidebarListMode({ ...base, view: "favorites" })).toEqual({ kind: "favorites" });
+    // 数据来自 `quickAccess`（跨目标的收藏 + 最近打开），列表请求既多余、
+    // 结果也不是用户要的那一批。判据与 effect 共用同一个纯函数。
+    expect(shouldLoadSessionList("favorites")).toBe(false);
   });
 
-  it("回收站 → sessions/trash", () => {
-    expect(paneForViewNav("trash")).toEqual({ pane: "sessions", view: "trash" });
-  });
-
-  it("收藏夹 → favorites", () => {
-    expect(paneForViewNav("favorites")).toEqual({ pane: "favorites", view: "active" });
-  });
-
-  it("**往返一致**：算出来的键再映射回去，等于原来的状态", () => {
-    const states: [Parameters<typeof viewNavKey>[0], Parameters<typeof viewNavKey>[1]][] = [
-      ["sessions", "active"],
-      ["sessions", "trash"],
-      ["favorites", "active"]
-    ];
-    for (const [pane, view] of states) {
-      const key = viewNavKey(pane, view);
-      expect(paneForViewNav(key)).toEqual({ pane, view });
-    }
-  });
-});
-
-describe("哪一行该出现", () => {
-  it("二级导航在会话与收藏夹下出现，工作台与全局搜索下不出现", () => {
-    // 工作台是一处独立的地方（不列会话，没有「哪种会话」可筛）。
-    expect(showsViewNav("sessions")).toBe(true);
-    expect(showsViewNav("favorites")).toBe(true);
-    expect(showsViewNav("workbench")).toBe(false);
-    expect(showsViewNav("search")).toBe(false);
-  });
-
-  it("搜索行只在会话列表下出现——收藏夹里放搜索框会以为搜的是收藏夹内部", () => {
-    expect(showsSessionSearchRow("sessions")).toBe(true);
-    expect(showsSessionSearchRow("favorites")).toBe(false);
-    expect(showsSessionSearchRow("workbench")).toBe(false);
+  it("关键词非空 → 过滤结果；全局关键词非空 → 跨目标结果", () => {
+    expect(resolveSidebarListMode({ ...base, view: "active", query: "x" })).toEqual({
+      kind: "filtered"
+    });
+    expect(resolveSidebarListMode({ ...base, view: "active", globalQuery: "x" })).toEqual({
+      kind: "global"
+    });
   });
 });
 

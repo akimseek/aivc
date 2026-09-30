@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ToolbarSpacer, useToast, type TabItem } from "../components";
+import { SessionsSidebar } from "../features/sessions/sessions-sidebar";
 import type { SettingsTab } from "../features/settings/settings-center";
 import * as api from "../ipc/commands";
 import { ActivityBar } from "../shell/activity-bar";
@@ -13,7 +14,7 @@ import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
 import { displayTitle } from "./session-display";
-import { Sidebar } from "./sidebar";
+import { SidebarWorkbench } from "./sidebar-workbench";
 import { resolveStageContent } from "./stage-content";
 import { nextPreference } from "./theme";
 import { useConsole } from "./use-console";
@@ -38,7 +39,7 @@ import { useWorkspaceTabs } from "./use-workspace-tabs";
  * | 标题栏（品牌 / 主题 / 铃铛） | [`TitleBar`](../shell/title-bar.tsx) |
  * | 活动栏（会话 / 工作台 / 设置） | [`ActivityBar`](../shell/activity-bar.tsx) |
  * | 状态栏 | [`StatusBar`](../shell/status-bar.tsx) |
- * | 侧栏（平台/目标/两级导航/三种列表） | [`Sidebar`](./sidebar.tsx) |
+ * | 侧栏（网关胶囊 / 筛选 chips / 会话卡片） | [`SessionsSidebar`](../features/sessions/sessions-sidebar.tsx) |
  * | 工作区（标签 + 终端栈 + 会话正文） | [`SessionWorkspace`](./session-workspace.tsx) |
  * | 右键菜单 | [`SessionContextMenu`](./session-context-menu.tsx) |
  * | 标签的增删与竞态 | [`useWorkspaceTabs`](./use-workspace-tabs.ts) |
@@ -528,6 +529,26 @@ export function App() {
   const activity: "sessions" | "workbench" =
     console.pane === "workbench" ? "workbench" : "sessions";
 
+  /**
+   * 有终端在跑的会话编号：卡片左上角那个点按它亮起来。
+   *
+   * **由标签反查**：终端自己不记会话编号，但一张标签同时挂着会话与终端
+   * （统一标签模型），两边一对就有了。
+   */
+  const runningSessionIds = useMemo(
+    () =>
+      new Set(
+        workspace.tabs
+          .filter(
+            (tab) =>
+              tab.sessionId &&
+              terminals.terminals.some((item) => item.id === tab.terminalId && item.running)
+          )
+          .map((tab) => tab.sessionId!)
+      ),
+    [workspace.tabs, terminals.terminals]
+  );
+
   return (
     <>
       <AppShell
@@ -564,26 +585,60 @@ export function App() {
         activityBar={
           <ActivityBar
             activity={activity}
-            // 活动栏切的是**整块侧栏**（工作台 / 会话两种形态），因此直接改 `pane`。
-            onActivity={(next) => console.setPane(next)}
+            /*
+              活动栏切的是**整块侧栏**（工作台 / 会话两种形态），因此直接改 `pane`。
+              折叠按钮在侧栏头里，折起来之后侧栏整个消失——**活动栏是唯一能把它叫回来的
+              地方**，所以点这里顺带展开（否则那一下会像「点了没反应」）。
+            */
+            onActivity={(next) => {
+              console.setPane(next);
+              setSidebarCollapsed(false);
+            }}
             // 设置默认开供应商页：它是这个入口最常被用来找的东西（spec §11）。
             onOpenSettings={() => openSettings("vendors")}
           />
         }
         sidebar={
-          <Sidebar
-            console={console}
-            selectedTarget={selectedTarget}
-            onOpen={openSessionById}
-            onMenu={(x, y, sessionId) => setMenu({ x, y, sessionId })}
-            providers={console.providers}
-            vendors={sidebarVendors}
-            gateway={console.gateway}
-            lastSwitch={lastRouteSwitch}
-            workbenchToken={workbenchToken}
-            collapsed={sidebarCollapsed}
-            onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
-          />
+          console.pane === "workbench" ? (
+            sidebarCollapsed ? (
+              /* 折叠时留一个空节点：它是外壳网格的第二列（`auto`），
+                 不留节点主区会掉进那一列里去。 */
+              <aside className="sidebar hidden" aria-label="侧栏（已折叠）" />
+            ) : (
+              /* 工作台**整块替换**会话侧栏——活动栏切的是「哪一处地方」。
+                 Task 8 会把它包成自己的侧栏壳（`WorkbenchSidebar`），此刻先直接渲染。 */
+              <aside className="sidebar" aria-label="工作台侧栏">
+                <SidebarWorkbench
+                  provider={console.providers.find((item) => item.id === console.providerId)}
+                  target={selectedTarget}
+                  session={console.selectedSession}
+                  gateway={console.gateway}
+                  vendors={sidebarVendors}
+                  lastSwitch={lastRouteSwitch}
+                  refreshToken={workbenchToken}
+                />
+              </aside>
+            )
+          ) : (
+            <SessionsSidebar
+              console={console}
+              selectedTarget={selectedTarget}
+              onOpen={openSessionById}
+              onResume={resumeById}
+              onMenu={(x, y, sessionId) => setMenu({ x, y, sessionId })}
+              /*
+                「新建会话」与工作区那个 +Codex 同一个入口；
+                「消息与分支」打开会话详情——两者都在侧栏里，动作本身留在这一层。
+              */
+              onNewSession={beginNewSession}
+              onDetail={(session) => setDetailSession(session)}
+              providers={console.providers}
+              gateway={console.gateway}
+              runningSessionIds={runningSessionIds}
+              collapsed={sidebarCollapsed}
+              onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+            />
+          )
         }
         main={
           /*

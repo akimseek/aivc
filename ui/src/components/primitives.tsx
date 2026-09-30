@@ -13,7 +13,7 @@ import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type R
 
 /* ── 按钮 ────────────────────────────────────────────── */
 
-export type ButtonVariant = "default" | "primary" | "danger";
+export type ButtonVariant = "default" | "primary" | "danger" | "ghost";
 
 export function Button({
   variant = "default",

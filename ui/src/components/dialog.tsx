@@ -26,7 +26,8 @@ export function Dialog({
   onClose,
   closeOnOverlay = false,
   focusPanel = true,
-  panelClassName
+  panelClassName,
+  size = "md"
 }: {
   /** 标题栏文字。 */
   title: ReactNode;
@@ -39,6 +40,8 @@ export function Dialog({
   focusPanel?: boolean;
   /** 面板的附加类名（用于个别对话框的专属布局）。 */
   panelClassName?: string;
+  /** 宽度档：确认框用 `sm`，设置这类大面板用 `lg`。 */
+  size?: "sm" | "md" | "lg";
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -54,7 +57,7 @@ export function Dialog({
     if (focusPanel) panelRef.current?.focus();
   }, [focusPanel]);
 
-  const classes = ["dialog-panel", panelClassName ?? ""].filter(Boolean).join(" ");
+  const classes = ["dialog-panel", `dialog-panel-${size}`, panelClassName ?? ""].filter(Boolean).join(" ");
 
   return (
     <div

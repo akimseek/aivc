@@ -2,10 +2,11 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { FailoverRulesSection, parseCustomResponse } from "./gateway-panel";
+import { GatewayRulesCard } from "./gateway-rules-card";
+import { parseCustomResponse } from "./gateway-rule-model";
 
 /**
- * 故障规则：**自定义返回**（A1）与**试规则**（A2）。
+ * 故障规则：**自定义返回**（A1）、**试规则**（A2）与作用域级联（批次二）。
  *
  * # 这两条的来历
  *
@@ -19,6 +20,13 @@ import { FailoverRulesSection, parseCustomResponse } from "./gateway-panel";
  * 第二条**不能**在前端重写匹配——两份逻辑一分叉就会出现
  * 「测试说会命中、实际没切换」。因此新加了一条命令 `gateway:test-failover-rule`，
  * 它调用的就是转发路径用的那一份 `match_rule`。
+ *
+ * # 批次二补的第三条
+ *
+ * 作用域有 provider / vendor 两档，但后端**要求**带上 providerId（供应商级还要
+ * vendorId，见 `crates/aivc-core/src/gateway.rs:270-289`），而此前表单里根本没有
+ * 这两项——按平台/按供应商的规则在界面上存不下去。批次二补上级联选择，
+ * 并顺手补上「立即启用」勾选（此前编辑一条停用规则再保存会把它重新启用）。
  */
 
 function fakeRuntime(handlers: Record<string, (args: Record<string, unknown>) => unknown>) {
@@ -50,6 +58,17 @@ const RULE = {
   updatedAt: "2026-01-01T00:00:00.000Z"
 };
 
+const VENDORS = [
+  {
+    id: "v1",
+    providerId: "codex" as const,
+    name: "官方 v2",
+    apiBaseUrl: "https://api.example.com",
+    sort: 0,
+    enabled: true
+  }
+];
+
 function findButton(container: HTMLElement, text: string) {
   return [...container.querySelectorAll("button")].find(
     (item) => (item.textContent ?? "").trim() === text
@@ -60,6 +79,20 @@ function setValue(element: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   setter.call(element, value);
   element.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function setSelect(element: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+  setter.call(element, value);
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/** 打开表单（新增或编辑），返回查输入框的小工具。 */
+async function openForm(view: { container: HTMLElement }, by: string) {
+  await waitFor(() => expect(findButton(view.container, by)).toBeTruthy());
+  await act(async () => {
+    findButton(view.container, by)!.click();
+  });
 }
 
 describe("parseCustomResponse：四条校验（照旧平台）", () => {
@@ -109,17 +142,14 @@ describe("parseCustomResponse：四条校验（照旧平台）", () => {
   });
 });
 
-describe("FailoverRulesSection：规则表单接线", () => {
+describe("GatewayRulesCard：规则表单接线", () => {
   it("**能配自定义返回**，并按真实字段名提交", async () => {
     const calls = fakeRuntime({
       "gateway:list-failover-rules": () => [],
       "gateway:save-failover-rule": () => RULE
     });
-    const view = render(<FailoverRulesSection onError={vi.fn()} />);
-    await waitFor(() => expect(findButton(view.container, "新增规则")).toBeTruthy());
-    await act(async () => {
-      findButton(view.container, "新增规则")!.click();
-    });
+    const view = render(<GatewayRulesCard onError={vi.fn()} />);
+    await openForm(view, "新增规则");
     const inputs = [...view.container.querySelectorAll<HTMLInputElement>("input")];
     await act(async () => {
       setValue(inputs.find((i) => i.placeholder.includes("insufficient_quota"))!, "rate limit");
@@ -144,11 +174,8 @@ describe("FailoverRulesSection：规则表单接线", () => {
       "gateway:save-failover-rule": () => RULE
     });
     const onError = vi.fn();
-    const view = render(<FailoverRulesSection onError={onError} />);
-    await waitFor(() => expect(findButton(view.container, "新增规则")).toBeTruthy());
-    await act(async () => {
-      findButton(view.container, "新增规则")!.click();
-    });
+    const view = render(<GatewayRulesCard onError={onError} />);
+    await openForm(view, "新增规则");
     const inputs = [...view.container.querySelectorAll<HTMLInputElement>("input")];
     await act(async () => {
       setValue(inputs.find((i) => i.placeholder.includes("insufficient_quota"))!, "rate limit");
@@ -164,30 +191,134 @@ describe("FailoverRulesSection：规则表单接线", () => {
 
   it("**编辑时回填自定义返回**（不回填就会被「保存修改」清掉）", async () => {
     fakeRuntime({ "gateway:list-failover-rules": () => [RULE] });
-    const view = render(<FailoverRulesSection onError={vi.fn()} />);
-    await waitFor(() => expect(findButton(view.container, "编辑")).toBeTruthy());
-    await act(async () => {
-      findButton(view.container, "编辑")!.click();
-    });
+    const view = render(<GatewayRulesCard onError={vi.fn()} />);
+    await openForm(view, "编辑");
     const inputs = [...view.container.querySelectorAll<HTMLInputElement>("input")];
     expect(inputs.find((i) => i.placeholder === "例如 503")!.value).toBe("503");
     expect(inputs.find((i) => i.placeholder.includes("上游不可用"))!.value).toBe(
       '{"error":"busy"}'
     );
   });
+
+  it("**编辑停用规则时勾选框是未选中，保存时把停用状态传回去**", async () => {
+    const calls = fakeRuntime({
+      "gateway:list-failover-rules": () => [{ ...RULE, enabled: false }],
+      "gateway:save-failover-rule": () => RULE
+    });
+    const view = render(<GatewayRulesCard onError={vi.fn()} />);
+    await openForm(view, "编辑");
+    const checkbox = view.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.checked).toBe(false);
+    await act(async () => {
+      findButton(view.container, "保存修改")!.click();
+    });
+    await waitFor(() => {
+      expect(calls.some((item) => item.command === "gateway:save-failover-rule")).toBe(true);
+    });
+    expect(
+      calls.find((item) => item.command === "gateway:save-failover-rule")!.args.enabled
+    ).toBe(false);
+  });
+
+  it("**作用域级联**：按平台必须带上 providerId，按供应商还要 vendorId", async () => {
+    const calls = fakeRuntime({
+      "gateway:list-failover-rules": () => [],
+      "vendor:list": () => VENDORS,
+      "gateway:save-failover-rule": () => RULE
+    });
+    const onError = vi.fn();
+    const view = render(<GatewayRulesCard onError={onError} />);
+    await openForm(view, "新增规则");
+    await act(async () => {
+      setValue(
+        [...view.container.querySelectorAll<HTMLInputElement>("input")].find((i) =>
+          i.placeholder.includes("insufficient_quota")
+        )!,
+        "rate limit"
+      );
+      setSelect(view.container.querySelector<HTMLSelectElement>('select[aria-label="作用域"]')!, "provider");
+    });
+    // 选了「按平台」才会出现目标平台下拉。
+    const provider = view.container.querySelector<HTMLSelectElement>('select[aria-label="目标平台"]')!;
+    expect(provider).toBeTruthy();
+    await act(async () => {
+      setSelect(provider, "codex");
+    });
+    await act(async () => {
+      findButton(view.container, "创建")!.click();
+    });
+    await waitFor(() => {
+      expect(calls.some((item) => item.command === "gateway:save-failover-rule")).toBe(true);
+    });
+    const payload = calls.find((item) => item.command === "gateway:save-failover-rule")!.args;
+    expect(payload.scope).toBe("provider");
+    expect(payload.providerId).toBe("codex");
+    // 按平台作用域**不能**带供应商：后端会判「Provider 级规则不能指定供应商」。
+    expect(payload.vendorId).toBeUndefined();
+
+    // 全局作用域相反：不能带 providerId / vendorId。
+    await openForm(view, "新增规则");
+    await act(async () => {
+      setValue(
+        [...view.container.querySelectorAll<HTMLInputElement>("input")].find((i) =>
+          i.placeholder.includes("insufficient_quota")
+        )!,
+        "rate limit"
+      );
+    });
+    await act(async () => {
+      findButton(view.container, "创建")!.click();
+    });
+    await waitFor(() => {
+      expect(
+        calls.filter((item) => item.command === "gateway:save-failover-rule").length
+      ).toBe(2);
+    });
+    const globals = calls.filter((item) => item.command === "gateway:save-failover-rule");
+    expect(globals[1]!.args.providerId).toBeUndefined();
+    expect(globals[1]!.args.vendorId).toBeUndefined();
+  });
+
+  it("按供应商没选供应商时**本地就拦下**（后端原话），不发请求", async () => {
+    const calls = fakeRuntime({
+      "gateway:list-failover-rules": () => [],
+      "vendor:list": () => VENDORS,
+      "gateway:save-failover-rule": () => RULE
+    });
+    const onError = vi.fn();
+    const view = render(<GatewayRulesCard onError={onError} />);
+    await openForm(view, "新增规则");
+    await act(async () => {
+      setValue(
+        [...view.container.querySelectorAll<HTMLInputElement>("input")].find((i) =>
+          i.placeholder.includes("insufficient_quota")
+        )!,
+        "rate limit"
+      );
+      setSelect(view.container.querySelector<HTMLSelectElement>('select[aria-label="作用域"]')!, "vendor");
+    });
+    await act(async () => {
+      setSelect(
+        view.container.querySelector<HTMLSelectElement>('select[aria-label="目标平台"]')!,
+        "codex"
+      );
+    });
+    await act(async () => {
+      findButton(view.container, "创建")!.click();
+    });
+    expect(onError).toHaveBeenCalledWith("供应商级规则必须指定供应商。");
+    expect(calls.some((item) => item.command === "gateway:save-failover-rule")).toBe(false);
+  });
 });
 
-describe("FailoverRulesSection：试规则", () => {
+describe("GatewayRulesCard：试规则", () => {
   it("**试规则要问后端**，并显示是被哪一项命中的", async () => {
     const calls = fakeRuntime({
       "gateway:list-failover-rules": () => [RULE],
       "gateway:test-failover-rule": () => ({ matched: true, matchedBy: "pattern" })
     });
-    const view = render(<FailoverRulesSection onError={vi.fn()} />);
-    await waitFor(() => expect(findButton(view.container, "编辑")).toBeTruthy());
-    await act(async () => {
-      findButton(view.container, "编辑")!.click();
-    });
+    const view = render(<GatewayRulesCard onError={vi.fn()} />);
+    await openForm(view, "编辑");
     const inputs = [...view.container.querySelectorAll<HTMLInputElement>("input")];
     await act(async () => {
       setValue(inputs.find((i) => i.placeholder.includes("credit insufficient"))!, "rate limit hit");
@@ -212,16 +343,26 @@ describe("FailoverRulesSection：试规则", () => {
       "gateway:list-failover-rules": () => [RULE],
       "gateway:test-failover-rule": () => ({ matched: false, matchedBy: "none" })
     });
-    const view = render(<FailoverRulesSection onError={vi.fn()} />);
-    await waitFor(() => expect(findButton(view.container, "编辑")).toBeTruthy());
-    await act(async () => {
-      findButton(view.container, "编辑")!.click();
-    });
+    const view = render(<GatewayRulesCard onError={vi.fn()} />);
+    await openForm(view, "编辑");
     // 试之前不该有结论。
     expect(view.container.textContent).not.toContain("不会命中");
     await act(async () => {
       findButton(view.container, "试一下")!.click();
     });
     await waitFor(() => expect(view.container.textContent).toContain("不会命中"));
+  });
+
+  it("状态码命中时说的是「状态码匹配」（三态里的另一个）", async () => {
+    fakeRuntime({
+      "gateway:list-failover-rules": () => [RULE],
+      "gateway:test-failover-rule": () => ({ matched: true, matchedBy: "status" })
+    });
+    const view = render(<GatewayRulesCard onError={vi.fn()} />);
+    await openForm(view, "编辑");
+    await act(async () => {
+      findButton(view.container, "试一下")!.click();
+    });
+    await waitFor(() => expect(view.container.textContent).toContain("状态码匹配"));
   });
 });

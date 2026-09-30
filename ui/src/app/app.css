@@ -848,7 +848,7 @@ select {
   margin-bottom: var(--ui-space-1);
 }
 
-/* `.group-empty` 的那份在网关规则面板里也在用（`config/gateway-panel.tsx`），
+/* `.group-empty` 的那份在网关规则卡里也在用（`config/gateway-rules-card.tsx`），
    因此两个类名共用一条规则，而不是抄两遍。 */
 .group-empty,
 .session-group-empty {
@@ -2992,6 +2992,194 @@ select {
 }
 .rule-test .tag {
   margin-left: 8px;
+}
+
+/* ── 网关面板（批次二：三卡重排）─────────────────────────
+   面板区不是 flex/grid 容器，兄弟元素之间没有 gap——三张卡彼此之间、
+   以及与会话头之间的间距因此必须由这一层给出，否则它们会贴在一起。 */
+.gateway-panel {
+  display: grid;
+  gap: var(--ui-space-4);
+  align-content: start;
+}
+
+/* 总开关胶囊（面板头的网关总开关与外部门卡头共用）。
+   它是按钮：形状取自 demo 的圆角胶囊，点一下就是切换开关。 */
+.switch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-1) var(--ui-space-3);
+  border: 1px solid var(--ui-accent-border);
+  border-radius: 999px;
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-strong);
+  font-size: var(--ui-text-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+/* 关着的时候不能还是那块「一切正常」的绿色：底色与边一起退回去。 */
+.switch-pill.off {
+  border-color: var(--ui-border);
+  background: var(--ui-bg-activity);
+  color: var(--ui-muted);
+}
+.switch-pill:hover:not(:disabled) {
+  border-color: currentColor;
+}
+.switch-pill:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 端口输入与「活跃端口」读数并排：读数说的是**现在**，输入框说的是**下次启动**。 */
+.gateway-port-input {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+.gateway-port-input input {
+  flex: 0 0 auto;
+  width: 120px;
+}
+
+/* 阈值块：单独一层底，避免三个数字看起来是端口那一项的附属。 */
+.gateway-thresholds {
+  display: grid;
+  gap: var(--ui-space-3);
+  padding: var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-activity);
+}
+.gateway-thresholds-title {
+  color: var(--ui-text);
+  font-size: var(--ui-text-sm);
+  font-weight: 700;
+}
+/* 三条阈值等宽：它们是同类项，宽窄不齐会让人以为有的更重要。 */
+.gateway-threshold-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* 令牌区块：状态 + 说明 + 轮换说的是同一件事，因此同框。 */
+.gateway-token-block {
+  display: grid;
+  gap: var(--ui-space-3);
+  padding: var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-activity);
+}
+.gateway-token-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-space-3);
+}
+.gateway-token-text {
+  display: grid;
+  gap: var(--ui-space-1);
+  min-width: 0;
+}
+.gateway-token-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  color: var(--ui-text);
+  font-size: var(--ui-text-sm);
+  font-weight: 700;
+}
+
+/* 端点清单：一行一个平台，地址与它的凭据头挨着——抄的时候一次抄全。 */
+.gateway-endpoints {
+  display: grid;
+  gap: var(--ui-space-2);
+}
+.gateway-endpoints-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+}
+.gateway-endpoints-title {
+  color: var(--ui-text);
+  font-size: var(--ui-text-sm);
+  font-weight: 700;
+}
+.gateway-endpoint-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--ui-space-2);
+}
+.gateway-endpoint {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-2) var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-activity);
+}
+.gateway-endpoint-main {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+.gateway-endpoint-platform {
+  color: var(--ui-accent-strong);
+  font-size: var(--ui-text-xs);
+  font-weight: 700;
+}
+/* 地址要能整段选中：它是这一格存在的理由。 */
+.gateway-endpoint-url {
+  overflow: hidden;
+  font-size: var(--ui-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+.gateway-endpoint-auth {
+  overflow: hidden;
+  color: var(--ui-faint);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 自定义拦截应答：与匹配条件分开一层底——它说的是「命中之后发生什么」。 */
+.gateway-custom-response {
+  display: grid;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-activity);
+}
+.gateway-custom-response-title {
+  color: var(--ui-text);
+  font-size: var(--ui-text-sm);
+  font-weight: 700;
+}
+
+/* 表单里的「立即启用」勾选行。 */
+.gateway-rule-enabled {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  color: var(--ui-text);
+  font-size: var(--ui-text-sm);
+}
+.gateway-rule-enabled .field-hint {
+  margin: 0;
+}
+
+/* 行内三个操作：并排且不换行，否则窄面板下「删除」会被挤到下一行。 */
+.gateway-rule-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
 }
 
 /* ── 设置中心（两栏：224px 分组导航 + 面板区）──────────

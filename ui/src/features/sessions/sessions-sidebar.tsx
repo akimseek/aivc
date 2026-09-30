@@ -19,6 +19,7 @@ import type {
   SessionQuickAccessItem
 } from "../../types";
 import { gatewayPortLabel, gatewayTone } from "../../app/gateway-address";
+import { supportsSessionSettings } from "../../app/provider-capabilities";
 import { emptySessionMessage } from "../../app/session-display";
 import { QuickGroup, SearchResultRow } from "../../app/session-row";
 import { supportsBatchActions, supportsTrash } from "../../app/sidebar-nav";
@@ -195,6 +196,15 @@ export function SessionsSidebar({
    */
   const canUseTrash = supportsTrash(providers, state.providerId);
   const canBatch = supportsBatchActions(providers, state.providerId);
+  /**
+   * 当前平台支不支持会话设置（WSL 的 `CODEX_HOME` 覆盖）。
+   *
+   * 与设置中心环境页「WSL 会话目录」卡**同一判据**（都走 `supportsSessionSettings`）：
+   * 保存/清除走 `codex:set-wsl-codex-home`，写的是 Codex 的**全局**
+   * `wsl_codex_homes` 映射——对 claude/qoder 放行，就是拿别的平台的目标去改
+   * Codex 的配置（跨平台数据污染），而且保存点了必然失败。
+   */
+  const canSessionSettings = supportsSessionSettings(providers, state.providerId);
   /** 新建会话要有一个能进去的目标——与工作区那个按钮同一条判据（`canStartCodex`）。 */
   const canStart = Boolean(selectedTarget?.available);
   /** 网关胶囊的状态色（`off` 落到状态点的 `idle`）。 */
@@ -398,7 +408,7 @@ export function SessionsSidebar({
                 <Button small onClick={() => void state.reloadTargets()}>
                   重新探测
                 </Button>
-                {selectedTarget.kind === "wsl" && selectedTarget.distro && (
+                {canSessionSettings && selectedTarget.kind === "wsl" && selectedTarget.distro && (
                   <WslHomeForm
                     distro={selectedTarget.distro}
                     onSave={(home) =>

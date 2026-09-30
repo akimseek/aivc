@@ -71,8 +71,9 @@ export function SettingsCenter({
    *
    * 对话框本体（`session-settings-dialog.tsx`）与它的状态仍在 `app.tsx` 那一层：
    * 这里只把入口从菜单栏挪到环境面板，不重新实现一遍。
+   * `undefined` = 当前平台不支持（上层不构造这个动作），面板按「缺入口不渲染」处理。
    */
-  onOpenSessionSettings: () => void;
+  onOpenSessionSettings?: () => void;
   /** 退出控制台（走窗口关闭 → 后端的退出确认流程）。 */
   onQuit: () => void;
   /** 在文件管理器里打开日志目录。 */

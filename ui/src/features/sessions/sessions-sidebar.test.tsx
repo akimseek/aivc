@@ -19,13 +19,26 @@ import { SessionsSidebar, type SessionsSidebarConsole } from "./sessions-sidebar
  * 1. 过滤 chips 切的是 `view`：收藏夹是**另一批数据**（`quickAccess`），
  *    不是「按收藏过滤当前列表」。判错了界面照常渲染，只是内容不对。
  * 2. 平台能力门控：能力矩阵里 `trash: false` 的平台，它的用户不该看到一个
- *    点下去必然报错的按钮（回收站），也不该看到勾了没用的勾选框。
+ *    点下去必然报错的按钮（回收站），也不该看到勾了没用的勾选框；
+ *    `sessionSettings` 为假的平台上，不可用 WSL 目标的「WSL 目录表单」同样
+ *    不该出现——它写的是 Codex 的全局设置，放行就是跨平台数据污染。
  * 3. 空态文案三态：没选目标 / 目标不可用 / 真没有——三种处境要做的事不同。
  */
 
 const PROVIDERS: AiProviderSummary[] = [
-  { id: "codex", label: "Codex", capabilities: { trash: true, batchActions: true } },
-  { id: "qoder", label: "Qoder CN", capabilities: { trash: false, batchActions: false } }
+  {
+    id: "codex",
+    label: "Codex",
+    capabilities: { trash: true, batchActions: true, sessionSettings: true }
+  },
+  // claude 因「不可用 WSL 目标」的会话目录门控而加入；`sessionSettings` 三者与
+  // 后端矩阵一致（仅 codex 为真），其余键按各自用例需要。
+  { id: "claude", label: "Claude Code", capabilities: { sessionSettings: false } },
+  {
+    id: "qoder",
+    label: "Qoder CN",
+    capabilities: { trash: false, batchActions: false, sessionSettings: false }
+  }
 ];
 
 const TARGET: AiTarget = {
@@ -288,6 +301,38 @@ describe("平台能力门控", () => {
     expect(bar.textContent).toContain("已选 1 项");
     expect(bar.textContent).toContain("恢复");
     expect(bar.textContent).toContain("彻底删除");
+  });
+
+  it("WSL 目录表单按平台能力放行：claude 的不可用 WSL 目标拿不到，codex 的拿得到", () => {
+    // 表单的保存/清除走 `codex:set-wsl-codex-home`，写的是 Codex 的**全局**
+    // `wsl_codex_homes` 映射——对 claude/qoder 放行就是跨平台数据污染，
+    // 与环境页「WSL 会话目录」卡同一判据（`supportsSessionSettings`）。
+    const claudeTarget: AiTarget = {
+      ...TARGET,
+      id: "claude:wsl",
+      provider: "claude",
+      available: false,
+      kind: "wsl",
+      distro: "Ubuntu",
+      detail: "发行版进不去"
+    };
+    const blocked = setup(
+      { providerId: "claude", targets: [claudeTarget], targetId: claudeTarget.id },
+      { selectedTarget: claudeTarget }
+    );
+    expect(blocked.view.container.textContent).toContain("发行版进不去");
+    expect(blocked.view.container.querySelector(".wsl-home-form")).toBeNull();
+
+    // 反向：codex 的不可用 WSL 目标照旧拿得到入口（判据是能力，不是「干脆都不给」）。
+    const codexTarget: AiTarget = {
+      ...TARGET,
+      available: false,
+      kind: "wsl",
+      distro: "Ubuntu",
+      detail: "发行版进不去"
+    };
+    const allowed = setup({ targets: [codexTarget] }, { selectedTarget: codexTarget });
+    expect(allowed.view.container.querySelector(".wsl-home-form")).not.toBeNull();
   });
 });
 

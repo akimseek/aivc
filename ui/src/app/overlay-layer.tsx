@@ -39,7 +39,7 @@ export type OverlaysState = {
 /**
  * 全部弹层的**动作**。
  *
- * # 每一项都是必填的
+ * # 每一项都是必填的（`openSessionSettings` 是唯一例外，见该项说明）
  *
  * 写这个文件时我一度给 `onCopyId` / `onRemove` 填过 `() => undefined` 的占位——
  * 那样「复制编号」与「删除」会**静默失效**：按钮点得下去、没有任何反应、也不报错。
@@ -53,8 +53,14 @@ export type OverlaysActions = {
   closeSessionSettings: () => void;
   restoreSessionSettings: (distro: string) => void;
   saveSessionSettings: (distro: string, path: string) => void;
-  /** 打开「设置会话」对话框（WSL 的 CODEX_HOME 覆盖）。 */
-  openSessionSettings: () => void;
+  /**
+   * 打开「设置会话」对话框（WSL 的 CODEX_HOME 覆盖）。
+   *
+   * **唯一允许缺省的动作**：平台不支持会话设置（claude/qoder）时上层不构造它
+   * （`undefined`），消费方（环境卡）按「缺入口不渲染」处理。这不是上面说的
+   * 「占位静默失效」——静默失效是「平台支持但没接」，这里是能力不支持的显式表达。
+   */
+  openSessionSettings?: () => void;
   /** 退出控制台：走窗口关闭，后端的退出确认流程仍然拦得住。 */
   quit: () => void;
   /** 在文件管理器里打开日志目录（关于面板的入口）。 */

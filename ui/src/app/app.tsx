@@ -207,18 +207,37 @@ export function App() {
   }, []);
 
   /**
+   * 当前平台支不支持会话设置（WSL 的 `CODEX_HOME` 覆盖）。
+   *
+   * 提前算好：`openSessionSettings` 的构造守卫要它（见下），JSX 里传给
+   * `AppOverlays` 的也是它——判据仍然只来自 `provider-capabilities.ts`。
+   */
+  const canSessionSettings = supportsSessionSettings(console.providers, console.providerId);
+
+  /**
    * 打开「设置会话」对话框（WSL 的 CODEX_HOME 覆盖）。
    *
    * 两个入口共用这一处：菜单栏（Task 6 删除前）与环境面板的「WSL 会话目录」卡。
    * 非 WSL 目标没有可写的东西，直接返回，而不是弹一个填不了任何东西的对话框。
+   *
+   * 平台不支持会话设置（claude/qoder）时**不构造这个动作**（`undefined` 即禁用，
+   * 与环境卡「缺入口不渲染」是同一个约定）：保存/清除走 `codex:set-wsl-codex-home`，
+   * 写的是 Codex 的**全局** `wsl_codex_homes` 映射——少一条构造路径，就少一条
+   * 跨平台数据污染的来路。
    */
-  const openSessionSettings = useCallback(() => {
-    if (selectedTarget?.kind !== "wsl") return;
-    setSessionSettings({
-      distro: selectedTarget.distro ?? "",
-      path: selectedTarget.codexHome ?? ""
-    });
-  }, [selectedTarget]);
+  const openSessionSettings = useMemo(
+    () =>
+      canSessionSettings
+        ? () => {
+            if (selectedTarget?.kind !== "wsl") return;
+            setSessionSettings({
+              distro: selectedTarget.distro ?? "",
+              path: selectedTarget.codexHome ?? ""
+            });
+          }
+        : undefined,
+    [canSessionSettings, selectedTarget]
+  );
 
   /**
    * 窗口动作的统一收尾。
@@ -989,7 +1008,7 @@ export function App() {
         // 恒真传入过一次（JSX 布尔简写），claude/qoder 的 WSL 目标因此也能打开
         // 「设置会话」——那四项都从能力矩阵现算，本文件不读键名。
         canCustomCwd={supportsCustomCwd(console.providers, console.providerId)}
-        canSessionSettings={supportsSessionSettings(console.providers, console.providerId)}
+        canSessionSettings={canSessionSettings}
         canDuplicate={supportsDuplicate(console.providers, console.providerId)}
         canBranch={supportsBranch(console.providers, console.providerId)}
         resolveSession={sessionById}

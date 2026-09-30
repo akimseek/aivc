@@ -55,11 +55,13 @@ describe("SessionSettingsDialog", () => {
     expect(view.container.textContent).toContain("设置会话");
   });
 
-  it("平台不支持会话设置时，即便目标是 WSL 也整体禁用（对话框开着时切换平台可达）", () => {
+  it("平台不支持会话设置时，即便目标是 WSL 也整体禁用（组件契约守卫）", () => {
     // `supportsSessionSettings` 与 `isWsl` 是**两个**条件，缺一不可。
-    // 环境页的卡已按平台能力隐藏，但对话框开着时切换平台/目标不会把它关掉——
-    // claude/qoder 在后端 `sessionSettings=false`，那一下重渲染就会走到这条分支；
-    // 放行保存写的是 Codex 的全局设置（`codex:set-wsl-codex-home`），必然失败。
+    // 按当前接线这条 `false` 分支在生产**不可达**：对话框开着时是全屏遮罩，
+    // 切不了平台/目标（平台清单也只取一次），父层门控（环境卡 + 打开入口的能力
+    // 守卫）已把 claude/qoder 挡在门外。这里钉的是**组件契约**——保留以防将来
+    // 换宿主：宿主若允许中途把判据改成 false，禁用必须仍然成立，因为放行保存
+    // 写的是 Codex 的全局设置（`codex:set-wsl-codex-home`），必然失败。
     const { input, byText } = setup({ isWsl: true, supportsSessionSettings: false });
     expect(input().disabled).toBe(true);
     expect(byText("保存").disabled).toBe(true);

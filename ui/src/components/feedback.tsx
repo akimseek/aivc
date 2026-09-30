@@ -63,9 +63,11 @@ export function Notice({
  * # 为什么要收成一个组件
  *
  * 它此前有三处手写：应用级两条提示（浮层形态）、供应商页与请求日志页（面板内形态）。
- * 三处的类名组合还不一样，而 `hint-float` 为了浮起来把底色、边框又写了一遍——
- * 与 `.export-hint` 的两条规则互相压（浮层的边框被 `border-bottom` 压掉一条）。
- * 现在外观只在 `.export-hint` 一处定义，`floating` 只加「浮起来」的位置。
+ * 三处的类名组合还不一样，而 `hint-float` 为了浮起来又把边框与圆角写了一遍——它与
+ * `.export-hint` 同权重、后者在样式表里更靠后，于是浮层形态的**下边框**被
+ * `.export-hint` 的 `border-bottom` 压掉（底色只在 `.export-hint` 一处，写进
+ * `hint-float` 是永远不生效的死声明）。现在外观只在 `.export-hint` 一处定义，
+ * `floating` 只加「浮起来」的位置。
  *
  * # `floating`
  *

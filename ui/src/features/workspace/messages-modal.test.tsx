@@ -11,7 +11,8 @@ import { MessagesModal, MessagesModalContainer } from "./messages-modal";
  * # 五条最要紧的规则
  *
  * 1. **头部件件齐**：`branch` 图标 + 「会话消息历史与分支演进」+ `ID:` 短编号；
- * 2. **血缘条是横向的根 → 当前 → 子**：没有父会话时只剩「当前会话」一格；
+ * 2. **血缘条只讲有内容的血缘**：没有父、也没有子时整块不渲染（不留一格空的
+ *    「当前会话」）；根会话没有父，照样去拉子分支——根恰恰是最可能有分支的那一条；
  * 3. **分支动作带原始行号回传**——后端要靠它定位原始记录，可见序号会截错位置；
  * 4. **导出三格式都在**（Markdown / JSON / HTML，与右键菜单逐字一致）；
  * 5. **分页与竞态保护沿用 `use-session-detail`**：这里只验「控件把页码/页大小交回上层」，
@@ -80,7 +81,7 @@ describe("MessagesModal", () => {
     expect(head.querySelector("svg")).toBeTruthy();
   });
 
-  it("血缘条渲染「根会话 → 当前会话」，没有父会话时只剩当前", async () => {
+  it("血缘条渲染「根会话 → 当前会话」；无父无子时整块不渲染", async () => {
     const parent = session({ id: "parent-1234567890", title: "父会话" });
     const withParent = setup({
       session: session({

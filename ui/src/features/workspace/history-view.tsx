@@ -45,8 +45,9 @@ export function HistoryView({
   /**
    * 从某条消息处分支。
    *
-   * 带 `sessionId`：视图讲的是**标签上这条**会话，而上层动作读的是列表的选中项，
-   * 两者在「切到没有会话编号的新标签」之后会分叉——显式传编号才不会分错。
+   * 带 `sessionId`：分支分给**本视图正在讲的这条**会话，编号由视图自己交出，
+   * 动作层只认它、不另读选中值。视图的口径变过（R32 从活动标签改成列表选中项），
+   * 这一条参数让视图换口径时动作层不必跟着改，也不会出现「标题讲这条、分支分给那条」。
    */
   onBranch: (sourceLine: number, sessionId: string) => void;
   onOpenSession: (session: AiSession) => void;

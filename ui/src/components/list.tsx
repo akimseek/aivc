@@ -54,6 +54,13 @@ export type ListRowProps = {
  * （`.row-slot` 的 `onClick` 里 `stopPropagation`），而不是在行的 `onClick` 里
  * 列举「哪些元素算交互元素」：插槽里能放什么由调用方决定（按钮、勾选框、
  * 自绘控件），列举法一定会漏，而漏掉的那一个就是「点它顺带开一条会话」。
+ *
+ * 这是**契约**（`list.test.tsx` 逐条钉着）：调用方可以放心把按钮、勾选框放进
+ * `leading` / `trailing`，那一下点击只属于控件自己，不会顺带跳到行上；反过来，
+ * 行级的动作（打开会话、切换选中）别塞进插槽——它按定义不触发行点击。
+ *
+ * 只挡 `click`：`contextmenu` 照旧冒泡（行右键菜单讲的就是这一行，插槽里的控件
+ * 没有自己的菜单要开）。
  */
 export function ListRow({
   leading,

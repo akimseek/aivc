@@ -24,7 +24,6 @@ export { EmptyState, HintBar, Notice } from "./feedback";
  * 之前每一处各抄一遍骨架，是走样的来源。 */
 export { Dialog } from "./dialog";
 export { hasLayerAbove } from "./overlay-stack";
-export type { EscapeLayer } from "./overlay-stack";
 export { LoadingBlock, Spinner } from "./loading";
 export { Card, DescriptionList } from "./card";
 export { List, ListRow, MetaItem } from "./list";

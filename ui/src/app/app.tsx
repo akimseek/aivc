@@ -817,9 +817,10 @@ export function App() {
               loadingMore={console.loadingMore}
               onLoadEarlier={() => void console.loadEarlierMessages()}
               /*
-                分支：**带上标签那条会话的编号**。历史视图讲的是活动标签的会话，
-                而它未必等于列表里的选中项（例如切到没有会话编号的新标签之后，
-                选中项还停在旧会话上），只读选中值会分到别的会话上去。
+                分支：**带上视图里这条会话的编号**，不让动作层自己去读选中值。
+                历史视图（含消息列表）以「视图讲的是哪条」为正源——口径变过（R32
+                把历史视图从活动标签改回列表选中项），动作只认交出来的编号，视图再
+                换口径时这里不必跟着动，也不会出现「标题讲这条、分支分给那条」。
               */
               onBranch={(sourceLine, sessionId) =>
                 void console.branchFromMessage(sourceLine, sessionId)

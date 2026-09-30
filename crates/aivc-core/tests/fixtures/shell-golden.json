@@ -1,5 +1,5 @@
 {
-  "_comment": "由 generate-shell-golden.mjs 用现网 TypeScript 实现生成。不要手工编辑。",
+  "_comment": "由 generate-shell-golden.mjs 用现网 TypeScript 实现生成，**Codex 的 WSL 编号两列除外**。旧平台把 Codex 的 WSL 编号造成裸 `wsl:<distro>`、也认不出 `codex:wsl:<distro>`，而后端发出的就是 `codex:wsl:<distro>`（aivc-provider/src/codex/provider.rs 与实机 cachedTargets）——`targetIds` 里 `codex:wsl:*` 的解析结果与 `distroNames` 里的 `builtCodex` 已按新契约手工修正（旧值 distro=空是缺陷）。重跑本脚本会把这两列覆盖回旧平台口径，见 generate-shell-golden.mjs 文件头。",
   "generatedBy": [
     "src/shared/shell-args.ts",
     "src/shared/target-ids.ts",
@@ -1120,11 +1120,11 @@
       },
       "distro": {
         "ok": true,
-        "value": ""
+        "value": "Ubuntu"
       },
       "codexDistro": {
         "ok": true,
-        "value": ""
+        "value": "Ubuntu"
       }
     },
     {
@@ -1180,11 +1180,11 @@
       },
       "distro": {
         "ok": true,
-        "value": ""
+        "value": "Ubuntu:extra"
       },
       "codexDistro": {
         "ok": true,
-        "value": ""
+        "value": "Ubuntu:extra"
       }
     },
     {
@@ -1300,11 +1300,11 @@
       },
       "distro": {
         "ok": true,
-        "value": ""
+        "value": "distro with space"
       },
       "codexDistro": {
         "ok": true,
-        "value": ""
+        "value": "distro with space"
       }
     },
     {
@@ -1315,11 +1315,11 @@
       },
       "distro": {
         "ok": true,
-        "value": ""
+        "value": "中文发行版"
       },
       "codexDistro": {
         "ok": true,
-        "value": ""
+        "value": "中文发行版"
       }
     }
   ],
@@ -3573,7 +3573,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:Ubuntu"
+        "value": "codex:wsl:Ubuntu"
       },
       "builtClaude": {
         "ok": true,
@@ -3588,7 +3588,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:Ubuntu-22.04"
+        "value": "codex:wsl:Ubuntu-22.04"
       },
       "builtClaude": {
         "ok": true,
@@ -3603,7 +3603,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:Debian"
+        "value": "codex:wsl:Debian"
       },
       "builtClaude": {
         "ok": true,
@@ -3618,7 +3618,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:kali-linux"
+        "value": "codex:wsl:kali-linux"
       },
       "builtClaude": {
         "ok": true,
@@ -3633,7 +3633,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:openSUSE-Leap-15.5"
+        "value": "codex:wsl:openSUSE-Leap-15.5"
       },
       "builtClaude": {
         "ok": true,
@@ -3648,7 +3648,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:with space"
+        "value": "codex:wsl:with space"
       },
       "builtClaude": {
         "ok": true,
@@ -3663,7 +3663,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:with'quote"
+        "value": "codex:wsl:with'quote"
       },
       "builtClaude": {
         "ok": true,
@@ -3678,7 +3678,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:with\"double"
+        "value": "codex:wsl:with\"double"
       },
       "builtClaude": {
         "ok": true,
@@ -3693,7 +3693,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:with;semi"
+        "value": "codex:wsl:with;semi"
       },
       "builtClaude": {
         "ok": true,
@@ -3708,7 +3708,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:with$dollar"
+        "value": "codex:wsl:with$dollar"
       },
       "builtClaude": {
         "ok": true,
@@ -3723,7 +3723,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:with`tick"
+        "value": "codex:wsl:with`tick"
       },
       "builtClaude": {
         "ok": true,
@@ -3738,7 +3738,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:中文发行版"
+        "value": "codex:wsl:中文发行版"
       },
       "builtClaude": {
         "ok": true,
@@ -3753,7 +3753,7 @@
       },
       "builtCodex": {
         "ok": true,
-        "value": "wsl:"
+        "value": "codex:wsl:"
       },
       "builtClaude": {
         "ok": true,

@@ -15,6 +15,11 @@
 //! ```text
 //! node --experimental-transform-types crates/aivc-core/tests/generate-shell-golden.mjs
 //! ```
+//!
+//! ⚠ 重新生成后必须把 **Codex 的 WSL 编号两列**改回新契约（当前 golden 里已是新契约）：
+//! 后端发出的编号是 `codex:wsl:<distro>`，旧平台造的是裸 `wsl:<distro>`、也认不出
+//! 带前缀的那种——对齐旧平台会把这个缺陷带回来。说明见 `shell-golden.json` 的
+//! `_comment` 与 `generate-shell-golden.mjs` 文件头。
 
 // 集成测试是独立 crate，`clippy.toml` 的测试豁免只覆盖 `#[cfg(test)]` 模块。
 #![allow(clippy::panic)]

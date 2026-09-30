@@ -7,6 +7,11 @@
 //
 // 现网的 `src/shared/shell-args.ts`、`target-ids.ts`、`wsl-paths.ts` 都只依赖
 // `node:path` 与类型导入，因此无需打包即可直接跑。
+//
+// ⚠ Codex 的 WSL 编号（`targetIds` 里 `codex:wsl:*` 的解析结果、`distroNames` 里的
+// `builtCodex`）**已按后端的新契约手工修正过**：后端发出的是 `codex:wsl:<distro>`，
+// 而旧平台造的是裸 `wsl:<distro>`、也认不出带前缀的那种。**重跑本脚本会覆盖回去**
+// ——跑完必须把这两列按 shell-golden.json 的 `_comment` 改回来。
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

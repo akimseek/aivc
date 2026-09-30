@@ -77,8 +77,9 @@ define_id! {
 define_id! {
     /// 目标标识。
     ///
-    /// 本机为 `local`；WSL 目标 Codex 为 `wsl:<distro>`，其余平台为
-    /// `<provider>:wsl:<distro>`。解析规则见 `aivc_core::target`。
+    /// 本机为 `local` / `codex:local:<配置目录>`；WSL 目标一律带平台前缀
+    /// （`codex:wsl:<distro>` 等），旧平台给 Codex 发过的裸 `wsl:<distro>` 仍会被解析。
+    /// 解析规则见 `aivc_core::target`。
     TargetId
 }
 

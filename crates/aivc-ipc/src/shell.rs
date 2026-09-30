@@ -431,16 +431,21 @@ mod tests {
     #[test]
     fn a_wsl_target_is_refused_explicitly() {
         // 按本机路径检查会把「WSL 里有」误判成「没有」——静默出错比报错更糟。
+        //
+        // 这里以前只覆盖裸 `wsl:Ubuntu` 与 `gemini:wsl:Ubuntu`，恰好漏掉**后端自己发出**
+        // 的 `codex:wsl:<distro>`（`aivc-provider` 的 Codex 目标就是它）——于是这种目标
+        // 一路按本机路径判断，WSL 会话恢复被误弹「原目录丢失」（P0-C 的根因）。
+        // 三种形制都必须拒绝：权威形、其它平台的带前缀形、Codex 的旧形。
         let commands = commands(std::sync::Arc::new(Recording::default()));
-        let error = commands
-            .path_exists(&json!({ "targetId": "wsl:Ubuntu", "path": "/home/u/x" }))
-            .expect_err("必须拒绝");
-        assert!(error.to_string().contains("暂不支持 WSL"), "{error}");
-        // 带平台前缀的 WSL 目标同样拒绝。
-        let error = commands
-            .path_exists(&json!({ "targetId": "gemini:wsl:Ubuntu", "path": "/x" }))
-            .expect_err("必须拒绝");
-        assert!(error.to_string().contains("暂不支持 WSL"), "{error}");
+        for target_id in ["codex:wsl:Ubuntu-22.04", "gemini:wsl:Ubuntu", "wsl:Ubuntu"] {
+            let error = commands
+                .path_exists(&json!({ "targetId": target_id, "path": "/home/u/x" }))
+                .expect_err("必须拒绝");
+            assert!(
+                error.to_string().contains("暂不支持 WSL"),
+                "{target_id}: {error}"
+            );
+        }
     }
 
     #[test]

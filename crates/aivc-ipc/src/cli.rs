@@ -53,8 +53,10 @@ pub const fn host_platform() -> &'static str {
 
 /// 由目标编号推导执行环境。
 ///
-/// 目标编号里带 `:wsl:` 就是 WSL 目标。发行版名从编号里取出——**不重新探测**，
-/// 因为编号本身就是权威来源，再探测一次可能拿到不同的发行版。
+/// 形制由 `ProviderId::wsl_distro_of` 判定：带平台前缀的 WSL 编号
+/// （`codex:wsl:<distro>` 等）与 Codex 旧平台留下的裸 `wsl:<distro>` 都归 WSL。
+/// 发行版名从编号里取出——**不重新探测**，因为编号本身就是权威来源，
+/// 再探测一次可能拿到不同的发行版。
 #[must_use]
 pub fn scope_for_target(target_id: &str) -> (ProbeScope, InstallScope, Option<String>) {
     // 用 `ProviderId::wsl_distro_of` 而不是自己解析字符串：目标编号的构造与解析
@@ -304,7 +306,14 @@ mod tests {
     #[test]
     fn target_scope_is_derived_from_the_target_id() {
         // 不重新探测发行版：编号本身就是权威来源。
-        // Codex 的 WSL 编号是**裸** `wsl:<distro>`（其余平台才带 provider 前缀）。
+        // 后端的编号都带平台前缀——Codex 是 `codex:wsl:<distro>`（其余平台
+        // `<provider>:wsl:<distro>`），漏认它就会把 WSL 目标按本机去探测。
+        let (probe, install, distro) = scope_for_target("codex:wsl:Ubuntu-22.04");
+        assert_eq!(probe, ProbeScope::Wsl);
+        assert_eq!(install, InstallScope::Wsl);
+        assert_eq!(distro.as_deref(), Some("Ubuntu-22.04"));
+
+        // 旧平台（以及旧缓存）留下的裸 `wsl:<distro>` 仍归 WSL。
         let (probe, install, distro) = scope_for_target("wsl:Ubuntu");
         assert_eq!(probe, ProbeScope::Wsl);
         assert_eq!(install, InstallScope::Wsl);
@@ -502,7 +511,7 @@ mod tests {
 
     #[test]
     fn a_target_id_without_a_distro_is_not_wsl() {
-        // 防回归：判定必须只认带 `:wsl:` 的编号。
+        // 防回归：本机编号不得被判成 WSL（旧形的兼容分支也不许把它捞进去）。
         let (probe, _, distro) = scope_for_target("codex:local");
         assert_eq!(probe, ProbeScope::Local);
         assert_eq!(distro, None);

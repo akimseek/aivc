@@ -2,14 +2,19 @@
 //!
 //! # targetId 语法（必须逐字保持）
 //!
-//! 现网存在**两种** WSL 前缀，属于历史遗留，不能统一：
+//! 后端（`aivc-provider`）实际发出的 WSL 编号**都带平台前缀**：
 //!
 //! | 平台 | 本机 | WSL |
 //! | --- | --- | --- |
-//! | Codex | `local` | `wsl:<distro>` |
+//! | Codex | `local` / `codex:local:<配置目录>` | `codex:wsl:<distro>` |
 //! | Gemini | `gemini:local` | `gemini:wsl:<distro>` |
 //! | Claude Code | `claude:local` | `claude:wsl:<distro>` |
 //! | Qoder CN | `qoder:local` | `qoder:wsl:<distro>` |
+//!
+//! Codex 的 WSL 编号在**旧平台（以及旧缓存）**里是不带平台前缀的裸 `wsl:<distro>`，
+//! 两种形制都真实存在于用户数据里（旧编号还会出现在 `cachedTargets` 与数据库里），
+//! 因此解析时都要认——见 [`ProviderId::wsl_distro_of`]；**生成**新编号一律用带
+//! 平台前缀的权威形（[`ProviderId::wsl_target_id`]）。
 //!
 //! 另外 [`ProviderId::from_target_id`] 对未知前缀**兜底为 Codex**：这是现网的
 //! 兼容行为（历史上只支持 Codex），刻意保留但不作为契约固化。
@@ -62,14 +67,29 @@ impl ProviderId {
         }
     }
 
-    /// WSL targetId 前缀。Codex 为裸 `wsl:`，其余为 `<provider>:wsl:`。
+    /// WSL targetId 前缀（**权威形**：后端实际发出的编号）。
+    ///
+    /// 旧编号的兼容只保留在解析侧，见 [`Self::wsl_distro_of`]——生成新编号不能再用
+    /// 旧形，否则造出来的编号谁也认不出来（会话与目标都按编号存取）。
     #[must_use]
     pub const fn wsl_prefix(self) -> &'static str {
         match self {
-            Self::Codex => "wsl:",
+            Self::Codex => "codex:wsl:",
             Self::Gemini => "gemini:wsl:",
             Self::Claude => "claude:wsl:",
             Self::Qoder => "qoder:wsl:",
+        }
+    }
+
+    /// 旧平台留下的 WSL 前缀，**只在解析时**接受。
+    ///
+    /// 旧平台给 Codex 发的是裸 `wsl:<distro>`（`buildWslProviderTargetId("codex", …)`
+    /// 的产物，见 `shell-golden.json` 的 `wsl:Ubuntu` 用例），这些编号至今仍在用户的
+    /// `cachedTargets` 与会话记录里；其余平台从没有过第二种形制。
+    const fn legacy_wsl_prefix(self) -> Option<&'static str> {
+        match self {
+            Self::Codex => Some("wsl:"),
+            Self::Gemini | Self::Claude | Self::Qoder => None,
         }
     }
 
@@ -103,11 +123,17 @@ impl ProviderId {
 
     /// 解析**本平台**的 WSL 发行版名；非本平台目标返回空串。
     ///
+    /// Codex 同时接受权威形与旧形（裸 `wsl:<distro>`）——后端发的就是前者，而用户的
+    /// 旧缓存里还有后者，漏认任何一边都会把「WSL 里有」误判成「本机没有」。
+    ///
     /// 只认自己的前缀，避免把别的平台的 WSL 目标误判为本平台目标。
     #[must_use]
     pub fn wsl_distro_of(self, target_id: &str) -> &str {
-        target_id
-            .strip_prefix(self.wsl_prefix())
+        if let Some(distro) = target_id.strip_prefix(self.wsl_prefix()) {
+            return distro;
+        }
+        self.legacy_wsl_prefix()
+            .and_then(|prefix| target_id.strip_prefix(prefix))
             .unwrap_or_default()
     }
 
@@ -403,9 +429,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn codex_uses_bare_wsl_prefix_while_others_are_namespaced() {
-        // 这是现网的历史遗留，绝不能统一：Codex 是裸 `wsl:`，其余带平台前缀。
-        assert_eq!(ProviderId::Codex.wsl_prefix(), "wsl:");
+    fn wsl_prefixes_match_the_ids_the_backend_emits() {
+        // 这条此前钉的是「Codex 是裸 `wsl:`，其余带平台前缀」——那是**旧平台**的口径，
+        // 与后端实际发出的编号不符：`aivc-provider` 给 Codex 发的是
+        // `codex:wsl:<distro>`（`codex/provider.rs` 与实机 `cachedTargets` 都是这个形制）。
+        // 前缀是**生成**新编号用的，必须与生产者一致，所以这里改成统一带平台前缀；
+        // 旧编号的兼容只在解析侧保留（见 `codex_parses_the_emitted_id_and_the_legacy_bare_one`）。
+        assert_eq!(ProviderId::Codex.wsl_prefix(), "codex:wsl:");
         assert_eq!(ProviderId::Gemini.wsl_prefix(), "gemini:wsl:");
         assert_eq!(ProviderId::Claude.wsl_prefix(), "claude:wsl:");
         assert_eq!(ProviderId::Qoder.wsl_prefix(), "qoder:wsl:");
@@ -423,8 +453,28 @@ mod tests {
         }
         assert_eq!(
             ProviderId::Codex.wsl_target_id("Ubuntu").as_str(),
-            "wsl:Ubuntu"
+            "codex:wsl:Ubuntu"
         );
+    }
+
+    #[test]
+    fn codex_parses_the_emitted_id_and_the_legacy_bare_one() {
+        // 权威形：后端发出的编号必须认得。此前认不出来（前缀是裸 `wsl:`），于是
+        // `require_local` 不拒绝、按本机路径判 `/home/...` 不存在——WSL 会话恢复
+        // 每次都被弹「原目录丢失」，这就是 P0-C 的根因。
+        assert_eq!(
+            ProviderId::Codex.wsl_distro_of("codex:wsl:Ubuntu-22.04"),
+            "Ubuntu-22.04"
+        );
+        // 旧形：旧平台（以及旧缓存）留下的裸编号仍要认得。
+        assert_eq!(ProviderId::Codex.wsl_distro_of("wsl:Ubuntu"), "Ubuntu");
+        // 兼容分支只属于 Codex——别家从没有过裸编号，不得借道认领。
+        for provider in [ProviderId::Gemini, ProviderId::Claude, ProviderId::Qoder] {
+            assert_eq!(provider.wsl_distro_of("wsl:Ubuntu"), "", "{provider}");
+        }
+        // 非 WSL 与空发行版一律空串。
+        assert_eq!(ProviderId::Codex.wsl_distro_of("codex:local"), "");
+        assert_eq!(ProviderId::Codex.wsl_distro_of("codex:wsl:"), "");
     }
 
     #[test]

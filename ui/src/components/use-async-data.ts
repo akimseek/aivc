@@ -22,6 +22,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
  * 3. **卸载后不再 setState**，避免「组件已卸载还在写状态」。
  *
  * `run` 返回一个 `reload`，供「重新检测」这类按钮直接复用。
+ *
+ * # 契约：`load` 的身份必须跟着**查询输入**走
+ *
+ * 「输入换了要重新取数」靠的是 effect 依赖里的 `load`。因此调用方必须用
+ * `useCallback` 包住它，且**依赖数组里恰好列出这次查询的全部输入**
+ * （时间区间、筛选条件、页码……）。这是修法与死循环的分界线：
+ *
+ * - **少列一个输入**：那个输入变了不会重查——界面摆着旧区间的数字，
+ *   而新选中的区间就在旁边，看起来像后端返回了错的数据；
+ * - **多列一个每次渲染都换身份的值**（渲染期新建的对象 / 函数、`new Date()`
+ *   算出来的字符串）：effect 每渲染重查一次，请求 → setState → 重渲染 → 再请求，
+ *   直接转成死循环。
+ *
+ * 推论：**「此刻」这类要到调用时才该定下来的值放在 `load` 内部现算**，
+ * 不要算在渲染期再进依赖（「近 7 天」的右端就是这种值）。
  */
 export function useAsyncData<T>(
   load: () => Promise<T>,
@@ -73,10 +88,15 @@ export function useAsyncData<T>(
     }
   }, []);
 
+  /**
+   * `load` 进依赖**不是**为了在 effect 里读它（取数统一走 `reload`，那里面读的是
+   * `loadRef`），而是把「查询输入换了」变成一个可比较的依赖：换了身份就重查一次。
+   * 调用方因此必须保证它是稳定的（见文件头的契约）。
+   */
   useEffect(() => {
     if (!auto) return;
     void reload();
-  }, [auto, reload]);
+  }, [auto, reload, load]);
 
   /** 把「有错就说这句话」与调用方的兜底文案合起来，省得每个面板各写一次。 */
   const message = useMemo(

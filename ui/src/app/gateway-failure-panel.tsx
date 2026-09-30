@@ -52,17 +52,6 @@ export function GatewayFailurePanel({
   const [picker, setPicker] = useState({ range: "7d" as UsageRangeKey, start: "", end: "" });
 
   /**
-   * 当前区间；自定义没填全时为 `null`。
-   *
-   * 与用量、日志两处同一个契约：**不发请求**而不是编一个区间。
-   * 后端 `filter()` 里 `periodStart`/`periodEnd` 缺省表示「不限时间」——
-   * 那会让这个面板默认扫全表，与「近 7 天」的默认值不符。
-   */
-  const custom = picker.range === "custom" ? customBounds(picker.start, picker.end) : null;
-  const preset = picker.range === "custom" ? null : rangeBounds(picker.range);
-  const period = custom?.ok ? custom : preset;
-
-  /**
    * 筛选条件变化时**回到第 1 页**。
    *
    * 不回到第 1 页会出现一个很难解释的现象：在第 5 页筛出 3 条结果，界面显示空白，
@@ -73,24 +62,44 @@ export function GatewayFailurePanel({
     setPage(1);
   }, []);
 
-  const load = useCallback(
-    () =>
-      period
-        ? api.getFailureDiagnostics({
-            page,
-            pageSize: PAGE_SIZE,
-            // 空字符串**不传**，而不是传空串：后端把空串当「不筛选」，
-            // 但少传一个无意义参数总是更清楚。
-            ...(vendorId ? { vendorId } : {}),
-            ...(useCurrentProvider && providerId ? { providerId } : {}),
-            ...(outcome ? { outcome } : {}),
-            periodStart: period.start,
-            periodEnd: period.end
-          })
-        : // 自定义区间还没填全：给一个空页，而不是扫全表。
-          Promise.resolve({ items: [], total: 0, page: 1, pageSize: PAGE_SIZE }),
-    [page, vendorId, useCurrentProvider, providerId, outcome, period]
-  );
+  /**
+   * 取数条件：区间在 `load` **内部**现算（与用量、日志两页同一处修法）。
+   *
+   * `useAsyncData` 跟着 `load` 的身份重查，所以依赖里只能列**查询输入**
+   * （筛选、页码 + `picker` 三个字段）。区间若在渲染期算好再进依赖，
+   * 「此刻」每次渲染都会给出新字符串，effect 会被拖成死循环。
+   *
+   * 自定义区间没填全时**不发请求**，给一个空页而不是扫全表：
+   * 后端 `filter()` 里 `periodStart`/`periodEnd` 缺省表示「不限时间」——
+   * 那会让这个面板默认扫全表，与「近 7 天」的默认值不符。
+   */
+  const load = useCallback(() => {
+    const bounds =
+      picker.range === "custom"
+        ? customBounds(picker.start, picker.end)
+        : { ok: true as const, ...rangeBounds(picker.range) };
+    if (!bounds.ok) return Promise.resolve({ items: [], total: 0, page: 1, pageSize: PAGE_SIZE });
+    return api.getFailureDiagnostics({
+      page,
+      pageSize: PAGE_SIZE,
+      // 空字符串**不传**，而不是传空串：后端把空串当「不筛选」，
+      // 但少传一个无意义参数总是更清楚。
+      ...(vendorId ? { vendorId } : {}),
+      ...(useCurrentProvider && providerId ? { providerId } : {}),
+      ...(outcome ? { outcome } : {}),
+      periodStart: bounds.start,
+      periodEnd: bounds.end
+    });
+  }, [
+    page,
+    vendorId,
+    useCurrentProvider,
+    providerId,
+    outcome,
+    picker.range,
+    picker.start,
+    picker.end
+  ]);
 
   const diagnostics = useAsyncData(load, { errorMessage: "异常诊断读取失败" });
   const total = diagnostics.data?.total ?? 0;

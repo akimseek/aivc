@@ -38,22 +38,27 @@ import { GatewayRangePicker } from "./gateway-range-picker";
  */
 export function GatewayUsagePanel({ onError }: { onError: (message: string) => void }) {
   const [picker, setPicker] = useState({ range: "7d" as UsageRangeKey, start: "", end: "" });
-  /**
-   * 自定义区间还没填全时**不发请求**。
-   *
-   * 拿一个自己编的区间去查，用户会以为「自定义」没生效——而真相是他还没填完。
-   * `bounds` 为 `null` 时下面的 `useAsyncData` 会一直停在加载态，
-   * 这也正是想要的：那两条提示语已经把原因说清楚了。
-   */
-  const custom = picker.range === "custom" ? customBounds(picker.start, picker.end) : null;
-  const bounds = picker.range === "custom" ? null : rangeBounds(picker.range);
-  const start = custom?.ok ? custom.start : (bounds?.start ?? "");
-  const end = custom?.ok ? custom.end : (bounds?.end ?? "");
 
-  const load = useCallback(
-    () => (start && end ? api.getUsageReport(start, end) : Promise.resolve(null)),
-    [start, end]
-  );
+  /**
+   * 区间在 `load` **内部**现算，而不是渲染期算好再进依赖。
+   *
+   * `useAsyncData` 的 effect 依赖里有 `load`：换了身份就重查一次，所以 `load` 的身份
+   * 只能跟着**查询输入**（`picker` 三个字段）走。而预设区间的右端是「此刻」
+   * （`rangeBounds` 里 `new Date()`）——渲染期算出来每次渲染都是新字符串，进了依赖
+   * 就是「重查 → setState → 渲染 → 再重查」的死循环。
+   *
+   * 放在内部还顺手修掉一件事：点「重新查询」时右端跟着刷新，不会停在打开面板那一刻。
+   *
+   * 自定义区间还没填全时**不发请求**：拿一个自己编的区间去查，用户会以为「自定义」
+   * 没生效——而真相是他还没填完（提示语由 `GatewayRangePicker` 给出）。
+   */
+  const load = useCallback(() => {
+    const bounds =
+      picker.range === "custom"
+        ? customBounds(picker.start, picker.end)
+        : { ok: true as const, ...rangeBounds(picker.range) };
+    return bounds.ok ? api.getUsageReport(bounds.start, bounds.end) : Promise.resolve(null);
+  }, [picker.range, picker.start, picker.end]);
   const report = useAsyncData(load, { errorMessage: "用量报表读取失败" });
 
   return (

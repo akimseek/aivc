@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, render, waitFor, type RenderResult } from "@testing-library/react";
+import { act, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { GatewayUsagePanel } from "./gateway-usage-panel";
+import { rangeBounds } from "./gateway-range";
 
 /**
  * 用量页的三张汇总卡（请求数 / 累计 Tokens / 预估费用）。
@@ -188,5 +189,50 @@ describe("GatewayUsagePanel：三张汇总卡", () => {
       expect(view.container.textContent).toContain("这个区间内没有用量记录。")
     );
     expect(cards(view)).toHaveLength(0);
+  });
+});
+
+/**
+ * 重查语义（batch3 T1）。
+ *
+ * # 为什么钉在「请求次数」上
+ *
+ * 批次二终审的发现是：换了区间**不重新取数**，于是批次二新加的汇总卡会把
+ * 「旧区间的数字」和「新选中的区间」并排摆着——看起来像后端返回了错的数据。
+ * 反过来「每次重渲染都重查」也不能接受：面板常驻，界面上的任何风吹草动都会打后端。
+ * 两条都要钉，缺一条修法就会滑向另一边。
+ */
+describe("GatewayUsagePanel：重查语义", () => {
+  it("换区间 ⇒ 用新区间再查一次（旧区间的数字不许留在屏幕上）", async () => {
+    const { view, invocations } = setup({
+      "gateway:get-usage-report": report({ requestCount: 1, successCount: 1 })
+    });
+    await waitFor(() => expect(invocations).toHaveLength(1));
+
+    const picker = view.container.querySelector<HTMLSelectElement>(
+      'select[aria-label="时间范围"]'
+    )!;
+    await act(async () => {
+      fireEvent.change(picker, { target: { value: "today" } });
+    });
+
+    await waitFor(() => expect(invocations).toHaveLength(2));
+    // 新请求真的是「今天」：起点是本地零点（`rangeBounds` 的契约）。
+    expect(invocations[1]!.args!.periodStart).toBe(rangeBounds("today").start);
+  });
+
+  it("重渲染（区间没变）⇒ 一次都不重查", async () => {
+    const { view, invocations } = setup({
+      "gateway:get-usage-report": report({ requestCount: 1, successCount: 1 })
+    });
+    await waitFor(() => expect(invocations).toHaveLength(1));
+
+    // 换一个新建的回调逼面板重渲染——区间并没有变，不该有第二次请求。
+    // （如果 `load` 的身份不稳定，这条会退化成死循环，而不是悄悄多查一次。）
+    view.rerender(<GatewayUsagePanel onError={() => undefined} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invocations).toHaveLength(1);
   });
 });

@@ -54,23 +54,27 @@ export function GatewayLogPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toast = useToast();
 
-  // 自定义区间没填全时**不发请求**：编一个区间去查会掩盖「还没填完」这件事。
-  const custom = picker.range === "custom" ? customBounds(picker.start, picker.end) : null;
-  const preset = picker.range === "custom" ? null : rangeBounds(picker.range);
-  const start = custom?.ok ? custom.start : (preset?.start ?? "");
-  const end = custom?.ok ? custom.end : (preset?.end ?? "");
-
-  const load = useCallback(
-    () =>
-      start && end
-        ? api.queryGatewayLogs({
-            ...(outcome ? { outcome } : {}),
-            periodStart: start,
-            periodEnd: end
-          })
-        : Promise.resolve([]),
-    [outcome, start, end]
-  );
+  /**
+   * 区间在 `load` **内部**现算（与用量、异常两页同一处修法）。
+   *
+   * `load` 的身份就是「要不要重查」的信号，只能跟着**查询输入**（结果类型 +
+   * `picker` 三个字段）走；预设区间的右端是「此刻」，渲染期算出来每次都是新字符串，
+   * 进了依赖会拖成每渲染重查一次的死循环。
+   *
+   * 自定义区间没填全时**不发请求**：编一个区间去查会掩盖「还没填完」这件事。
+   */
+  const load = useCallback(() => {
+    const bounds =
+      picker.range === "custom"
+        ? customBounds(picker.start, picker.end)
+        : { ok: true as const, ...rangeBounds(picker.range) };
+    if (!bounds.ok) return Promise.resolve([]);
+    return api.queryGatewayLogs({
+      ...(outcome ? { outcome } : {}),
+      periodStart: bounds.start,
+      periodEnd: bounds.end
+    });
+  }, [outcome, picker.range, picker.start, picker.end]);
 
   const logs = useAsyncData(load, { errorMessage: "日志查询失败" });
   const entries: GatewayLogEntry[] = logs.data ?? [];

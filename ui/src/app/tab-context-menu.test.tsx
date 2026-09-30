@@ -109,10 +109,10 @@ describe("TabContextMenu", () => {
   });
 
   it("有模态/浮层压在上面时让给它——一次按键只收掉最上面那层", async () => {
-    // 退出确认框（`.overlay` / `Dialog` 的 `.dialog-overlay`）随时可能从后端推来，
+    // 退出确认框（`Dialog` 的 `.dialog-overlay`）随时可能从后端推来，
     // 而它盖在菜单之上；两边都在 `document` 上监听。
     const { props } = setup();
-    for (const layer of [".overlay", ".dialog-overlay"]) {
+    for (const layer of [".dialog-overlay"]) {
       const modal = document.createElement("div");
       modal.className = layer.slice(1);
       document.body.appendChild(modal);

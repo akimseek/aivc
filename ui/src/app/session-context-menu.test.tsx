@@ -159,7 +159,7 @@ describe("SessionContextMenu：Escape", () => {
 
   it("有模态/浮层压在上面时让给它——一次按键只收掉最上面那层", async () => {
     const { handlers } = setup(false);
-    for (const layer of [".overlay", ".dialog-overlay"]) {
+    for (const layer of [".dialog-overlay"]) {
       const modal = document.createElement("div");
       modal.className = layer.slice(1);
       document.body.appendChild(modal);

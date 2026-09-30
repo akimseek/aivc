@@ -23,4 +23,10 @@ describe("Card：三样都没有时不渲染卡片头", () => {
     const { container } = render(<Card title="标题">正文</Card>);
     expect(container.querySelector(".card-head .card-title")?.textContent).toBe("标题");
   });
+
+  it("children 为 null 时不渲染空 `.card-body`", () => {
+    // `{cond && <…/>}` 为假时传进来的就是 `null`——空 `.card-body` 会白占一段内边距。
+    expect(render(<Card>{null}</Card>).container.querySelector(".card-body")).toBeNull();
+    expect(render(<Card />).container.querySelector(".card-body")).toBeNull();
+  });
 });

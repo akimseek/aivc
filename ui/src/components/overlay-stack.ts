@@ -24,8 +24,9 @@
  * - `transient`：三个右键菜单与会话提醒弹层。除了上面那些，还包括设置中心与
  *   消息与分支弹框（模态在它们之上）。
  *
- * `.overlay` 是退出确认框从前的自绘外壳类：判定不留着它，R35 那条白名单
- * （按它描述）就形同虚设。
+ * 名单里不留 `.overlay`：那是退出确认框自绘时期的外壳类，本批把它换成 `Dialog`
+ * 之后全仓再没有这个名字，留着它只会让人以为还有一个这样的外壳（而它永远命中不了）。
+ * 退出确认框现在的外壳就是 `Dialog` 的 `.dialog-overlay`，两档名单的第一项都是它。
  *
  * # 与 `dialog.tsx` 的实例栈怎么分工
  *
@@ -37,10 +38,9 @@
 export type EscapeLayer = "modal" | "transient";
 
 const LAYERS_ABOVE: Record<EscapeLayer, string[]> = {
-  modal: [".dialog-overlay", ".overlay", ".popover"],
+  modal: [".dialog-overlay", ".popover"],
   transient: [
     ".dialog-overlay",
-    ".overlay",
     ".popover",
     ".settings-overlay",
     ".messages-overlay"

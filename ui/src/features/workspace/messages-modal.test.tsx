@@ -326,9 +326,9 @@ describe("MessagesModal", () => {
   it("有内层浮层（退出确认框）开着时，Escape 让给它", async () => {
     // 退出确认框盖在弹框之上；不判断的话一次 Escape 会把它和整个弹框一起关掉，
     // 用户还没来得及回答「最小化还是退出」。它现在是 `Dialog` 家族的
-    // `.dialog-overlay`，`.overlay` 是同一处判定的历史外壳类——两个都要让。
+    // `.dialog-overlay`——自绘那套 `.overlay` 外壳随批次二删除，判定里也不再留它。
     const { props } = setup();
-    for (const layer of [".overlay", ".dialog-overlay"]) {
+    for (const layer of [".dialog-overlay"]) {
       const confirm = document.createElement("div");
       confirm.className = layer.slice(1);
       document.body.appendChild(confirm);

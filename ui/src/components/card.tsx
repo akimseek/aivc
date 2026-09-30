@@ -38,7 +38,9 @@ export function Card({
           {actions !== undefined && <div className="card-actions">{actions}</div>}
         </header>
       )}
-      {children !== undefined && <div className="card-body">{children}</div>}
+      {/* 判 `null` 也判 `undefined`：`{cond && <…/>}` 为假时传进来的就是 `null`，
+          只判 `undefined` 会留下一个空的 `.card-body`。 */}
+      {children != null && <div className="card-body">{children}</div>}
     </section>
   );
 }

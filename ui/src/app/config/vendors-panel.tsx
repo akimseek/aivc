@@ -769,8 +769,12 @@ export function VendorsPanel({
               表单保存本身改的只是应用数据库里的那条记录；凭据由网关在终端启动时注入。
             */}
             <span className="row-meta">
-              表单保存的是<strong>应用数据库里的记录</strong>；「启用」会把配置模板写进你的 CLI
-              配置文件（写前备份），「禁用」只翻启用位、不改动文件。
+              {/* 整句包一层 `<span>`：`.row-meta` 是 `display: flex` 的，句子直接写在里面时
+                  `<strong>` 会被当成**另一项**，整句被拆成三列（收尾那次清 `**` 就是这么拆坏的）。 */}
+              <span>
+                表单保存的是<strong>应用数据库里的记录</strong>；「启用」会把配置模板写进你的 CLI
+                配置文件（写前备份），「禁用」只翻启用位、不改动文件。
+              </span>
             </span>
           </Toolbar>
         </div>

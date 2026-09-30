@@ -172,6 +172,9 @@ export function SettingsCenter({
                 providerId={providerId}
                 targetId={targetId}
                 selectedTarget={selectedTarget}
+                // 版本由 `app.tsx` 取一次后传到这里，再交给需要它的两页（关于 / 环境）——
+                // 面板自己再取一次只是多一次 IPC，读到的还是同一个值。
+                version={version}
                 onError={onError}
                 onNotify={onNotify}
                 onOpenSessionSettings={onOpenSessionSettings}

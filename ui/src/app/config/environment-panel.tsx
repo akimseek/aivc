@@ -9,6 +9,7 @@ export function EnvironmentPanel({
   providerId,
   targetId,
   selectedTarget,
+  version,
   onOpenSessionSettings,
   onError,
   onNotify
@@ -23,6 +24,14 @@ export function EnvironmentPanel({
    */
   selectedTarget?: AiTarget | null;
   /**
+   * 应用版本。
+   *
+   * 由 `app.tsx` 取一次（`app:get-version`）后经 `SettingsCenter` 传下来：
+   * 版本是**进程级常量**，面板自己再取一次只是多一次 IPC，而且「读不到」的兜底
+   * 会分散在两处。此前这一页与 `app.tsx` 各取了一次，读到的还是同一个值。
+   */
+  version: string;
+  /**
    * 打开「设置会话」对话框。
    *
    * 这是被移除的菜单栏「设置会话」的新入口（spec §11）：自动探测受发行版、
@@ -35,7 +44,6 @@ export function EnvironmentPanel({
   onNotify?: (message: string) => void;
 }) {
   const [status, setStatus] = useState<CliEnvironmentStatus | null>(null);
-  const [version, setVersion] = useState("");
   const [installing, setInstalling] = useState(false);
   /**
    * 要装的 Node 主版本。
@@ -93,10 +101,6 @@ export function EnvironmentPanel({
 
   useEffect(() => {
     void load();
-    void api
-      .getAppVersion()
-      .then(setVersion)
-      .catch(() => undefined);
   }, [load]);
 
   // 两个早返回分支都要带面板头：它们都会真的出现（没选平台时、检测结果还没回来时），
@@ -161,75 +165,86 @@ export function EnvironmentPanel({
   ];
 
   return (
-    <>
-      {/* 面板头统一：原来那段开场说明搬到这里（同一句话，只是位置从正文变到头部）。 */}
+    <div className="environment-panel">
+      {/* 面板头统一：原来那段开场说明搬到这里（同一句话，只是位置从正文变到头部）。
+          「重新检测」**留在提示条里**（两条分支都有）：`Notice` 的约定是有问题就要给出口，
+          抽到面板头要么让「环境正常」那条没有出口，要么同一页出现两个同名的按钮。 */}
       <PanelHeader
         title="运行时环境"
         description="选择已集成的 AI 厂商，在当前目标环境执行 npm 全局安装。Node 缺失或版本不足时，会优先使用已安装的 nvm 安装 Node。"
       />
 
-      <div className="field-grid">
-        <Field label="目标环境">
-          <span className="value">
-            {status.scope === "wsl" ? "WSL 发行版内" : "本机"} · {status.providerId}
-            {status.targetId ? ` · ${status.targetId}` : ""}
-          </span>
-        </Field>
-        <Field label="平台">
-          <span className="value">{status.platform || "-"}</span>
-        </Field>
-        {/*
-          Node 版本选择。旧平台的两个选项就是「推荐」与「兼容」两个 LTS，
-          因此这里也按主版本号给这两项，而不是让用户填一个任意数字——
-          填 25 这种还没进 LTS 的版本不在支持范围内。
-        */}
-        <Field label="Node 版本" hint="CLI 装不上时会先用 nvm 装这个版本。">
-          <Select
-            value={String(chosenNodeMajor)}
-            disabled={installing}
-            onChange={(event) => setNodeMajor(Number(event.target.value))}
-          >
-            <option value={String(status.recommendedNodeMajor)}>
-              {status.recommendedNodeMajor} LTS 推荐
-            </option>
-            {/* 推荐版本与最低版本相同时不重复列出。 */}
-            {status.minimumNodeMajor !== status.recommendedNodeMajor && (
-              <option value={String(status.minimumNodeMajor)}>
-                {status.minimumNodeMajor} LTS 兼容
+      {/* 这次检测的是谁、用什么参数（Node 版本选择与应用版本都在这里）。 */}
+      <Card title="目标与版本">
+        <div className="field-grid">
+          <Field label="目标环境">
+            <span className="value">
+              {status.scope === "wsl" ? "WSL 发行版内" : "本机"} · {status.providerId}
+              {status.targetId ? ` · ${status.targetId}` : ""}
+            </span>
+          </Field>
+          <Field label="平台">
+            <span className="value">{status.platform || "-"}</span>
+          </Field>
+          {/*
+            Node 版本选择。旧平台的两个选项就是「推荐」与「兼容」两个 LTS，
+            因此这里也按主版本号给这两项，而不是让用户填一个任意数字——
+            填 25 这种还没进 LTS 的版本不在支持范围内。
+          */}
+          <Field label="Node 版本" hint="CLI 装不上时会先用 nvm 装这个版本。">
+            <Select
+              value={String(chosenNodeMajor)}
+              disabled={installing}
+              onChange={(event) => setNodeMajor(Number(event.target.value))}
+            >
+              <option value={String(status.recommendedNodeMajor)}>
+                {status.recommendedNodeMajor} LTS 推荐
               </option>
-            )}
-          </Select>
-        </Field>
-        <Field label="应用版本">
-          <span className="value">{version || "-"}</span>
-        </Field>
-      </div>
+              {/* 推荐版本与最低版本相同时不重复列出。 */}
+              {status.minimumNodeMajor !== status.recommendedNodeMajor && (
+                <option value={String(status.minimumNodeMajor)}>
+                  {status.minimumNodeMajor} LTS 兼容
+                </option>
+              )}
+            </Select>
+          </Field>
+          <Field label="应用版本">
+            {/* 版本来自 `SettingsCenter` 的 prop（`app.tsx` 取一次），不再自己发一次 IPC。 */}
+            <span className="value ui-num">{version || "-"}</span>
+          </Field>
+        </div>
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>检查项</th>
-            <th>结果</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.label}>
-              <td>{row.label}</td>
-              <td>
-                <span className={`tag ${row.ok ? "ok" : "off"}`}>{row.value}</span>
-              </td>
+        {/* Node 由 nvm 管的时候，换版本会影响其他项目——说一句比不说好。 */}
+        {status.nodeManagedByNvm && (
+          <p className="field-hint">
+            当前 Node 由 nvm 管理。切换版本会影响同一台机器上其他用 nvm 的项目。
+          </p>
+        )}
+      </Card>
+
+      {/* 五项探测结果是**同一次检测的读数**，散着排会让人以为是五件不相干的事；
+          `dense` 收一档行距，五项在一屏内一眼扫完。 */}
+      <Card title="工具链状态" description="Node 一行要求不低于官方 Node 的最低版本。">
+        <table className="data-table dense">
+          <thead>
+            <tr>
+              <th>检查项</th>
+              <th>结果</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {/* Node 由 nvm 管的时候，换版本会影响其他项目——说一句比不说好。 */}
-      {status.nodeManagedByNvm && (
-        <p className="field-hint">
-          当前 Node 由 nvm 管理。切换版本会影响同一台机器上其他用 nvm 的项目。
-        </p>
-      )}
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label}>
+                <td>{row.label}</td>
+                <td>
+                  {/* 版本号成列出现：`ui-num` 让数位对齐。 */}
+                  <span className={`tag ui-num ${row.ok ? "ok" : "off"}`}>{row.value}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
 
       {/* WSL 目标的会话目录入口。放在工具状态之后：它属于这台环境的一部分，
           但只有 WSL 目标才有——本机目标上出现它只会让人以为漏了什么。 */}
@@ -284,7 +299,7 @@ export function EnvironmentPanel({
       {status.messages.length === 0 && (
         <Notice message="环境正常，没有需要注意的问题。" actions={<Button small onClick={() => void load()}>重新检测</Button>} />
       )}
-    </>
+    </div>
   );
 }
 

@@ -267,6 +267,78 @@ describe("SkillsPanel：Skill 动作要有回音", () => {
   });
 });
 
+/**
+ * 批次二把这一页重排成了「面板头 + 卡片」，但**流程一点没动**：切换已安装/回收站、
+ * 重名导入要先问一次覆盖。这一组钉的就是重排没有顺手改掉其中任何一条。
+ */
+describe("SkillsPanel：重排后回收站与覆盖导入流程原样保留", () => {
+  const skill = { name: "demo", description: "", path: "/s/demo", enabled: true };
+
+  it("切到「回收站」改用 `skill:list-trash` 取数，并给出还原 / 彻底删除", async () => {
+    const trash = { name: "gone", description: "", path: "/s/trash/gone", enabled: false };
+    const calls: string[] = [];
+    fakeRuntime({
+      "skill:list": () => {
+        calls.push("skill:list");
+        return [skill];
+      },
+      "skill:list-trash": () => {
+        calls.push("skill:list-trash");
+        return [trash];
+      }
+    });
+    const view = render(<SkillsPanel targetId="codex:local" onError={vi.fn()} />);
+    const button = (label: string) =>
+      [...view.container.querySelectorAll("button")].find(
+        (item) => (item.textContent ?? "").trim() === label
+      );
+    await waitFor(() => expect(button("回收站")).toBeTruthy());
+    await act(async () => {
+      button("回收站")!.click();
+    });
+    await waitFor(() => expect(button("彻底删除")).toBeTruthy());
+    expect(button("还原")).toBeTruthy();
+    expect(calls).toContain("skill:list-trash");
+    // 回收站里的技能不再给「启用 / 禁用」——那是已安装列表的动作。
+    expect(button("禁用")).toBeUndefined();
+    expect(button("启用")).toBeUndefined();
+  });
+
+  it("**导入重名先给「覆盖导入」（danger），确认后才带 overwrite 再导一次**", async () => {
+    const overwriteFlags: boolean[] = [];
+    fakeRuntime({
+      "skill:list": () => [],
+      "dialog:choose-directory": () => "/tmp/demo",
+      "skill:import": (args) => {
+        overwriteFlags.push(args.overwrite === true);
+        // 第一次按不覆盖试：重名是**预期内**的结果。
+        if (args.overwrite !== true) throw new Error("同名技能已存在");
+        return { skillName: "demo", destinationPath: "/s/demo" };
+      }
+    });
+    const view = render(<SkillsPanel targetId="codex:local" onError={vi.fn()} />);
+    const button = (label: string) =>
+      [...view.container.querySelectorAll("button")].find(
+        (item) => (item.textContent ?? "").trim() === label
+      );
+    await waitFor(() => expect(button("导入技能目录")).toBeTruthy());
+    await act(async () => {
+      button("导入技能目录")!.click();
+    });
+    await waitFor(() => expect(button("覆盖导入")).toBeTruthy());
+    expect(overwriteFlags).toEqual([false]);
+    // 覆盖不可逆：这个按钮必须是 danger 档，不能与旁边的「取消」长得一样。
+    expect(button("覆盖导入")!.className).toContain("btn-danger");
+
+    await act(async () => {
+      button("覆盖导入")!.click();
+    });
+    await waitFor(() => expect(overwriteFlags).toEqual([false, true]));
+    // 导完冲突提示要让位（不再挂着一条已经处理完的提问）。
+    await waitFor(() => expect(button("覆盖导入")).toBeUndefined());
+  });
+});
+
 describe("EnvironmentPanel：装完 CLI 要说一声", () => {
   function status(over: Partial<CliEnvironmentStatus> = {}): CliEnvironmentStatus {
     return {
@@ -301,13 +373,14 @@ describe("EnvironmentPanel：装完 CLI 要说一声", () => {
       "cli:install": () => {
         installed = true;
         return {};
-      },
-      "app:get-version": () => "0.1.0"
+      }
     });
     const view = render(
       <EnvironmentPanel
         providerId="codex"
         targetId="codex:local"
+        // 版本由 `SettingsCenter` 传下来（面板自己不再取），这里给一个即可。
+        version="0.1.0"
         onError={vi.fn()}
         onNotify={onNotify}
       />

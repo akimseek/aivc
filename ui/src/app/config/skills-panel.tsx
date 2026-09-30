@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer } from "../../components";
+import { Button, Card, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer } from "../../components";
 import * as api from "../../ipc/commands";
 import { PanelHeader } from "../../features/settings/panel-header";
 import type { SkillEntry } from "../../types";
@@ -111,14 +111,37 @@ export function SkillsPanel({
   }
 
   return (
-    <>
+    <div className="skills-panel">
       <PanelHeader
         title="平台技能 (Skills)"
         description="管理注入到各 AI CLI 运行时的自定义 Skill 扩展包：导入、启停与回收站。"
+        actions={
+          <>
+            {/* 导入是这一页的主操作（demo 也放在面板头），因此给 primary；
+                「打开目录」只是偶尔一用的旁路动作，保持默认档。 */}
+            {mode === "installed" && (
+              <>
+                <Button small variant="primary" onClick={() => void pickAndImport()}>
+                  导入技能目录
+                </Button>
+                {/* 单个 `SKILL.md` 也是合法来源——后端两种都支持，此前只有目录入口。 */}
+                <Button small onClick={() => void pickAndImportFile()}>
+                  导入 .md
+                </Button>
+              </>
+            )}
+            <Button small onClick={() => void api.openSkillFolder(targetId).catch(() => undefined)}>
+              打开目录
+            </Button>
+          </>
+        }
       />
+
+      {/* 已安装 / 回收站的切换与计数：它们说的是「下面这张卡在列什么」。 */}
       <Toolbar>
         <ChipGroup
           value={mode}
+          ariaLabel="技能列表来源"
           onChange={(value) => setMode(value === "trash" ? "trash" : "installed")}
           options={[
             { value: "installed", label: "已安装" },
@@ -129,20 +152,6 @@ export function SkillsPanel({
         <span className="row-meta">
           {loading ? "加载中…" : `${skills.length} 个`}
         </span>
-        {mode === "installed" && (
-          <>
-            <Button small variant="primary" onClick={() => void pickAndImport()}>
-              导入技能目录
-            </Button>
-            {/* 单个 `SKILL.md` 也是合法来源——后端两种都支持，此前只有目录入口。 */}
-            <Button small onClick={() => void pickAndImportFile()}>
-              导入 .md
-            </Button>
-          </>
-        )}
-        <Button small onClick={() => void api.openSkillFolder(targetId).catch(() => undefined)}>
-          打开目录
-        </Button>
       </Toolbar>
 
       {conflict && (
@@ -161,66 +170,75 @@ export function SkillsPanel({
         />
       )}
 
-      {!loading && skills.length === 0 && (
-        <EmptyState
-          message={mode === "trash" ? "回收站是空的。" : "这个目标下还没有技能。"}
-          hint={mode === "trash" ? undefined : "把技能目录放进目标的 skills/ 下即可。"}
-        />
-      )}
-
-      {skills.map((skill) => (
-        <div key={skill.path} className="list-row">
-          <div className="list-row-main">
-            <span className="list-row-title">{skill.name}</span>
-            <span className="list-row-sub">{skill.description || "（无描述）"}</span>
+      {/* 技能列表收进一张卡：一个目标的技能是一个整体，散着排会让人以为
+          每一行都是独立的一块。空态也放进卡里，页面上只有这一块能是空的。 */}
+      <Card>
+        {!loading && skills.length === 0 ? (
+          <EmptyState
+            message={mode === "trash" ? "回收站是空的。" : "这个目标下还没有技能。"}
+            hint={mode === "trash" ? undefined : "把技能目录放进目标的 skills/ 下即可。"}
+          />
+        ) : (
+          <div className="list-rows">
+            {skills.map((skill) => (
+              <div key={skill.path} className="list-row">
+                <div className="list-row-main">
+                  <span className="list-row-title">{skill.name}</span>
+                  <span className="list-row-sub">{skill.description || "（无描述）"}</span>
+                </div>
+                {mode === "installed" ? (
+                  <>
+                    <span className={`tag ${skill.enabled ? "ok" : "off"}`}>
+                      {/* 用词与旧平台一致：**禁用**，不是「停用」。按钮、标签、
+                          结果提示三处必须是同一个词，否则同一件事在界面上有三个名字。 */}
+                      {skill.enabled ? "已启用" : "已禁用"}
+                    </span>
+                    <Button
+                      small
+                      onClick={() =>
+                        void act(
+                          // 文案照旧平台：`Skill 已启用。` / `Skill 已禁用。`
+                          skill.enabled
+                            ? `Skill 已禁用：${skill.name}`
+                            : `Skill 已启用：${skill.name}`,
+                          () => api.setSkillEnabled(targetId, skill.name, !skill.enabled)
+                        )
+                      }
+                    >
+                      {skill.enabled ? "禁用" : "启用"}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      small
+                      onClick={() =>
+                        void act(`Skill 已恢复：${skill.name}`, () =>
+                          api.restoreSkill(targetId, skill.name)
+                        )
+                      }
+                    >
+                      还原
+                    </Button>
+                    {/* 彻底删除不可逆：它是这一行里唯一见红的操作。 */}
+                    <Button
+                      small
+                      variant="danger"
+                      onClick={() =>
+                        void act(`Skill 已彻底删除：${skill.name}`, () =>
+                          api.purgeSkill(targetId, skill.name)
+                        )
+                      }
+                    >
+                      彻底删除
+                    </Button>
+                  </>
+                )}
+              </div>
+            ))}
           </div>
-          {mode === "installed" ? (
-            <>
-              <span className={`tag ${skill.enabled ? "ok" : "off"}`}>
-                {/* 用词与旧平台一致：**禁用**，不是「停用」。按钮、标签、
-                    结果提示三处必须是同一个词，否则同一件事在界面上有三个名字。 */}
-                {skill.enabled ? "已启用" : "已禁用"}
-              </span>
-              <Button
-                small
-                onClick={() =>
-                  void act(
-                    // 文案照旧平台：`Skill 已启用。` / `Skill 已禁用。`
-                    skill.enabled ? `Skill 已禁用：${skill.name}` : `Skill 已启用：${skill.name}`,
-                    () => api.setSkillEnabled(targetId, skill.name, !skill.enabled)
-                  )
-                }
-              >
-                {skill.enabled ? "禁用" : "启用"}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                small
-                onClick={() =>
-                  void act(`Skill 已恢复：${skill.name}`, () =>
-                    api.restoreSkill(targetId, skill.name)
-                  )
-                }
-              >
-                还原
-              </Button>
-              <Button
-                small
-                variant="danger"
-                onClick={() =>
-                  void act(`Skill 已彻底删除：${skill.name}`, () =>
-                    api.purgeSkill(targetId, skill.name)
-                  )
-                }
-              >
-                彻底删除
-              </Button>
-            </>
-          )}
-        </div>
-      ))}
-    </>
+        )}
+      </Card>
+    </div>
   );
 }

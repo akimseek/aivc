@@ -48,8 +48,9 @@ function fakeCore(): void {
       canInstallNodeWithNvm: false,
       messages: []
     },
-    "shell:path-exists": false,
-    "app:get-version": "0.1.0"
+    "shell:path-exists": false
+    // 这里**没有** `app:get-version`：版本由 `app.tsx` 取一次后以 `version` prop 传进来，
+    // 设置中心里的两页（关于 / 环境）都只读这个 prop。面板若又自己取，会拿到 `null`。
   };
   window.__TAURI__ = {
     core: {
@@ -71,7 +72,7 @@ const wslTarget: AiTarget = {
   available: true
 };
 
-function setup(overrides: { providerId?: ""; targetId?: string } = {}) {
+function setup(overrides: { providerId?: ""; targetId?: string; version?: string } = {}) {
   fakeCore();
   const onClose = vi.fn();
   const onQuit = vi.fn();
@@ -84,7 +85,7 @@ function setup(overrides: { providerId?: ""; targetId?: string } = {}) {
       targetId={overrides.targetId ?? "codex:wsl:Ubuntu"}
       targets={[wslTarget]}
       selectedTarget={wslTarget}
-      version="0.1.0"
+      version={overrides.version ?? "0.1.0"}
       onOpenSessionSettings={onOpenSessionSettings}
       onQuit={onQuit}
       onOpenLogDirectory={onOpenLogDirectory}
@@ -259,5 +260,14 @@ describe("SettingsCenter：环境面板的 WSL 会话目录入口", () => {
       button("设置会话目录")!.click();
     });
     expect(onOpenSessionSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("环境页显示的应用版本来自 `version` prop（不再自己发 `app:get-version`）", async () => {
+    // 假后端**不应答**这条命令：面板若还自己取版本，这里只会看到「-」。
+    const { view, button } = setup({ version: "7.7.7" });
+    await act(async () => {
+      button("运行时环境")!.click();
+    });
+    await waitFor(() => expect(view.container.textContent).toContain("7.7.7"));
   });
 });

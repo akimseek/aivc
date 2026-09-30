@@ -66,6 +66,8 @@ function setup(
   props: {
     selectedTarget?: AiTarget | null;
     onOpenSessionSettings?: () => void;
+    /** 应用版本。由 `SettingsCenter` 传进来（面板自己不再取），默认值只为省事。 */
+    version?: string;
     /** 让检测**永远不返回**，用于钉住「检测中…」那个早返回分支。 */
     pending?: boolean;
   } = {}
@@ -82,7 +84,8 @@ function setup(
           return current;
         }
         if (payload?.command === "cli:install") return {};
-        if (payload?.command === "app:get-version") return "0.1.0";
+        // 这里**没有** `app:get-version` 的应答：面板若自己去取版本，就会拿到 `null`
+        // 并在界面上显示 `-`——下面「版本只有一条来源」那一条会因此红。
         return null;
       }
     },
@@ -94,6 +97,7 @@ function setup(
       targetId="codex:local"
       selectedTarget={props.selectedTarget}
       onOpenSessionSettings={props.onOpenSessionSettings}
+      version={props.version ?? "0.1.0"}
       onError={vi.fn()}
     />
   );
@@ -278,5 +282,23 @@ describe("EnvironmentPanel：早返回分支也有面板头", () => {
     const { view } = setup({}, { pending: true });
     expect(view.container.querySelector(".panel-header")).toBeTruthy();
     expect(view.container.textContent).toContain("检测中…");
+  });
+});
+
+/**
+ * 应用版本**全应用只取一次**（`app.tsx`），经 `SettingsCenter` 的 `version` prop
+ * 传到这一页与关于页。
+ *
+ * 此前这一页自己又发了一次 `app:get-version`：版本是进程级常量，多取一次只是多一次
+ * IPC，而且「读不到」的兜底分散在两处。这两条断言就是那份重复取值的守卫——
+ * 面板若再自己取，第一句会因为假后端不应答而显示 `-`，第二句会直接抓到那次调用。
+ */
+describe("EnvironmentPanel：应用版本只有一条来源", () => {
+  it("版本显示的是 prop 给的值，且面板不发 `app:get-version`", async () => {
+    const { view, calls } = setup({}, { version: "9.9.9" });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("9.9.9");
+    });
+    expect(calls.some((call) => call.command === "app:get-version")).toBe(false);
   });
 });

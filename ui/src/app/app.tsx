@@ -221,15 +221,30 @@ export function App() {
   }, [selectedTarget]);
 
   /**
+   * 窗口动作的统一收尾。
+   *
+   * 四条窗口命令都**不重试、不兜底**：窗口没最小化就是没最小化，假装成功只会让用户
+   * 以为界面坏了。失败如实报在状态栏（`console.setError`）。
+   */
+  const runWindowAction = useCallback(
+    (action: () => Promise<null>) => {
+      void action().catch((error: unknown) =>
+        console.setError(error instanceof Error ? error.message : String(error))
+      );
+    },
+    [console]
+  );
+
+  /**
    * 退出与打开日志目录。
    *
-   * 各有两个入口（菜单栏 / 关于面板），因此各定义一次：
-   * - 退出走浏览器窗口关闭，与标题栏的关闭同一条路——**避免两套退出语义**，
-   *   后端因此仍然拦得住它并弹退出确认；
+   * 各有两个入口（标题栏 / 关于面板），因此各定义一次：
+   * - 退出走 `app:window-close`（与标题栏的关闭按钮**同一条命令**）——**避免两套退出
+   *   语义**，后端在 `CloseRequested` 上仍然拦得住它并弹退出确认；
    * - 打开日志目录交给后端按运行根算路径（`app:command` 的 `openLogDir`），
    *   界面不需要知道它在哪。
    */
-  const quit = useCallback(() => window.close(), []);
+  const quit = useCallback(() => runWindowAction(api.windowClose), [runWindowAction]);
   const openLogDirectory = useCallback(() => void api.appCommand("openLogDir"), []);
 
   /* ── 工作台要的数据 ───────────────────────────────────── */
@@ -633,6 +648,12 @@ export function App() {
               terminals.clearAttention(terminalId);
             }}
             onDismissAttention={(terminalId) => terminals.clearAttention(terminalId)}
+            // 无边框窗口的窗口控制：系统框已经没有了，这四个动作是唯一的入口。
+            // 关闭与「关于面板的退出」共用同一个回调——两套退出语义是不行的。
+            onMinimize={() => runWindowAction(api.windowMinimize)}
+            onToggleMaximize={() => runWindowAction(api.windowToggleMaximize)}
+            onStartDrag={() => runWindowAction(api.windowStartDrag)}
+            onClose={quit}
           />
         }
         activityBar={

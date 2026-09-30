@@ -150,8 +150,10 @@ select {
   letter-spacing: -0.01em;
 }
 
-/* 拖拽留白：`-webkit-app-region: drag` 由内联样式给（见 `title-bar.tsx`），
-   这里只负责让它撑满中间那一段。 */
+/* 拖拽留白：拖拽由 `title-bar.tsx` 的 `onMouseDown` 走 `app:window-start-drag`
+   命令实现（前端只经单一命令面），这里只负责让它撑满中间那一段。
+   刻意**不用** `-webkit-app-region: drag`：它一旦生效就会吃掉 mousedown，
+   与命令机制打架，且各版本 WebView2 行为不一。 */
 .title-drag {
   flex: 1;
   align-self: stretch;
@@ -181,6 +183,39 @@ select {
 .title-theme:hover {
   background: var(--ui-bg-card-hover);
   color: var(--ui-text);
+}
+
+/* 窗口控制按钮组：贴在标题栏最右端，与系统标题栏同类。
+   负外边距抵消标题栏自身的右内边距，让关闭按钮真的落在窗口角落。 */
+.title-window {
+  display: flex;
+  align-self: stretch;
+  margin-right: calc(var(--ui-space-3) * -1);
+}
+
+.title-window-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 100%;
+  /* 直角 + 无边框：这三个按钮是「系统级」动作，不该有卡片式的圆角轮廓。 */
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-text-soft);
+  cursor: pointer;
+}
+
+.title-window-btn:hover {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+/* 关闭按钮的 hover 用危险色：与系统标题栏一致——它是这一组里代价最大的那个。 */
+.title-window-btn--close:hover {
+  background: var(--ui-danger);
+  color: var(--ui-on-accent);
 }
 
 /* ── 活动栏 ──────────────────────────────────────────── */

@@ -45,9 +45,14 @@ use crate::vendor::VendorCommands;
 ///
 /// `every_implemented_command_is_actually_routed` 拿这张清单区分「故意不在这一层」
 /// 与「漏接了」。界面层新增这类命令时必须同步加到这里。
-pub const HANDLED_BY_PLATFORM: [&str; 9] = [
+pub const HANDLED_BY_PLATFORM: [&str; 13] = [
     "app:command",
     "app:exit-choice",
+    // 无边框窗口的四条窗口动作：它们要**窗口句柄**，而句柄只有界面层拿得到。
+    "app:window-close",
+    "app:window-minimize",
+    "app:window-start-drag",
+    "app:window-toggle-maximize",
     "clipboard:copy-text",
     "clipboard:read-text",
     "clipboard:write-image",

@@ -78,10 +78,17 @@ impl CommandDomain {
 /// 现网的会话命令统一挂在 `codex:` 前缀下，但它们**服务全部四个平台**——平台由
 /// `targetId` 区分（如 `claude:local`）。这是历史命名，改名会破坏前端与既有文档，
 /// 因此保留并在此说明。
-pub const COMMANDS: [(&str, CommandDomain); 93] = [
+pub const COMMANDS: [(&str, CommandDomain); 97] = [
     ("app:command", CommandDomain::App),
     ("app:exit-choice", CommandDomain::App),
     ("app:get-version", CommandDomain::App),
+    // 无边框窗口的四条窗口动作（最小化 / 最大化切换 / 拖拽 / 关闭）。
+    // 它们在**界面层**实现（要用窗口句柄），因此同时登记进
+    // `router.rs` 的 `HANDLED_BY_PLATFORM`——少了那一步会被测试判成「漏接」。
+    ("app:window-close", CommandDomain::App),
+    ("app:window-minimize", CommandDomain::App),
+    ("app:window-start-drag", CommandDomain::App),
+    ("app:window-toggle-maximize", CommandDomain::App),
     // 平台清单：渲染层的平台下拉框靠它取数据。
     ("ai:list-providers", CommandDomain::Ai),
     ("clipboard:copy-text", CommandDomain::Clipboard),
@@ -256,8 +263,8 @@ mod tests {
     #[test]
     fn the_command_count_is_stable() {
         // 前端契约的一部分：漏接或多接一条都会在这里暴露。
-        assert_eq!(COMMAND_COUNT, 93);
-        assert_eq!(command_names().len(), 93);
+        assert_eq!(COMMAND_COUNT, 97);
+        assert_eq!(command_names().len(), 97);
     }
 
     #[test]
@@ -300,7 +307,7 @@ mod tests {
 
     #[test]
     fn each_domain_exposes_its_commands() {
-        assert_eq!(commands_of(CommandDomain::App).len(), 3);
+        assert_eq!(commands_of(CommandDomain::App).len(), 7);
         assert_eq!(commands_of(CommandDomain::Ai).len(), 1);
         assert_eq!(commands_of(CommandDomain::Cli).len(), 2);
         assert_eq!(commands_of(CommandDomain::Clipboard).len(), 3);
@@ -361,6 +368,11 @@ mod tests {
             "vendor:refresh-balances",
             "terminal:attention-notification",
             "workspace:delete-preset",
+            // 四条窗口动作：名字里同时出现 `window-` 与 kebab-case 动作，最易写错。
+            "app:window-minimize",
+            "app:window-toggle-maximize",
+            "app:window-start-drag",
+            "app:window-close",
         ] {
             assert!(is_known(name), "{name} 缺失");
         }

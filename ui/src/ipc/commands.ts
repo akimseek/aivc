@@ -579,6 +579,33 @@ export const checkCliEnvironment = (providerId: string, targetId?: string) =>
 /** 应用版本。 */
 export const getAppVersion = () => invoke<string>("app:get-version");
 
+/* ── 窗口控制 ─────────────────────────────────────────
+ *
+ * 窗口是无边框的（`tauri_app.rs` 的 `.decorations(false)`），系统框不再提供
+ * 最小化 / 最大化 / 关闭，应用内标题栏必须自己补齐这四条命令。
+ *
+ * 拖拽也走命令（`app:window-start-drag`）而不是 `-webkit-app-region: drag`：
+ * 前端只允许经**单一命令面**与后端通信，且那个 CSS 属性在各版本 WebView2 上
+ * 行为不一，还会吃掉 mousedown。参数一律空对象——后端不读任何入参。
+ */
+
+/** 最小化窗口。 */
+export const windowMinimize = () => invoke<null>("app:window-minimize", {});
+
+/** 最大化 ↔ 还原（由后端按当前状态取反，界面不维护镜像状态）。 */
+export const windowToggleMaximize = () => invoke<null>("app:window-toggle-maximize", {});
+
+/** 开始拖动窗口。由拖拽区的 `mousedown` 发起。 */
+export const windowStartDrag = () => invoke<null>("app:window-start-drag", {});
+
+/**
+ * 关闭窗口。
+ *
+ * **不是**直接退出：后端会在 `CloseRequested` 上拦下来弹退出确认
+ * （应用里可能跑着终端与本地网关），因此这条命令同时也是「退出」的唯一入口。
+ */
+export const windowClose = () => invoke<null>("app:window-close", {});
+
 /**
  * 安装 CLI。
  *

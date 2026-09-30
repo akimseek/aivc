@@ -46,8 +46,8 @@ export function AboutPanel({
         <Button onClick={onOpenLogDirectory} title="在文件管理器里打开日志目录">
           打开日志目录
         </Button>
-        {/* 退出走浏览器窗口关闭（与 app.tsx 原「退出」动作同一条路），
-            后端因此仍有机会弹退出确认——两套退出语义是不行的。 */}
+        {/* 退出走 `app:window-close`（与标题栏的关闭按钮同一条命令），后端因此仍能拦下
+            它并弹退出确认——两套退出语义是不行的。 */}
         <Button variant="danger" onClick={onQuit} title="退出应用（会先确认）">
           退出控制台
         </Button>

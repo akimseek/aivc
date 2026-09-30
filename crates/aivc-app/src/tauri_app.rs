@@ -64,9 +64,9 @@ impl AppState {
 ///
 /// # 为什么这里要拦几条命令
 ///
-/// 剪贴板、原生对话框、系统通知都要用到 **Tauri 的平台能力**，而 `aivc-ipc` 刻意
-/// 不依赖 tauri（命令层保持与界面框架无关，才能在测试里直接驱动）。
-/// 因此这几条在**这一层**处理，其余照旧转给命令路由器。
+/// 剪贴板、原生对话框、系统通知，以及无边框窗口的**窗口控制动作**，都要用到
+/// **Tauri 的平台能力**，而 `aivc-ipc` 刻意不依赖 tauri（命令层保持与界面框架无关，
+/// 才能在测试里直接驱动）。因此这几条在**这一层**处理，其余照旧转给命令路由器。
 ///
 /// # Errors
 ///
@@ -272,8 +272,57 @@ async fn platform_command(
         }
         "app:exit-choice" => Some(resolve_exit_choice(app, args)),
         "app:command" => Some(run_app_command(app, args).await),
+        // 无边框窗口的四条窗口动作（应用内标题栏的按钮与拖拽区调它们）。
+        //
+        // 关闭**不在这里判断要不要退**：`window.close()` 会走
+        // `WindowEvent::CloseRequested`，而退出确认那条链路（`exit` 模块）已经挂在
+        // 那里。另写一份判断就会出现两套退出语义。
+        "app:window-minimize" => Some(window_of(app).and_then(|window| {
+            window
+                .minimize()
+                .map(|()| Value::Null)
+                .map_err(|error| error.to_string())
+        })),
+        "app:window-toggle-maximize" => Some(window_of(app).and_then(|window| {
+            // 按**当前状态取反**而不是维护一份「是否最大化」的镜像：镜像会与用户
+            // 用系统快捷键、双击系统边缘等操作脱节。
+            let target = !window.is_maximized().unwrap_or(false);
+            (if target {
+                window.maximize()
+            } else {
+                window.unmaximize()
+            })
+            .map(|()| Value::Null)
+            .map_err(|error| error.to_string())
+        })),
+        // 拖拽由**命令**发起而不是 `-webkit-app-region: drag`：本工程的前端只允许经
+        // 单一命令面（`aivc_invoke`）与后端通信，且该 CSS 属性在各版本 WebView2 上
+        // 行为并不一致。
+        "app:window-start-drag" => Some(window_of(app).and_then(|window| {
+            window
+                .start_dragging()
+                .map(|()| Value::Null)
+                .map_err(|error| error.to_string())
+        })),
+        "app:window-close" => Some(window_of(app).and_then(|window| {
+            window
+                .close()
+                .map(|()| Value::Null)
+                .map_err(|error| error.to_string())
+        })),
         _ => None,
     }
+}
+
+/// 取主窗口（`crate::tray::MAIN_WINDOW`）。
+///
+/// 取不到时**报错而不是静默返回**：窗口控制命令没有窗口可作用，与「命令成功但什么
+/// 都没发生」是两回事，后者会让界面上的按钮看起来是坏的。
+fn window_of(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, String> {
+    use tauri::Manager as _;
+
+    app.get_webview_window(crate::tray::MAIN_WINDOW)
+        .ok_or_else(|| "主窗口不存在".to_owned())
 }
 
 /// 用户在前端的退出确认框里做了选择。
@@ -446,6 +495,12 @@ pub fn run(app: App) -> tauri::Result<()> {
             .center()
             .background_color(background)
             .resizable(true)
+            // **无边框**：标题栏改由应用内那条 40px 的 `TitleBar` 承担，系统框会与它
+            // 叠成两条标题栏。`title()` 仍然保留——任务栏与 Alt+Tab 用它在标签上写字。
+            //
+            // `decorations(false)` 不会丢掉**边缘缩放**：tao（tauri 的窗口层）对
+            // 「无边框 + 可缩放」的窗口自己处理 `WM_NCHITTEST`，窗口四边仍是缩放热区。
+            .decorations(false)
             .on_navigation(move |url| {
                 crate::harden::attach_navigation_handler(url.as_str(), navigation_dev.as_deref())
             });

@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { openSessionFolder, listModels } from "./commands";
+import {
+  listModels,
+  openSessionFolder,
+  windowClose,
+  windowMinimize,
+  windowStartDrag,
+  windowToggleMaximize
+} from "./commands";
 
 /**
  * 命令名必须与后端注册表一致。
@@ -47,6 +54,57 @@ describe("listModels", () => {
     expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
       command: "models:list",
       args: { targetId: "qoder:local" }
+    });
+  });
+});
+
+/**
+ * 窗口控制命令。
+ *
+ * 无边框之后这四个按钮是**唯一**的窗口操作入口（系统框已经没有了），命令名写错的
+ * 后果就是窗口关不掉、也挪不动。后端那侧的名字登记在
+ * `crates/aivc-ipc/src/commands.rs`，两边必须逐字一致。
+ */
+describe("窗口控制命令", () => {
+  const invoke = vi.fn(async () => null);
+
+  beforeEach(() => {
+    invoke.mockClear();
+    (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn() }
+    };
+  });
+
+  it("windowMinimize 调 app:window-minimize", async () => {
+    await windowMinimize();
+    expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
+      command: "app:window-minimize",
+      args: {}
+    });
+  });
+
+  it("windowToggleMaximize 调 app:window-toggle-maximize", async () => {
+    await windowToggleMaximize();
+    expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
+      command: "app:window-toggle-maximize",
+      args: {}
+    });
+  });
+
+  it("windowStartDrag 调 app:window-start-drag", async () => {
+    await windowStartDrag();
+    expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
+      command: "app:window-start-drag",
+      args: {}
+    });
+  });
+
+  it("windowClose 调 app:window-close", async () => {
+    await windowClose();
+    expect(invoke).toHaveBeenCalledWith("aivc_invoke", {
+      command: "app:window-close",
+      args: {}
     });
   });
 });

@@ -3,9 +3,10 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AiSession, TerminalAttention } from "../types";
-import { hasSessionTab, useWorkspaceTabs } from "./use-workspace-tabs";
+import { useWorkspaceTabs } from "./use-workspace-tabs";
 import type { TerminalSession } from "./use-terminals";
 import type { useTerminals } from "./use-terminals";
+import { hasSessionTab } from "./workspace-tabs";
 
 /**
  * `useWorkspaceTabs` 的装配测试（统一模型）。
@@ -27,7 +28,14 @@ function fakeTerminals(
   terminals: TerminalSession[] = [],
   attention: Record<string, TerminalAttention> = {}
 ) {
-  const closeTerminal = vi.fn(async () => undefined);
+  const closeTerminal = vi.fn(async (id: string) => {
+    // `closeTerminal` 会把终端从登记表里摘掉（真实实现如此，`useTerminals` 里
+    // 先 `filter` 再发 IPC）。**就地**删掉才是忠实的模拟：摘干净之后，「干净退出」
+    // 那条判据不会再命中残留的标签——那正是它「不自愈」的原因，静态的假值会把
+    // 这一幕掩盖成「下一轮把残留标签又收了一遍」。
+    const index = terminals.findIndex((item) => item.id === id);
+    if (index >= 0) terminals.splice(index, 1);
+  });
   return {
     fake: { terminals, attention, closeTerminal } as unknown as ReturnType<typeof useTerminals>,
     closeTerminal
@@ -147,5 +155,99 @@ describe("useWorkspaceTabs 的接线", () => {
       state: "running",
       providerId: "codex"
     });
+  });
+
+  /*
+   * 下面五条钉的是**同一批次内的并发写入**。
+   *
+   * 两次 `attachTerminalTab` 可能发生在同一次渲染之后（两次 `await openTerminal`
+   * 并发返回、或一次点击与一个挂起的事件回调撞在一起），那时两个调用点持有的是
+   * **同一份渲染期快照**。凡是「用快照算好绝对值再覆写」的实现，后一次写都会把前
+   * 一次的结果整个盖掉——标签丢了，而被替换的终端因为没人看见它，永远不会被
+   * `closeTerminal`（进程与 xterm 泄漏，正是本任务要消灭的东西）。
+   */
+
+  it("同一批次内挂两路终端到同一会话：标签不丢，旧终端恰好被收一次", () => {
+    const { fake, closeTerminal } = fakeTerminals();
+    const view = renderHook(() => useWorkspaceTabs(fake, null));
+
+    act(() => {
+      view.result.current.attachTerminalTab("term-1", "sess-1", "会话甲");
+      view.result.current.attachTerminalTab("term-2", "sess-1", "会话甲");
+    });
+
+    expect(view.result.current.tabs).toHaveLength(1);
+    expect(view.result.current.tabs[0]).toMatchObject({ key: "sess-1", terminalId: "term-2" });
+    // 这一条是 Important 1 的判据：快照写入时 `replacedTerminalId` 恒为 undefined。
+    expect(closeTerminal).toHaveBeenCalledTimes(1);
+    expect(closeTerminal).toHaveBeenCalledWith("term-1");
+  });
+
+  it("同一批次内挂两条不同会话的终端：两张标签都在", () => {
+    const { fake } = fakeTerminals();
+    const view = renderHook(() => useWorkspaceTabs(fake, null));
+
+    act(() => {
+      view.result.current.attachTerminalTab("term-1", "sess-1", "会话甲");
+      view.result.current.attachTerminalTab("term-2", "sess-2", "会话乙");
+    });
+
+    expect(view.result.current.tabs.map((tab) => tab.key)).toEqual(["sess-1", "sess-2"]);
+    expect(view.result.current.activeKey).toBe("sess-2");
+  });
+
+  it("同一批次内两张标签的终端都干净退出：两张都被收掉", () => {
+    const { fake } = fakeTerminals([terminal("term-1"), terminal("term-2")]);
+    const view = renderHook(({ terminals }) => useWorkspaceTabs(terminals, null), {
+      initialProps: { terminals: fake }
+    });
+    // 分两批挂（每次一批一张），让这一步与退出无关：这条测试要单独钉「退出收标签」。
+    act(() => view.result.current.attachTerminalTab("term-1", "sess-1", "会话甲"));
+    act(() => view.result.current.attachTerminalTab("term-2", "sess-2", "会话乙"));
+    expect(view.result.current.tabs).toHaveLength(2);
+
+    // 两路终端在同一次渲染里到达「干净退出」。
+    const exited = fakeTerminals([
+      terminal("term-1", { running: false, exitedCleanly: true, exitCode: 0 }),
+      terminal("term-2", { running: false, exitedCleanly: true, exitCode: 0 })
+    ]);
+    view.rerender({ terminals: exited.fake });
+
+    // 逐个 `closeTab` 会各自基于同一份快照重算 ⇒ 先关的那张被后一次写「复活」，
+    // 而且 `closeTerminal` 已把终端移出登记表，判据不再命中、永不自愈。
+    expect(view.result.current.tabs).toHaveLength(0);
+    expect(exited.closeTerminal).toHaveBeenCalledTimes(2);
+    expect(exited.closeTerminal).toHaveBeenCalledWith("term-1");
+    expect(exited.closeTerminal).toHaveBeenCalledWith("term-2");
+  });
+
+  it("手动关一张带终端的标签：终端也被收掉", () => {
+    const { fake, closeTerminal } = fakeTerminals();
+    const view = renderHook(() => useWorkspaceTabs(fake, null));
+
+    act(() => view.result.current.attachTerminalTab("term-1", "sess-1", "会话甲"));
+    act(() => view.result.current.closeTab("sess-1"));
+
+    expect(view.result.current.tabs).toHaveLength(0);
+    expect(closeTerminal).toHaveBeenCalledTimes(1);
+    expect(closeTerminal).toHaveBeenCalledWith("term-1");
+  });
+
+  it("closeOtherTabs：保留下来的那张成为激活标签", () => {
+    // 从**非激活**标签上右键「关闭其他」：不修 activeKey 就会留下一个指向已关标签的
+    // 激活键——标签还在，画布却落到空状态。
+    const { fake, closeTerminal } = fakeTerminals();
+    const view = renderHook(() => useWorkspaceTabs(fake, null));
+
+    // 分两批挂：让这一步与并发写入无关，这条测试单独钉 activeKey 的修正。
+    act(() => view.result.current.attachTerminalTab("term-1", "sess-1", "会话甲"));
+    act(() => view.result.current.attachTerminalTab("term-2", "sess-2", "会话乙"));
+    expect(view.result.current.activeKey).toBe("sess-2");
+
+    act(() => view.result.current.closeOtherTabs("sess-1"));
+
+    expect(view.result.current.tabs.map((tab) => tab.key)).toEqual(["sess-1"]);
+    expect(view.result.current.activeKey).toBe("sess-1");
+    expect(closeTerminal).toHaveBeenCalledWith("term-2");
   });
 });

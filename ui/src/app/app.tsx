@@ -16,7 +16,9 @@ import { StatusBar } from "./status-bar";
 import { useConsole } from "./use-console";
 import { useTerminals } from "./use-terminals";
 import { useTheme } from "./use-theme";
-import { hasSessionTab, useWorkspaceTabs } from "./use-workspace-tabs";
+import { useWorkspaceTabs } from "./use-workspace-tabs";
+// 纯函数直接从规则模块取：hook 只负责接线，不再转出判定（R16）。
+import { hasSessionTab } from "./workspace-tabs";
 
 /**
  * 应用外壳。

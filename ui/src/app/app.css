@@ -1125,7 +1125,7 @@ select {
 
 /* 分支动作：默认不显眼，悬停到消息上才出现——
    它是低频动作，常驻会干扰阅读。 */
-.branch-action {
+.messages-branch {
   border: 0;
   background: transparent;
   padding: 0 4px;
@@ -1137,11 +1137,11 @@ select {
   transition: opacity 120ms ease;
 }
 
-.message:hover .branch-action {
+.messages-item:hover .messages-branch {
   opacity: 1;
 }
 
-.branch-action:hover {
+.messages-branch:hover {
   color: var(--ui-accent);
 }
 
@@ -1639,56 +1639,363 @@ select {
   font-size: var(--ui-text-xs);
 }
 
-/* ── 会话详情弹层 ────────────────────────────────────── */
+/* ── 消息与分支弹框 ──────────────────────────────────── */
 
 /*
  * 比普通对话框宽得多：它是**读会话**用的，560px 一行放不下几句中文。
+ * 五段结构（头部 / 血缘条 / 分页 / 消息区 / 底部）里**只有消息区滚动**——
+ * 滚动整块会把分页控件一起滚走，而用户翻页时恰恰要按它。
  */
-.session-detail-dialog {
-  min-width: min(920px, 92vw);
-  max-width: min(920px, 92vw);
-  max-height: 86vh;
+.messages-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ui-z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ui-space-5);
+  background: var(--ui-scrim);
 }
 
-.session-detail-dialog .dialog-header,
-.session-detail-dialog .dialog-footer,
-.session-detail-dialog .detail-meta,
-.session-detail-dialog .pagination {
-  flex: 0 0 auto;
-}
-
-.detail-meta {
+.messages-panel {
+  width: min(920px, calc(100vw - 48px));
+  height: min(720px, calc(100vh - 48px));
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-bg-modal);
+  box-shadow: var(--ui-shadow);
+}
+
+/* 面板拿焦点只为把键盘用户关在模态里，焦点环本身不画（它是一整块区域）。 */
+.messages-panel:focus {
+  outline: none;
+}
+
+.messages-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-3);
+  flex: 0 0 auto;
+  padding: var(--ui-space-3) var(--ui-space-5);
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-bg-modal-nav);
+}
+
+.messages-head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-accent);
+  color: var(--ui-on-accent);
+}
+
+.messages-head-text {
   min-width: 0;
 }
 
-.detail-meta strong {
+.messages-head-text h2 {
+  margin: 0;
+  font-size: var(--ui-text-lg);
+}
+
+.messages-head-text p {
+  margin: 2px 0 0;
   overflow: hidden;
-  color: var(--ui-text);
-  font-size: var(--ui-text-md);
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/*
- * 消息区自己滚。**不滚整个面板**：滚动整块会把分页控件一起滚走，
- * 而用户翻页时恰恰要按它。
- */
-.detail-thread {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding-right: 4px;
-  border-top: 1px solid var(--ui-divider);
-  border-bottom: 1px solid var(--ui-divider);
+/* 编号徽章与关闭按钮一起靠右。 */
+.messages-head .badge {
+  margin-left: auto;
 }
 
-.pagination {
+/* 读不到消息时的一句话。不阻塞：消息区照常显示空态，这句话说明**为什么是空的**。 */
+.messages-error {
+  flex: 0 0 auto;
+  padding: 8px var(--ui-space-5);
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-warn-soft);
+  color: var(--ui-warn);
+  font-size: var(--ui-text-sm);
+}
+
+.messages-pagination {
   display: flex;
   align-items: center;
   gap: var(--ui-space-2);
+  flex: 0 0 auto;
+  padding: var(--ui-space-2) var(--ui-space-5);
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.messages-range {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-sm);
+  white-space: nowrap;
+}
+
+.messages-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-4);
+  padding: var(--ui-space-5);
+}
+
+/* 一条消息：头像 + 角色时间 + 内容卡。 */
+.messages-item {
+  display: flex;
+  gap: var(--ui-space-3);
+}
+
+.messages-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-badge);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  font-weight: 700;
+}
+
+/* 我 = 蓝底、AI = 强调色底：同一条时间线里两个头像必须**一眼可辨**。
+   工具 / 系统不是对话，保持中性底（见下面的内容卡）。 */
+.messages-item.user .messages-avatar {
+  background: var(--ui-user);
+  color: var(--ui-on-accent);
+}
+
+.messages-item.assistant .messages-avatar {
+  background: var(--ui-accent);
+  color: var(--ui-on-accent);
+}
+
+.messages-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.messages-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-2);
+  margin-bottom: var(--ui-space-1);
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.messages-role {
+  color: var(--ui-muted);
+}
+
+.messages-item.user .messages-role {
+  color: var(--ui-user);
+}
+
+.messages-time {
+  color: var(--ui-faint);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.messages-card {
+  padding: var(--ui-space-3) var(--ui-space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-bg-card);
+  color: var(--ui-text);
+}
+
+.messages-text {
+  line-height: var(--ui-leading);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 工具与系统是**过程记录**，不是对话：等宽小字块。 */
+.messages-item.tool .messages-card,
+.messages-item.system .messages-card,
+.messages-item.unknown .messages-card {
+  background: var(--ui-bg-activity);
+  color: var(--ui-text-soft);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-sm);
+}
+
+/* 长文卡的「展开全文 / 收起」。 */
+.messages-expand {
+  margin-top: var(--ui-space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-accent-strong);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.messages-expand:hover {
+  text-decoration: underline;
+}
+
+.messages-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  flex: 0 0 auto;
+  padding: var(--ui-space-3) var(--ui-space-5);
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-bg-modal-nav);
+}
+
+.messages-count {
+  color: var(--ui-muted);
+  font-size: var(--ui-text-sm);
+}
+
+.messages-export-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+}
+
+.messages-export-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  color: var(--ui-text-soft);
+  font-size: var(--ui-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.messages-export-item:hover {
+  background: var(--ui-bg-card-hover);
+  color: var(--ui-text);
+}
+
+/* ── 血缘条（根 → 当前 → 子）────────────────────────────
+   横着摆：血缘本身就是一条线，纵向摆会白白吃掉正文的高度。
+   当前会话那一格加重——整条血缘里它才是「你正在看的这一条」。 */
+.lineage-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+  flex: 0 0 auto;
+  padding: var(--ui-space-2) var(--ui-space-5);
+  border-bottom: 1px solid var(--ui-divider);
+  background: var(--ui-bg-activity);
+  font-size: var(--ui-text-sm);
+}
+
+.lineage-label {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.lineage-node {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-2);
+  padding: 2px var(--ui-space-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-card);
+}
+
+.lineage-node-label {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+}
+
+.lineage-node.current {
+  border-color: var(--ui-accent-border);
+  background: var(--ui-accent-soft);
+}
+
+.lineage-node.current .lineage-node-label {
+  color: var(--ui-accent-strong);
+}
+
+.lineage-node.current strong {
+  max-width: 28ch;
+  overflow: hidden;
+  color: var(--ui-text);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 锚点（消息序号 / JSONL 行号）挂在当前会话上：它说的是**从哪分出来的**。 */
+.lineage-anchor {
+  display: flex;
+  gap: var(--ui-space-2);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+}
+
+.lineage-open {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-2);
+  max-width: 28ch;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: var(--ui-accent-strong);
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lineage-open:hover {
+  text-decoration: underline;
+}
+
+.lineage-open small {
+  color: var(--ui-faint);
+  font-weight: 500;
+}
+
+.lineage-node code {
+  color: var(--ui-muted);
+}
+
+.lineage-arrow {
+  color: var(--ui-faint);
+}
+
+.lineage-loading {
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
 }
 
 /*
@@ -1726,53 +2033,6 @@ select {
 .data-table .tag {
   padding: 1px 6px;
   font-size: 11px;
-}
-
-/*
- * 消息：**用户与助手用形态区分，不是用深浅**。
- *
- * 此前两者都是「浅色底 + 边框」的方块——助手 `--ui-surface-subtle`（#f8fafb）、
- * 用户 `--ui-surface`（纯白）。在纯白的工作区上这两个几乎一样，整段对话读起来是
- * 一堆同样的方块，看不出哪句是谁说的。
- *
- * 现在：**助手是正文**（无框，直接落在工作区上），**用户是引述**（强调色底 + 左侧竖线）。
- * 一屏之内一眼就能看出「哪些是我说的」——这正是区分角色的全部意义。
- */
-.message {
-  max-width: 78ch;
-  margin-bottom: var(--ui-space-5);
-}
-
-.message .who {
-  margin-bottom: var(--ui-space-1);
-  color: var(--ui-faint);
-  font-size: var(--ui-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.message .text {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ui-text);
-  line-height: var(--ui-leading);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.message.user .who {
-  color: var(--ui-accent-strong);
-}
-
-.message.user .text {
-  padding: var(--ui-space-3) var(--ui-space-4);
-  /* 左侧竖线而不是整圈边框：它是「引述」，不是「一块卡片」。 */
-  border-left: 3px solid var(--ui-accent);
-  border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
-  background: var(--ui-accent-soft);
-  /* 引述块里的正文用稍软的色，避免强调色底上出现纯黑文字。 */
-  color: var(--ui-text-soft);
 }
 
 /* ── 终端 ────────────────────────────────────────────── */
@@ -2433,68 +2693,6 @@ select {
   color: var(--ui-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.branch-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ui-space-2);
-  margin-bottom: var(--ui-space-3);
-  padding: var(--ui-space-2) var(--ui-space-3);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-sm, 6px);
-  background: var(--ui-bg-activity);
-  font-size: var(--ui-text-sm);
-}
-
-.branch-panel header {
-  display: flex;
-  align-items: baseline;
-  gap: var(--ui-space-2);
-}
-
-.branch-panel header h3 {
-  margin: 0;
-  font-size: var(--ui-text-sm);
-  font-weight: 700;
-  color: var(--ui-muted);
-}
-
-.branch-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--ui-space-2);
-}
-
-.branch-label {
-  color: var(--ui-faint);
-  min-width: 3.5em;
-}
-
-.branch-children div {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ui-space-1);
-  margin-top: var(--ui-space-1);
-}
-
-.branch-children button {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--ui-space-2);
-  border: 0;
-  border-radius: var(--ui-radius-sm);
-  background: transparent;
-  padding: 2px 6px;
-  color: var(--ui-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.branch-children button:hover {
-  background: var(--ui-bg-card);
 }
 
 .attention-center {

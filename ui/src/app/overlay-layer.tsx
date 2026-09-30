@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 
 import { Button } from "../components";
+import { MessagesModalContainer } from "../features/workspace/messages-modal";
 import { SettingsCenter, type SettingsTab } from "../features/settings/settings-center";
+import * as api from "../ipc/commands";
 import type { AiProviderId, AiProviderSummary, AiSession, AiTarget, ExportFormat } from "../types";
 import { ExitConfirm } from "./exit-confirm";
 import { NewSessionDialog } from "./new-session-dialog";
 import { SessionContextMenu } from "./session-context-menu";
-import { SessionDetailContainer } from "./session-detail-container";
 import { SessionDuplicateDialog, SessionRenameDialog } from "./session-title-dialogs";
 import { SessionSettingsDialog } from "./session-settings-dialog";
 import { TabContextMenu } from "./tab-context-menu";
@@ -90,6 +91,14 @@ export type OverlaysActions = {
   closeDetail: () => void;
   resumeSession: (session: AiSession) => void;
   branchFromMessage: (sourceLine: number) => void;
+  /**
+   * 导出**消息弹框里那一条**会话。
+   *
+   * 与 `exportSession` 分开：右键菜单那条会**先改选中态**（它要就着被右键的会话），
+   * 而消息弹框是「停下来看」——导出不该把背后的视图换到别的会话上去。
+   * 两处都必须显式带上会话，只读「当前选中」会导出别的会话。
+   */
+  exportDetail: (session: AiSession, format: ExportFormat) => void;
   closeSettings: () => void;
   reportError: (message: string) => void;
   /**
@@ -296,17 +305,21 @@ export function AppOverlays({
         />
       )}
 
-      {/* 会话详情：把一条会话**停下来看**。分页与取数都在那个容器里，
-          这里只持有「要看哪一条」——关掉就回到原来的视图。 */}
-      <SessionDetailContainer
+      {/* 消息与分支：把一条会话**停下来看**。分页、取数与竞态保护都在
+          `useSessionDetail` 里（`MessagesModalContainer`），这里只持有
+          「要看哪一条」——关掉就回到原来的视图。 */}
+      <MessagesModalContainer
         session={state.detailSession}
         target={targets.find((item) => item.id === targetId) ?? null}
-        onClose={actions.closeDetail}
-        resolveParent={resolveSession}
-        onBranch={actions.branchFromMessage}
         canBranch={canBranch}
+        resolveParent={resolveSession}
+        listChildren={(parentSessionId) => api.listSessionChildren(parentSessionId, targetId)}
+        onClose={actions.closeDetail}
+        onBranch={actions.branchFromMessage}
         onOpenSession={actions.resumeSession}
-        onError={actions.reportError}
+        onExport={(format) => {
+          if (state.detailSession) actions.exportDetail(state.detailSession, format);
+        }}
       />
 
       {/*

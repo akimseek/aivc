@@ -55,6 +55,10 @@
      换成强调色会被当成「已选中」。 */
   --ui-star: #d9a11a;
 
+  /* 对话头像上的「我」。第三色相，**只用在消息列表的头像上**：时间线里「这句是我说的」
+     必须一眼可辨，而强调色已经归了 AI（见 `.messages-avatar`）。 */
+  --ui-user: #2563eb;
+
   /* 终端（明亮 = 浅色终端主题） */
   --term-bg: #f8fafc;
   --term-border: #e2e8f0;
@@ -113,6 +117,8 @@
   --ui-danger-soft: rgba(248, 113, 113, 0.12);
   --ui-danger-border: rgba(248, 113, 113, 0.35);
   --ui-star: #fbbf24;
+  /* 暗黑下一档更亮的蓝：深底上 #2563eb 与背景的对比不够，头像会糊掉。 */
+  --ui-user: #3b82f6;
 
   --term-bg: #0d0f17;
   --term-border: #1e2434;

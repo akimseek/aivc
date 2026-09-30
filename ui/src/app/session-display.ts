@@ -143,8 +143,8 @@ export function messageCountLabel(count: number, lowerBound = false): string {
 /**
  * 消息里「谁说的」的措辞。
  *
- * 放在这里而不是各渲染处各写一遍：会话正文（`history-view.tsx`）与详情弹层
- * （`session-row.tsx` 的 `Message`）看的是同一批消息，两处措辞漂移时，同一条消息
+ * 放在这里而不是各渲染处各写一遍：会话正文（`history-view.tsx`）与消息弹框
+ * （`messages-modal.tsx`）看的是同一批消息，两处措辞漂移时，同一条消息
  * 在两个地方会显示成两个称呼。
  */
 export function roleLabel(role: AiMessage["role"]): string {

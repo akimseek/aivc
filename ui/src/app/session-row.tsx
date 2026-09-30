@@ -1,6 +1,6 @@
 import { ListRow, MetaItem } from "../components";
-import type { AiMessage, AiSession, AiTarget, SessionQuickAccessItem } from "../types";
-import { displayTitle, formatWhen, roleLabel } from "./session-display";
+import type { AiSession, AiTarget, SessionQuickAccessItem } from "../types";
+import { displayTitle, formatWhen } from "./session-display";
 
 /**
  * 会话的**参考形态**行：收藏、最近打开、全局搜索结果三处共用。
@@ -83,23 +83,6 @@ export function SearchResultRow({
         title={displayTitle(session)}
         meta={<MetaItem>{target.label}</MetaItem>}
       />
-    </div>
-  );
-}
-
-/** 正文里的一条消息。`onBranch` 只有带原始行号的消息才有。 */
-export function Message({ message, onBranch }: { message: AiMessage; onBranch?: () => void }) {
-  return (
-    <div className={`message ${message.role}`}>
-      <div className="who">
-        <span>{roleLabel(message.role)}</span>
-        {onBranch && (
-          <button type="button" className="branch-action" onClick={onBranch}>
-            从此处分支
-          </button>
-        )}
-      </div>
-      <div className="text">{message.text}</div>
     </div>
   );
 }

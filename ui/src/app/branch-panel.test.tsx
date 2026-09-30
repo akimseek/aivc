@@ -6,11 +6,14 @@ import type { AiSession } from "../types";
 import { BranchPanel, type BranchPanelProps } from "./branch-panel";
 
 /**
- * 「分支关系」面板。
+ * 血缘条（`根 → 当前 → 子`）。
  *
  * 三条最要紧的：**没有分支时整块不渲染**（大多数会话没有分支，留个空框只占地方）、
  * **父会话解析不出来不能变成错误**（界面没有「按编号取会话」的命令，退回短编号就行）、
  * 以及**子分支点了要打开那个会话**。
+ *
+ * 形态从纵向改成横向之后，这里锁的是新 DOM：`.lineage-bar` 里三格节点，
+ * 锚点（消息序号 / 行号）挂在**当前会话**那一格上。
  */
 
 function session(overrides: Partial<AiSession> = {}): AiSession {
@@ -44,11 +47,11 @@ describe("BranchPanel", () => {
   it("没有分支时整块不渲染", async () => {
     const { view } = setup();
     await waitFor(() => {
-      expect(view.container.querySelector(".branch-panel")).toBeNull();
+      expect(view.container.querySelector(".lineage-bar")).toBeNull();
     });
   });
 
-  it("有来源时显示锚点：消息序号与 JSONL 行号", async () => {
+  it("横着摆成「根会话 → 当前会话」，锚点挂在当前会话上", async () => {
     // 锚点是**一条消息**。行号尤其要紧：后端靠它定位原始记录。
     const { view } = setup({
       session: session({
@@ -62,12 +65,14 @@ describe("BranchPanel", () => {
       })
     });
     await waitFor(() => {
-      expect(view.container.textContent).toContain("分支关系");
+      expect(view.container.textContent).toContain("根会话");
     });
-    const text = view.container.textContent ?? "";
-    expect(text).toContain("来源");
-    expect(text).toContain("消息 7");
-    expect(text).toContain("JSONL 行 42");
+    const bar = view.container.querySelector(".lineage-bar")!;
+    expect(bar.querySelector(".lineage-node.root")).toBeTruthy();
+    const current = bar.querySelector(".lineage-node.current")!;
+    expect(current.textContent).toContain("当前会话");
+    expect(current.textContent).toContain("消息 7");
+    expect(current.textContent).toContain("JSONL 行 42");
   });
 
   it("父会话解析不出来时退回短编号，而不是报错", async () => {
@@ -77,7 +82,7 @@ describe("BranchPanel", () => {
     await waitFor(() => {
       expect(view.container.textContent).toContain("parent-1");
     });
-    expect(view.container.querySelector("code")).not.toBeNull();
+    expect(view.container.querySelector(".lineage-node.root code")).not.toBeNull();
   });
 
   it("能解析出父会话时给一个可点开的按钮", async () => {
@@ -109,13 +114,16 @@ describe("BranchPanel", () => {
     });
     // 拉的是**这条会话的**子分支。
     expect(listChildren).toHaveBeenCalledWith("sess-child");
+    // 子分支在当前会话**右边**（DOM 顺序就是阅读顺序）。
+    const nodes = [...view.container.querySelectorAll(".lineage-node")];
+    expect(nodes.at(-1)!.classList.contains("child")).toBe(true);
 
     await byText(view, "分出去的那个").click();
     expect(onOpen).toHaveBeenCalledWith(child);
   });
 
   it("拉子分支失败不把整块变成错误", async () => {
-    // 来源那一行仍然有意义，不该因为列不出子分支就什么都不显示。
+    // 来源那一格仍然有意义，不该因为列不出子分支就什么都不显示。
     const { view } = setup({
       session: session({ metadata: { branch: { parentSessionId: "p1" } } }),
       listChildren: async () => {
@@ -123,8 +131,8 @@ describe("BranchPanel", () => {
       }
     });
     await waitFor(() => {
-      expect(view.container.textContent).toContain("来源");
+      expect(view.container.textContent).toContain("当前会话");
     });
-    expect(view.container.querySelector(".branch-panel")).not.toBeNull();
+    expect(view.container.querySelector(".lineage-bar")).not.toBeNull();
   });
 });

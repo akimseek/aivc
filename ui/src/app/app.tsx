@@ -892,6 +892,9 @@ export function App() {
             if (selectedTarget) void beginResumeSession(selectedTarget, session);
           },
           branchFromMessage: (sourceLine) => void console.branchFromMessage(sourceLine),
+          // 消息弹框里导出的必须是**弹框里那条**：`runExport` 显式带编号，
+          // 否则它会去读「当前选中」，而选中项未必是弹框正开着的那条会话。
+          exportDetail: (session, format) => void runExport(format, session),
           closeSettings: () => setSettingsOpen(false),
           reportError: console.setError,
           notify: toast.show

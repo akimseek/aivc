@@ -1,0 +1,324 @@
+// @vitest-environment jsdom
+import { act, render, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+import type { AiMessage, AiSession } from "../../types";
+import { MessagesModal } from "./messages-modal";
+
+/**
+ * 消息与分支弹框。
+ *
+ * # 五条最要紧的规则
+ *
+ * 1. **头部件件齐**：`branch` 图标 + 「会话消息历史与分支演进」+ `ID:` 短编号；
+ * 2. **血缘条是横向的根 → 当前 → 子**：没有父会话时只剩「当前会话」一格；
+ * 3. **分支动作带原始行号回传**——后端要靠它定位原始记录，可见序号会截错位置；
+ * 4. **导出三格式都在**（Markdown / JSON / HTML，与右键菜单逐字一致）；
+ * 5. **分页与竞态保护沿用 `use-session-detail`**：这里只验「控件把页码/页大小交回上层」，
+ *    取数与竞态在 `use-session-detail.test.tsx` 里逐条钉过。
+ */
+
+function session(overrides: Partial<AiSession> = {}): AiSession {
+  return {
+    id: "98895b66-4bbd-4d1e-9b3a-000000000001",
+    title: "重构会话列表",
+    cwd: "D:\\code\\ai",
+    filePath: "/sessions/a.jsonl",
+    messageCount: 120,
+    preview: [],
+    ...overrides
+  };
+}
+
+const messages: AiMessage[] = [
+  { role: "user", text: "第一句", sourceLine: 3, timestamp: "2026-09-27T10:00:00Z" },
+  { role: "assistant", text: "回应", sourceLine: 4 }
+];
+
+function setup(overrides: Partial<Parameters<typeof MessagesModal>[0]> = {}) {
+  const props: Parameters<typeof MessagesModal>[0] = {
+    session: session(),
+    messages,
+    total: 120,
+    page: 1,
+    pageSize: 50,
+    loading: false,
+    onPageChange: vi.fn(),
+    onPageSizeChange: vi.fn(),
+    onReload: vi.fn(),
+    onBranch: vi.fn(),
+    onOpenSession: vi.fn(),
+    branchParent: () => undefined,
+    branchChildren: async () => [] as AiSession[],
+    onExport: vi.fn(),
+    onClose: vi.fn(),
+    ...overrides
+  };
+  const view = render(<MessagesModal {...props} />);
+  /** 按**恰好等于**这段文字找按钮（分页那五个按钮与「关闭」靠它定位）。 */
+  const byText = (label: string) => {
+    const found = [...view.container.querySelectorAll("button")].find(
+      (item) => item.textContent?.trim() === label
+    );
+    if (!found) throw new Error(`没有按钮 ${label}`);
+    return found as HTMLButtonElement;
+  };
+  return { view, props, byText };
+}
+
+describe("MessagesModal", () => {
+  it("头部有分支图标、标题与 ID 短编号", () => {
+    const { view } = setup();
+    const head = view.container.querySelector(".messages-head")!;
+    expect(head).toBeTruthy();
+    const text = head.textContent ?? "";
+    expect(text).toContain("会话消息历史与分支演进");
+    // 会话自己的标题也在（否则看不出这是哪条会话的历史）。
+    expect(text).toContain("重构会话列表");
+    expect(text).toContain("ID: 98895b66");
+    // 图标是 SVG，不再是字符画（旧实现这里是 emoji 的位置）。
+    expect(head.querySelector("svg")).toBeTruthy();
+  });
+
+  it("血缘条渲染「根会话 → 当前会话」，没有父会话时只剩当前", async () => {
+    const parent = session({ id: "parent-1234567890", title: "父会话" });
+    const withParent = setup({
+      session: session({
+        metadata: {
+          branch: {
+            parentSessionId: parent.id,
+            parentMessageIndex: 7,
+            parentMessageLine: 42
+          }
+        }
+      }),
+      branchParent: () => parent
+    });
+    await waitFor(() => {
+      expect(withParent.view.container.textContent).toContain("根会话");
+    });
+    const text = withParent.view.container.querySelector(".lineage-bar")!.textContent ?? "";
+    expect(text).toContain("父会话");
+    expect(text).toContain("当前会话");
+    expect(text).toContain("重构会话列表");
+    // 锚点：从父会话的哪一条消息分出来的。
+    expect(text).toContain("消息 7");
+    expect(text).toContain("JSONL 行 42");
+
+    const alone = setup();
+    await waitFor(() => {
+      const bar = alone.view.container.querySelector(".lineage-bar");
+      expect(bar).toBeNull();
+    });
+  });
+
+  it("点子分支回传那一条会话（由上层去打开）", async () => {
+    const child = session({ id: "child-1", title: "分出去的那个" });
+    const { view, props } = setup({
+      session: session({ metadata: { branch: { parentSessionId: "p1" } } }),
+      branchChildren: async () => [child]
+    });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("分出去的那个");
+    });
+    await act(async () => {
+      [...view.container.querySelectorAll("button")]
+        .find((item) => item.textContent?.includes("分出去的那个"))!
+        .click();
+    });
+    expect(props.onOpenSession).toHaveBeenCalledWith(child);
+  });
+
+  it("点「从此处分支」回传原始行号", async () => {
+    const { view, props } = setup();
+    const branchButtons = [...view.container.querySelectorAll("button")].filter(
+      (item) => item.textContent?.trim() === "从此处分支"
+    );
+    // 两条消息都带行号，因此都有入口。
+    expect(branchButtons).toHaveLength(2);
+    await act(async () => {
+      branchButtons[0]!.click();
+    });
+    expect(props.onBranch).toHaveBeenCalledWith(3);
+  });
+
+  it("没行号的消息不给分支入口", () => {
+    // 后端要靠行号定位原始记录，拿可见序号去截会截错位置。
+    const { view } = setup({
+      messages: [
+        { role: "user", text: "有行号", sourceLine: 7 },
+        { role: "user", text: "没行号" }
+      ]
+    });
+    const branchButtons = [...view.container.querySelectorAll("button")].filter(
+      (item) => item.textContent?.trim() === "从此处分支"
+    );
+    expect(branchButtons).toHaveLength(1);
+  });
+
+  it("平台不支持分支时整条消息都不给入口", () => {
+    const { view } = setup({ canBranch: false });
+    const branchButtons = [...view.container.querySelectorAll("button")].filter(
+      (item) => item.textContent?.trim() === "从此处分支"
+    );
+    expect(branchButtons).toHaveLength(0);
+  });
+
+  it("「导出 ▾」的三种格式各自回传", async () => {
+    const { view, props, byText } = setup();
+    const labels: [string, string][] = [
+      ["导出 Markdown", "markdown"],
+      ["导出 JSON", "json"],
+      ["导出 HTML", "html"]
+    ];
+    for (const [label, format] of labels) {
+      await act(async () => {
+        byText("导出").click();
+      });
+      const menu = view.container.querySelector(".popover")!;
+      const button = [...menu.querySelectorAll("button")].find(
+        (entry) => entry.textContent?.trim() === label
+      )!;
+      expect(button, `缺少「${label}」`).toBeTruthy();
+      await act(async () => {
+        button.click();
+      });
+      expect(props.onExport).toHaveBeenCalledWith(format);
+    }
+    // 三种格式都点过；导出**不关**弹框（用户多半还要接着看）。
+    expect(props.onExport).toHaveBeenCalledTimes(3);
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it("五个分页部件都在，页码显示「第几 / 共几页」", () => {
+    const { view, byText } = setup({ page: 2, total: 120, pageSize: 50 });
+    expect(view.container.textContent).toContain("每页数量");
+    expect(byText("第一页")).toBeTruthy();
+    expect(byText("上一页")).toBeTruthy();
+    expect(byText("下一页")).toBeTruthy();
+    expect(byText("最后一页")).toBeTruthy();
+    expect(view.container.textContent).toContain("第 2 / 3 页");
+  });
+
+  it("点分页按钮把页码交给上层", async () => {
+    const { props, byText } = setup({ page: 2 });
+    await act(async () => {
+      byText("下一页").click();
+    });
+    expect(props.onPageChange).toHaveBeenCalledWith(3);
+
+    await act(async () => {
+      byText("第一页").click();
+    });
+    expect(props.onPageChange).toHaveBeenCalledWith(1);
+
+    await act(async () => {
+      byText("最后一页").click();
+    });
+    expect(props.onPageChange).toHaveBeenCalledWith(3);
+  });
+
+  it("第 1 页时「第一页 / 上一页」禁用；最后一页时「下一页 / 最后一页」禁用", () => {
+    // 点了没反应会让人以为点错了。
+    const first = setup({ page: 1 });
+    expect(first.byText("第一页").disabled).toBe(true);
+    expect(first.byText("上一页").disabled).toBe(true);
+    expect(first.byText("下一页").disabled).toBe(false);
+
+    const last = setup({ page: 3, total: 120, pageSize: 50 });
+    expect(last.byText("下一页").disabled).toBe(true);
+    expect(last.byText("最后一页").disabled).toBe(true);
+    expect(last.byText("上一页").disabled).toBe(false);
+  });
+
+  it("每页数量是可选的下拉，改它会回传页大小", async () => {
+    const { view, props } = setup();
+    const select = view.container.querySelector("select")!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+      setter.call(select, "200");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(props.onPageSizeChange).toHaveBeenCalledWith(200);
+  });
+
+  it("加载中显示进度，且分页按钮禁用（避免并发翻页）", () => {
+    const { view, byText } = setup({ loading: true });
+    expect(view.container.textContent).toContain("正在加载完整会话");
+    expect(byText("下一页").disabled).toBe(true);
+  });
+
+  it("这一页没有消息时说清是「这一页」为空，而不是「会话为空」", () => {
+    const { view } = setup({ messages: [] });
+    expect(view.container.textContent).toContain("这一页没有可显示的消息");
+  });
+
+  it("底部有「共 N 条历史消息」、重新加载与关闭", async () => {
+    const { view, props, byText } = setup();
+    expect(view.container.textContent).toContain("共 120 条历史消息");
+
+    await act(async () => {
+      byText("重新加载").click();
+    });
+    expect(props.onReload).toHaveBeenCalled();
+
+    await act(async () => {
+      byText("关闭").click();
+    });
+    expect(props.onClose).toHaveBeenCalled();
+  });
+
+  it("消息区自己滚，分页控件在它外面", () => {
+    // 滚动整块会把分页控件一起滚走，而用户翻页时恰恰要按它。
+    const { view } = setup();
+    const scroll = view.container.querySelector(".messages-scroll");
+    expect(scroll).toBeTruthy();
+    expect(scroll!.contains(view.container.querySelector(".messages-pagination"))).toBe(false);
+  });
+
+  it("超过 4000 字的消息折叠起来，可展开；正好 4000 字不折叠", async () => {
+    // 几万字的日志糊满弹框没法读，但也不能把它丢掉。
+    const long = `${"长".repeat(4000)}尾巴`;
+    const { view } = setup({ messages: [{ role: "assistant", text: long }] });
+    const card = view.container.querySelector(".messages-text")!;
+    expect(card.textContent!.endsWith("…")).toBe(true);
+    // 折叠是**截断显示**，不是丢掉后半段——展开就能看全。
+    expect(card.textContent).not.toContain("尾巴");
+
+    const expand = [...view.container.querySelectorAll("button")].find((item) =>
+      item.textContent?.includes("展开全文")
+    )!;
+    expect(expand).toBeTruthy();
+    await act(async () => {
+      expand.click();
+    });
+    expect(view.container.querySelector(".messages-text")!.textContent).toBe(long);
+
+    const exact = setup({ messages: [{ role: "assistant", text: "长".repeat(4000) }] });
+    expect(
+      [...exact.view.container.querySelectorAll("button")].some((item) =>
+        item.textContent?.includes("展开全文")
+      )
+    ).toBe(false);
+  });
+
+  it("Escape 关闭", async () => {
+    const { props } = setup();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    await waitFor(() => expect(props.onClose).toHaveBeenCalled());
+  });
+
+  it("角色与时间都在：我 / 助手 + 时间", () => {
+    const { view } = setup();
+    const items = [...view.container.querySelectorAll(".messages-item")];
+    expect(items).toHaveLength(2);
+    expect(items[0]!.textContent).toContain("你");
+    expect(items[0]!.querySelector(".messages-avatar")!.textContent).toBe("我");
+    expect(items[1]!.textContent).toContain("助手");
+    expect(items[1]!.querySelector(".messages-avatar")!.textContent).toBe("AI");
+    // 时间来自消息自己的 `timestamp`（旧实现没有这一段）。
+    expect(items[0]!.querySelector("time")).toBeTruthy();
+  });
+});

@@ -286,6 +286,9 @@ export function MessagesModal({
 /**
  * 一条消息：头像 + 角色时间 + 内容卡。
  *
+ * **不导出**：只有这个文件里的 `MessagesModal` 用得到它（外部的消息渲染走
+ * `HistoryView` 的 `HistoryMessage`）。留一个 open 的出口只会让人以为别处在用它。
+ *
  * # 角色规则沿用主区
  *
  * 措辞取自 [`roleLabel`](../../app/session-display.ts)——正文与弹框看的是同一批消息，
@@ -296,7 +299,7 @@ export function MessagesModal({
  * 我 = 蓝底、AI = 强调色底：同一条时间线里两个头像必须**一眼可辨**。
  * 工具 / 系统不是对话，用中性底。
  */
-export function MessageCard({ message, onBranch }: { message: AiMessage; onBranch?: () => void }) {
+function MessageCard({ message, onBranch }: { message: AiMessage; onBranch?: () => void }) {
   const mine = message.role === "user";
   const avatar = mine ? "我" : message.role === "assistant" ? "AI" : roleLabel(message.role).slice(0, 1);
 
@@ -377,7 +380,13 @@ export function MessagesModalContainer({
   listChildren: (parentSessionId: string) => Promise<AiSession[]>;
   onClose: () => void;
   onOpenSession: (session: AiSession) => void;
-  onBranch: (sourceLine: number) => void;
+  /**
+   * 从某条消息处分支。
+   *
+   * 带 `sessionId`：分支必须分到**弹框里这条**会话上。弹框开着的未必是列表里
+   * 选中的那一条（侧栏卡片就能为非选中会话开弹框），上层只读选中值会分错。
+   */
+  onBranch: (sourceLine: number, sessionId: string) => void;
   onExport: (format: ExportFormat) => void;
 }) {
   const [pageSize, setPageSize] = useState(50);
@@ -405,7 +414,9 @@ export function MessagesModalContainer({
       onReload={detail.reload}
       onBranch={(sourceLine) => {
         // 分支会去开一路终端，弹框这时要让开。
-        onBranch(sourceLine);
+        // **显式带上弹框这条会话的编号**：它不是选中项时（侧栏卡片开弹框），
+        // 上层读选中值会分到别的会话上去。
+        onBranch(sourceLine, session.id);
         onClose();
       }}
       canBranch={canBranch}

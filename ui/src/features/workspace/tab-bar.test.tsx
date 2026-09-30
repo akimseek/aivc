@@ -79,6 +79,43 @@ describe("TabBar", () => {
     expect(onActivate).toHaveBeenCalledTimes(1);
   });
 
+  it("键盘可达：Enter/Space 激活，←/→ 在标签间移动焦点", () => {
+    const { pills, onActivate } = setup();
+    // 只有激活的那张在 Tab 序列里（roving tabindex），否则整条标签栏键盘够不着。
+    expect(pills()[0]!.tabIndex).toBe(0);
+    expect(pills()[1]!.tabIndex).toBe(-1);
+
+    fireEvent.keyDown(pills()[0]!, { key: "Enter" });
+    expect(onActivate).toHaveBeenCalledWith("session-1");
+
+    // 方向键只移动焦点，不激活：切标签会换掉画布，不该在找路时顺手发生。
+    pills()[0]!.focus();
+    fireEvent.keyDown(pills()[0]!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(pills()[1]);
+    expect(onActivate).toHaveBeenCalledTimes(1);
+
+    // 到头绕回另一端。
+    fireEvent.keyDown(pills()[1]!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(pills()[0]);
+    fireEvent.keyDown(pills()[0]!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(pills()[1]);
+
+    // Space 与 Enter 等价（键盘上的「点一下」）。
+    fireEvent.keyDown(pills()[1]!, { key: " " });
+    expect(onActivate).toHaveBeenCalledWith("session-2");
+  });
+
+  it("关闭按钮上的键盘事件不被标签抢走", () => {
+    // `Enter` 落在关闭按钮上时该关掉这张标签，而不是顺带把它切到前台。
+    const { pills, onActivate, onClose } = setup();
+    const close = pills()[1]!.querySelector<HTMLButtonElement>(".tab-pill-close")!;
+    fireEvent.keyDown(close, { key: "Enter" });
+    expect(onActivate).not.toHaveBeenCalled();
+    // 关闭按钮自己的点击不受影响。
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledWith("session-2");
+  });
+
   it("状态点区分「跑着」「等确认」与「异常退出」", () => {
     const { pills } = setup();
     const first = pills()[0]!.querySelector(".status-dot-pin")!;

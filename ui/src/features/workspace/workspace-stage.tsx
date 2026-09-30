@@ -66,7 +66,8 @@ export function WorkspaceStage({
   hasEarlier: boolean;
   loadingMore: boolean;
   onLoadEarlier: () => void;
-  onBranch: (sourceLine: number) => void;
+  /** 从某条消息处分支；带会话编号（分支必须分到视图里这条会话上）。 */
+  onBranch: (sourceLine: number, sessionId: string) => void;
   onOpenSession: (session: AiSession) => void;
   branchParent: (sessionId: string) => AiSession | undefined;
   branchChildren: (parentSessionId: string) => Promise<AiSession[]>;

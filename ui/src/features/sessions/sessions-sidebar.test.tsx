@@ -206,6 +206,28 @@ describe("过滤 chips", () => {
     expect(miss.view.container.querySelectorAll(".session-group-empty")).toHaveLength(2);
   });
 
+  it("本地筛选与后端查同一批字段：CLI 版本也命中", () => {
+    // 用户照着报错里的版本号（`0.154.0`）找那条会话是常见动作；本地筛少一个字段
+    // 就会把它判成「没命中」，而跨目标搜索（走后端）却找得到——同一个词两处结果不同。
+    const view = setup({
+      view: "favorites",
+      query: "0.154.0",
+      quickAccess: {
+        favorites: [
+          {
+            target: TARGET,
+            session: session({ id: "v1", title: "会话 v1", cliVersion: "0.154.0" }),
+            favorite: true
+          }
+        ],
+        recent: []
+      }
+    });
+    expect(view.view.container.textContent).toContain("会话 v1");
+    // 只有「最近打开」那一组是空的——收藏那一组命中了版本号。
+    expect(view.view.container.querySelectorAll(".session-group-empty")).toHaveLength(1);
+  });
+
   it("「★ 收藏 N」的 N **只数收藏**，不含「最近打开」", () => {
     // 裁定 R22：这个数字说的是「收藏夹里有几条星标过的会话」。此前它把
     // 「最近打开」也算进去，与 chip 上的字对不上。

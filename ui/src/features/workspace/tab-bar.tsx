@@ -15,6 +15,16 @@ import type { WorkspaceTabItem } from "../../app/use-workspace-tabs";
  * 关闭按钮**悬停才显形**：常驻的 ✕ 会让标签行看起来一直在闪（标签本来就多）；
  * 触屏（`@media (hover: none)`）没有悬停，因此常显——藏起来的按钮永远点不到。
  *
+ * # 键盘可达性（`role="tablist"` 要名副其实）
+ *
+ * 标签是 `<div role="tab">`：没有 `tabIndex` 的话整条标签栏在键盘上**完全够不着**，
+ * 而 `aria-selected` 这样的语义也就没人读得到。因此按 ARIA 的 roving tabindex 来：
+ *
+ * - 只有**激活的那张**在 Tab 序列里（`tabIndex=0`），其余是 `-1`；
+ * - `←` / `→` 在标签之间移动焦点（到头**绕回另一端**，与标签栏的视觉连续一致），
+ *   但**不激活**——切标签会换掉画布，不该在找路的时候顺手发生；
+ * - `Enter` / `Space` 才激活（键盘上的「点一下」）。
+ *
  * # 右端的三个动作
  *
  * `＋`（新建会话）、查找（当前终端的 Ctrl+F，见 `TerminalView` 的转发）、
@@ -65,7 +75,7 @@ export function TabBar({
     <div className="tab-bar">
       {/* 横向滚动只加在标签组上：把动作按钮一起放进滚动区，标签一多它们就被推出屏幕。 */}
       <div className="tab-strip" role="tablist" aria-label="工作区标签">
-        {items.map((item) => {
+        {items.map((item, index) => {
           const active = item.key === activeKey;
           const attention = item.tone === "attention";
           return (
@@ -73,8 +83,12 @@ export function TabBar({
               key={item.key}
               role="tab"
               aria-selected={active}
+              // 只有激活的那张在 Tab 序列里（roving tabindex）：整条标签栏因此
+              // 只占一个停留点，进去之后用左右方向键在标签间走。
+              tabIndex={active ? 0 : -1}
               className={`tab-pill${active ? " on" : ""}`}
               onClick={() => onActivate(item.key)}
+              onKeyDown={(event) => onTabKeyDown(event, item.key, index, onActivate)}
               onContextMenu={
                 onContextMenu
                   ? (event) => {
@@ -161,6 +175,37 @@ export function TabBar({
       </div>
     </div>
   );
+}
+
+/**
+ * 一张标签上的按键。
+ *
+ * `Enter` / `Space` 是「激活」：它们等价于用鼠标点这张标签。`←` / `→` 只**移动焦点**
+ * 到相邻标签（到头绕回另一端），不激活——切标签会换掉整个画布，不该在用户还在找
+ * 那一路终端的时候顺手发生；要再按一次 `Enter` 才切过去（ARIA 的手动激活模式）。
+ *
+ * 焦点在关闭按钮上时整个让给它：`Enter` 该关掉这张标签，而不是顺带把它切到前台。
+ */
+function onTabKeyDown(
+  event: React.KeyboardEvent<HTMLDivElement>,
+  key: string,
+  index: number,
+  onActivate: (key: string) => void
+): void {
+  if (event.target !== event.currentTarget) return;
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    onActivate(key);
+    return;
+  }
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  const strip = event.currentTarget.parentElement;
+  const pills = [...(strip?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
+  if (pills.length === 0) return;
+  event.preventDefault();
+  const step = event.key === "ArrowRight" ? 1 : -1;
+  // 绕回另一端而不是在边界上停住：标签栏是一条横线，到头继续走是自然的。
+  pills[(index + step + pills.length) % pills.length]?.focus();
 }
 
 /** 状态点：等确认优先于运行中（它是更需要用户看一眼的那一个）。 */

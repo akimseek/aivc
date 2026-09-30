@@ -545,8 +545,40 @@ describe("useTerminals 的事件装配", () => {
     });
     expect(view.result.current.uiStates[id]).toEqual({
       inputMode: "terminal",
-      composerVisible: true
+      composerVisible: true,
+      // 切到原生输入**顺带请求一次终端焦点**（见下一条用例）：不请求的话，
+      // 键盘用户敲的字仍然落在别处，「终端原生输入」就只是一个标签。
+      focusRequest: 1
     });
+  });
+
+  it("切到「终端原生输入」请求一次终端焦点；切回自管输入不请求", async () => {
+    // R29：输入区那个模式按钮删掉之后，状态栏胶囊是唯一的模式入口。焦点不跟回去，
+    // 用户点了「终端原生输入」却打不了字——而这一条在界面上没有任何报错。
+    const view = await render(() => useTerminals());
+    await act(async () => {
+      await view.result.current.openTerminal(null);
+    });
+    const id = view.result.current.terminals.at(-1)!.id;
+    const request = () => view.result.current.uiStates[id]!.focusRequest ?? 0;
+    expect(request()).toBe(0);
+
+    act(() => {
+      view.result.current.setInputMode(id, "terminal");
+    });
+    expect(request()).toBe(1);
+
+    // 切回自管输入：那一刻要打字的地方是输入框，不能把焦点抢回终端。
+    act(() => {
+      view.result.current.setInputMode(id, "composer");
+    });
+    expect(request()).toBe(1);
+
+    // 再切一次是**新的一次请求**——`TerminalPane` 只认计数变化。
+    act(() => {
+      view.result.current.setInputMode(id, "terminal");
+    });
+    expect(request()).toBe(2);
   });
 
   it("输出早于启动返回时也不丢揭示（R20 竞态）", async () => {

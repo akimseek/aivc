@@ -39,8 +39,7 @@
 
 .btn:focus-visible,
 .control:focus-visible,
-.chip:focus-visible,
-.tab:focus-visible {
+.chip:focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }

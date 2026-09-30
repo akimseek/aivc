@@ -122,6 +122,23 @@ describe("BranchPanel", () => {
     expect(onOpen).toHaveBeenCalledWith(child);
   });
 
+  it("根会话（没有父）也拉子分支，并把它显示出来", async () => {
+    // **这正是「有子分支」最常见的场景**：一个根分出去好几条。此前没有父就直接
+    // return，于是根会话永远看不到自己的子分支。
+    const child = session({ id: "child-1", title: "从根分出来的" });
+    const listChildren = vi.fn(async () => [child]);
+    const { view } = setup({ listChildren });
+
+    expect(listChildren).toHaveBeenCalledWith("sess-child");
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("从根分出来的");
+    });
+    const bar = view.container.querySelector(".lineage-bar")!;
+    // 没有父：来源那一格不渲染，但「当前会话 → 子分支」这一段要在。
+    expect(bar.querySelector(".lineage-node.root")).toBeNull();
+    expect(bar.querySelector(".lineage-node.child")).toBeTruthy();
+  });
+
   it("拉子分支失败不把整块变成错误", async () => {
     // 来源那一格仍然有意义，不该因为列不出子分支就什么都不显示。
     const { view } = setup({
@@ -134,5 +151,40 @@ describe("BranchPanel", () => {
       expect(view.container.textContent).toContain("当前会话");
     });
     expect(view.container.querySelector(".lineage-bar")).not.toBeNull();
+  });
+
+  it("父组件重渲染不重复拉，换了会话才重拉", async () => {
+    // 调用方两处都是**内联**箭头函数（`overlay-layer` 与 `app.tsx`）。把它写进
+    // effect 的依赖数组，等于「上层每重渲一次就重拉一次」——终端一有输出，上层
+    // 一秒能重渲好几次，那些 IPC 全是白发的。判据只有会话编号。
+    const listChildren = vi.fn(async (_parentSessionId: string) => [] as AiSession[]);
+    const onOpen = vi.fn();
+    const first = session({ id: "sess-a", metadata: { branch: { parentSessionId: "p1" } } });
+    const view = render(
+      <BranchPanel session={first} listChildren={(id) => listChildren(id)} onOpen={onOpen} />
+    );
+    await waitFor(() => {
+      expect(listChildren).toHaveBeenCalledTimes(1);
+    });
+
+    // 每次重渲都给一个**新的**函数——这正是内联写法在真实调用点上发生的事。
+    view.rerender(
+      <BranchPanel session={first} listChildren={(id) => listChildren(id)} onOpen={onOpen} />
+    );
+    view.rerender(
+      <BranchPanel session={first} listChildren={(id) => listChildren(id)} onOpen={onOpen} />
+    );
+    expect(listChildren).toHaveBeenCalledTimes(1);
+    expect(listChildren).toHaveBeenLastCalledWith("sess-a");
+
+    // 换一条会话：必须重拉，且拉的是新会话的子分支。
+    const second = session({ id: "sess-b", metadata: { branch: { parentSessionId: "p1" } } });
+    view.rerender(
+      <BranchPanel session={second} listChildren={(id) => listChildren(id)} onOpen={onOpen} />
+    );
+    await waitFor(() => {
+      expect(listChildren).toHaveBeenCalledTimes(2);
+    });
+    expect(listChildren).toHaveBeenLastCalledWith("sess-b");
   });
 });

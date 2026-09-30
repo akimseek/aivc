@@ -107,7 +107,8 @@ describe("HistoryView", () => {
     expect(blocks[1]!.querySelector(".history-branch")).toBeNull();
 
     fireEvent.click(blocks[2]!.querySelector(".history-branch")!);
-    expect(onBranch).toHaveBeenCalledWith(12);
+    // 行号 + **这条视图的会话编号**：分支要分到正在看的这条上。
+    expect(onBranch).toHaveBeenCalledWith(12, session.id);
   });
 
   it("有更早的消息时才给加载入口，加载中则禁用", () => {

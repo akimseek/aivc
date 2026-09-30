@@ -129,6 +129,11 @@ export function TerminalView({
                   按 `initialComposerVisible` 的规则把它放出来。
                 */
                 composerVisible={ui?.composerVisible ?? false}
+                /*
+                  「把焦点交给终端」的消费式信号（状态栏胶囊切到「终端原生输入」时发）。
+                  缺席按 0 算：编号还没登记的那一路不会有焦点请求。
+                */
+                focusRequest={ui?.focusRequest ?? 0}
                 onOutput={() => onOutput(item.id)}
                 registerSink={registerSink}
                 unregisterSink={unregisterSink}

@@ -82,7 +82,10 @@ const NO_RUNNING_SESSIONS: ReadonlySet<string> = new Set();
  * 这里剩下的是另一件事：用户站在收藏夹里打字，是在**眼前这两组**里找一条会话，
  * 没命中就是没命中——与服务端搜过什么无关。
  *
- * 语义按空白分词、全部词都要命中（AND），与后端一致。
+ * 语义按空白分词、全部词都要命中（AND），字段集也与后端一致
+ * （`aivc-core/src/text.rs` 的 `session_search_haystack`：编号、标题、来源标题、
+ * 工作目录、模型、**CLI 版本**、全部预览正文）。CLI 版本这一项曾经漏掉：
+ * 用户照着报错里的 `0.154.0` 去找那条会话时，本地筛选会把它判成「没命中」。
  */
 function matchesQuickQuery(session: AiSession, query: string): boolean {
   const terms = query
@@ -97,6 +100,7 @@ function matchesQuickQuery(session: AiSession, query: string): boolean {
     session.sourceTitle ?? "",
     session.cwd ?? "",
     session.model ?? "",
+    session.cliVersion ?? "",
     ...session.preview.map((message) => message.text)
   ]
     .join("\n")

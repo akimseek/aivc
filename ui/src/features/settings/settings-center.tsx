@@ -138,6 +138,10 @@ export function SettingsCenter({
                     key={item.id}
                     type="button"
                     className={`settings-nav-item${tab === item.id ? " on" : ""}`}
+                    // 当前页对读屏要说得出来：`.on` 只是视觉上的高亮。
+                    // 非当前项**不写**这个属性（写 `aria-current="false"` 等于给每一项
+                    // 都加一句话），这也是 ARIA 的推荐写法。
+                    aria-current={tab === item.id ? "page" : undefined}
                     onClick={() => setTab(item.id)}
                   >
                     {item.label}

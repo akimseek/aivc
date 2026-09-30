@@ -90,7 +90,13 @@ export type OverlaysActions = {
   closeTabAll: () => void;
   closeDetail: () => void;
   resumeSession: (session: AiSession) => void;
-  branchFromMessage: (sourceLine: number) => void;
+  /**
+   * 从某条消息处创建分支。
+   *
+   * 带 `sessionId`：消息弹框开着的未必是**当前选中**的那一条（侧栏卡片上的
+   * 「消息与分支」能为非选中会话开弹框），只读选中值会把分支分到别的会话上。
+   */
+  branchFromMessage: (sourceLine: number, sessionId?: string) => void;
   /**
    * 导出**消息弹框里那一条**会话。
    *

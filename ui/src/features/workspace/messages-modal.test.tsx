@@ -3,7 +3,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AiMessage, AiSession } from "../../types";
-import { MessagesModal } from "./messages-modal";
+import { MessagesModal, MessagesModalContainer } from "./messages-modal";
 
 /**
  * 消息与分支弹框。
@@ -110,6 +110,18 @@ describe("MessagesModal", () => {
       const bar = alone.view.container.querySelector(".lineage-bar");
       expect(bar).toBeNull();
     });
+  });
+
+  it("根会话（没有父）也显示子分支", async () => {
+    // 一条会话没有父不代表没有分出去过——根恰恰是最可能有子分支的那一条。
+    const child = session({ id: "child-1", title: "从根分出来的" });
+    const { view } = setup({ branchChildren: async () => [child] });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("从根分出来的");
+    });
+    const bar = view.container.querySelector(".lineage-bar")!;
+    expect(bar.querySelector(".lineage-node.root")).toBeNull();
+    expect(bar.querySelector(".lineage-node.child")).toBeTruthy();
   });
 
   it("点子分支回传那一条会话（由上层去打开）", async () => {
@@ -320,5 +332,52 @@ describe("MessagesModal", () => {
     expect(items[1]!.querySelector(".messages-avatar")!.textContent).toBe("AI");
     // 时间来自消息自己的 `timestamp`（旧实现没有这一段）。
     expect(items[0]!.querySelector("time")).toBeTruthy();
+  });
+});
+
+/**
+ * 容器那一段接线。
+ *
+ * `MessagesModalContainer` 此前零测试，而 R30 的会话错配恰恰出在这一段：分支必须
+ * 带上**弹框里这条**会话的编号，否则上层只会去读列表的选中项——弹框开在非选中
+ * 会话上时（侧栏卡片就能开），分支会分到别的会话上。
+ */
+describe("MessagesModalContainer 的分支接线", () => {
+  it("分支回传的是**弹框里这条**会话的编号，而不是选中项", async () => {
+    // 假运行时：详情那一页由它给。这里不碰真的 IPC（也只有这一条命令会被调）。
+    window.__TAURI__ = {
+      core: {
+        invoke: async () => ({
+          offset: 0,
+          hasMore: false,
+          messageCount: 1,
+          messages: [{ role: "user", text: "第一句", sourceLine: 9 }]
+        })
+      }
+    };
+    const onBranch = vi.fn();
+    const modalSession = session({ id: "modal-session", title: "弹框这条" });
+    const view = render(
+      <MessagesModalContainer
+        session={modalSession}
+        target={{ id: "codex:local", provider: "codex", label: "本机", kind: "local", available: true }}
+        resolveParent={() => undefined}
+        listChildren={async () => []}
+        onClose={vi.fn()}
+        onOpenSession={vi.fn()}
+        onBranch={onBranch}
+        onExport={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("第一句");
+    });
+    await act(async () => {
+      [...view.container.querySelectorAll("button")]
+        .find((item) => item.textContent?.trim() === "从此处分支")!
+        .click();
+    });
+    expect(onBranch).toHaveBeenCalledWith(9, "modal-session");
   });
 });

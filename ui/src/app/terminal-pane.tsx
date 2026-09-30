@@ -47,6 +47,13 @@ export function TerminalPane({
    * [`composer-text.ts`](../features/workspace/composer/composer-text.ts)）。
    */
   composerVisible,
+  /**
+   * 「把焦点交给终端」的请求（状态栏胶囊切到「终端原生输入」时发）。
+   *
+   * **只有变化才算一次请求**：与 `findSignal` 同一种消费式信号，ref 的初值就是挂载时
+   * 拿到的那个数。不请求就不抢焦点——「焦点该在谁那里」由下面那条 `active` 的 effect 管。
+   */
+  focusRequest = 0,
   /** 收到一段输出。**在数据回调里调**——这是「恢复的会话把输入框放出来」的唯一时机。 */
   onOutput,
   registerSink,
@@ -83,6 +90,7 @@ export function TerminalPane({
   onError: (message: string) => void;
   resolvedTheme: "light" | "dark";
   findSignal?: number;
+  focusRequest?: number;
   providerId: string;
   vendorId?: string;
   targetId?: string;
@@ -416,6 +424,31 @@ export function TerminalPane({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [active]);
+
+  /**
+   * 「把焦点交给终端」的请求：计数**变化**才交一次。
+   *
+   * 它是**显式请求**，因此不受 `composerVisible` 影响——用户刚点了「终端原生输入」，
+   * 那一刻焦点必须落到终端上，哪怕自管输入框还在屏幕上（切回自管输入是下一个动作）。
+   * 不这样写的话，请求会被上面那条 effect 的 `if (composerVisible) return` 吃掉，
+   * 用户敲的字仍然进不了 PTY。
+   *
+   * ref 的初值就是挂载时那个数（那次不算）：与 `findSignal` 同一条理由——挂载本身
+   * 不是一次点击，否则新建的终端一挂上去就把焦点抢走。
+   */
+  const consumedFocusRequest = useRef(focusRequest);
+  useEffect(() => {
+    if (focusRequest === consumedFocusRequest.current) return;
+    consumedFocusRequest.current = focusRequest;
+    if (!active) return;
+    try {
+      termRef.current?.focus();
+    } catch {
+      /* 终端还没挂到 DOM 上，忽略。 */
+    }
+    // 只在请求变化时触发；`active` 不放依赖里——切前台是上面那条 effect 的事。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest]);
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false);

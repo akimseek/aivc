@@ -685,39 +685,17 @@ export function useConsole(options: { notify?: Notify } = {}) {
    *
    * `messageLine` 必须是**原始 JSONL 行号**：后端要靠它精确定位到原始记录。
    * 过滤后的可见序号会截错位置，因此界面上只有带 `sourceLine` 的消息才提供这个动作。
-   */
-  /**
-   * 导出到**指定路径**（用户用原生对话框选了目录之后）。
    *
-   * 与 `exportCurrent` 的区别：那个不传路径，由后端挑默认落点。两条路都要留着——
-   * 默认落点让导出「一键可用」，指定路径让用户能放到自己想要的地方。
-   */
-  const exportCurrentTo = useCallback(
-    async (format: ExportFormat, filePath: string) => {
-      if (!targetId || !selectedId) return null;
-      try {
-        const result = await api.exportSession(targetId, selectedId, format, filePath);
-        setError("");
-        return result;
-      } catch (problem) {
-        setError(`导出失败：${describe(problem)}`);
-        return null;
-      }
-    },
-    [targetId, selectedId]
-  );
-
-  /**
-   * 从某条消息处创建分支。
-   *
-   * `messageLine` 必须是**原始 JSONL 行号**：后端要靠它精确定位到原始记录。
-   * 过滤后的可见序号会截错位置，因此界面上只有带 `sourceLine` 的消息才提供这个动作。
+   * `sessionId` 省略时从**当前选中**的那条分出去。消息弹框会显式传编号：它开着的
+   * 未必是选中项（侧栏卡片上的「消息与分支」就能为非选中会话开弹框），只读选中值
+   * 会把分支分到**别的会话**上去——与 [`exportCurrent`] 同一条理由、同一种做法。
    */
   const branchFromMessage = useCallback(
-    async (messageLine: number) => {
-      if (!targetId || !selectedId) return;
+    async (messageLine: number, sessionId?: string) => {
+      const id = sessionId ?? selectedId;
+      if (!targetId || !id) return;
       try {
-        const branch = await api.branchSession(targetId, selectedId, messageLine);
+        const branch = await api.branchSession(targetId, id, messageLine);
         await loadSessions(targetId, view, query);
         setSelectedId(branch.id);
         setError("");
@@ -934,7 +912,6 @@ export function useConsole(options: { notify?: Notify } = {}) {
     renameSession,
     duplicateCurrent,
     exportCurrent,
-    exportCurrentTo,
     branchFromMessage,
     openCurrentFolder,
     removeSession,

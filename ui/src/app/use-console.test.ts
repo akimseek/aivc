@@ -220,3 +220,81 @@ describe("quickAccess 的取数时机", () => {
     expect(calls).not.toContain("codex:list-sessions");
   });
 });
+
+/**
+ * 分支分给谁。
+ *
+ * # 为什么要在 hook 这一层断言命令参数
+ *
+ * R30 是一个**可达**的错配：侧栏卡片上的「消息与分支」能为**非选中**会话开弹框，
+ * 而 `branchFromMessage` 此前只读 `selectedId`——用户在会话甲上点「从此处分支」，
+ * 分出来的却是会话乙的分支。类型、门禁全绿，只有参数是错的。
+ *
+ * 这里沿用 `fakeRuntime` 那一套（假 Tauri 运行时），但**连参数一起记下来**：
+ * 要断言的正是「后端收到哪一条会话的编号」。
+ */
+function recordingRuntime(answers: Record<string, () => unknown> = {}) {
+  const calls: { command: string; args: Record<string, unknown> }[] = [];
+  window.__TAURI__ = {
+    core: {
+      invoke: async (_command: string, payload?: unknown) => {
+        const { command = "", args = {} } = (payload ?? {}) as {
+          command?: string;
+          args?: Record<string, unknown>;
+        };
+        calls.push({ command, args });
+        return answers[command]?.() ?? [];
+      }
+    }
+  };
+  return calls;
+}
+
+describe("branchFromMessage 分给哪条会话", () => {
+  const branchArgs = (calls: { command: string; args: Record<string, unknown> }[]) =>
+    calls.find((call) => call.command === "codex:branch-session")?.args;
+
+  it("显式传入的会话编号优先——弹框开着的那条未必是选中项", async () => {
+    const calls = recordingRuntime({
+      "codex:branch-session": () => session("分支-1")
+    });
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    act(() => result.current.setSelectedId("selected-1"));
+
+    await act(async () => {
+      await result.current.branchFromMessage(42, "modal-1");
+    });
+
+    // 后端收到的是**弹框里那条**会话，而不是 `selectedId`。
+    expect(branchArgs(calls)).toEqual({
+      targetId: "codex:local",
+      sessionId: "modal-1",
+      messageLine: 42
+    });
+  });
+
+  it("不传编号时退回选中项（菜单栏那类入口的语义）", async () => {
+    const calls = recordingRuntime({
+      "codex:branch-session": () => session("分支-1")
+    });
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    // `selectTarget` 会排一个 0ms 防抖的列表加载；它是空列表，会把选中项清掉。
+    // 先让那一轮跑完，再选中——否则这条断言验的不是「退回选中项」。
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    act(() => result.current.setSelectedId("selected-1"));
+
+    await act(async () => {
+      await result.current.branchFromMessage(7);
+    });
+
+    expect(branchArgs(calls)).toEqual({
+      targetId: "codex:local",
+      sessionId: "selected-1",
+      messageLine: 7
+    });
+  });
+});

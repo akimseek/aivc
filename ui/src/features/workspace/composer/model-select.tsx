@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as api from "../../../ipc/commands";
 import { resolveModelSource } from "./models";
@@ -22,12 +22,20 @@ import { resolveModelSource } from "./models";
  *
  * 每开一路终端就发一次请求是不可接受的（Qoder 那条还要起一次 CLI 进程、最长 20 秒）。
  * 用户**真的去碰这个下拉**才算一次需要——原生 `<select>` 没有可靠的「展开」事件，
- * 因此 `pointerdown` / `focus` 是能拿到的最早信号。
+ * 因此 `pointerdown` / `focus` 是能拿到的最早信号（只认主键：右键与中键不算「要去选」）。
  *
  * # 失败要能再试
  *
  * 取数失败就把「无法获取模型」写在下拉里，**重新展开即重试**。失败一次就永久坏掉的
  * 控件比没有这个控件更糟：用户不知道是自己的操作不对还是它本来就不行。
+ * 写入失败则把选中项复位——不复位的话它停在刚选的那一项上，同值再选不触发
+ * `onChange`，用户就再也切不过去了。
+ *
+ * # 来源一变，清单作废
+ *
+ * `source`（哪一家供应商 / 哪个目标）变化时状态复位为 `idle`：供应商可能被**自动**
+ * 故障转移换掉（用户什么都没做），列着上一家的模型只会让人选到一个不再服务这一路的
+ * 供应商上去。
  *
  * # 没有来源就什么都不渲染
  *
@@ -63,9 +71,31 @@ export function ModelSelect({
   onError: (message: string) => void;
 }) {
   const source = resolveModelSource({ providerId, vendorId, targetId });
+  /**
+   * 来源的**身份**。用它而不是 `source` 本身：`resolveModelSource` 每次渲染都返回
+   * 新对象，按引用比较等于「每渲染一次就复位一次」。
+   */
+  const sourceKey = source
+    ? `${source.kind}:${source.kind === "vendor" ? source.vendorId : source.targetId}`
+    : "";
   const [state, setState] = useState<LoadState>({ status: "idle" });
   /** 选中的模型编号。它也是下拉里显示的那一项。 */
   const [selected, setSelected] = useState("");
+  const appliedSourceRef = useRef(sourceKey);
+
+  /**
+   * 来源变了就把状态清掉重来。
+   *
+   * 最要紧的一种：**供应商被自动故障转移换掉了**（`gateway:vendor-switched`，
+   * 全程没有用户操作）。不复位的话，下拉里列的还是上一家的模型，用户选一个——
+   * 那一条 `/model` 会发给一家已经不再服务这一路的供应商。
+   */
+  useEffect(() => {
+    if (appliedSourceRef.current === sourceKey) return;
+    appliedSourceRef.current = sourceKey;
+    setState({ status: "idle" });
+    setSelected("");
+  }, [sourceKey]);
 
   const load = useCallback(async () => {
     if (!source) return;
@@ -104,6 +134,14 @@ export function ModelSelect({
         await api.writeTerminal(terminalId, `/model ${id}\r`);
         onSent?.(`/model ${id}`);
       } catch (problem) {
+        /*
+          写失败就把选中项**复位**。
+
+          不复位的话下拉会停在用户刚选的那一项上（看起来像切成功了），而且它与
+          `selected` 同值——再选一次不会触发 `onChange`，用户**再也切不过去**，
+          除非挑一个别的模型再挑回来。
+        */
+        setSelected("");
         onError(problem instanceof Error ? problem.message : String(problem));
       }
     },
@@ -127,8 +165,14 @@ export function ModelSelect({
       aria-label="选择模型"
       title="选择模型：选中后立即生效（向 CLI 写 /model <id>）"
       value={selected}
-      // `pointerdown` / `focus` 就是「用户正要打开它」的最早信号，见文件头注释。
-      onPointerDown={expand}
+      /*
+        `pointerdown` / `focus` 就是「用户正要打开它」的最早信号，见文件头注释。
+        只认**主键**（`button === 0`）：右键是「看看有什么选项」的前置动作、中键是
+        粘贴，两者都不该触发取数——Qoder 那一路的取数会真起一次 CLI 进程（最长 20 秒）。
+      */
+      onPointerDown={(event) => {
+        if (event.button === 0) expand();
+      }}
       onFocus={expand}
       onChange={(event) => {
         const id = event.target.value;

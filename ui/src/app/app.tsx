@@ -529,6 +529,18 @@ export function App() {
     sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession;
 
   /**
+   * 画布（信息条 / 历史视图）要用的会话。
+   *
+   * 判据是**这张标签自己有没有会话编号**：全新会话的标签还没有编号（`sessionId` 缺席），
+   * 此刻传给画布的必须是 `null`——信息条于是退回显示这一路终端自己的标题与编号。
+   *
+   * 这里**不能**直接用 `activeSession`：它对没有编号的标签会回退到**当前选中项**，
+   * 那张标签上就会顶着另一条会话的标题与编号（而那条会话与这一路终端毫无关系）。
+   * 历史视图只会对**有编号的标签**渲染（`stage-content.ts`），因此同一个值对它也成立。
+   */
+  const tabSession = workspace.activeTab?.sessionId ? activeSession : null;
+
+  /**
    * 「消息与分支」：打开这条会话的详情（消息列表 + 分支关系都在那里）。
    *
    * 没有会话可看时传 `undefined`——按钮显示为禁用，而不是「点得动但什么都不发生」。
@@ -745,13 +757,20 @@ export function App() {
                 不在就弹「设置工作目录」）。`undefined` = 这一刻没有可恢复的东西。
               */
               onResumeSession={canResumeSession ? resumeActiveSession : undefined}
-              session={console.selectedSession}
+              session={tabSession}
               messageTotal={console.messageTotal}
               messages={console.messages}
               hasEarlier={console.hasEarlier}
               loadingMore={console.loadingMore}
               onLoadEarlier={() => void console.loadEarlierMessages()}
-              onBranch={(sourceLine) => void console.branchFromMessage(sourceLine)}
+              /*
+                分支：**带上标签那条会话的编号**。历史视图讲的是活动标签的会话，
+                而它未必等于列表里的选中项（例如切到没有会话编号的新标签之后，
+                选中项还停在旧会话上），只读选中值会分到别的会话上去。
+              */
+              onBranch={(sourceLine, sessionId) =>
+                void console.branchFromMessage(sourceLine, sessionId)
+              }
               onOpenSession={(session) => {
                 const target =
                   console.targets.find(
@@ -778,6 +797,11 @@ export function App() {
             gateway={console.gateway}
             // 还没有输入侧状态时按初值显示：新会话就是「自管输入」。
             inputMode={activeUi?.inputMode ?? "composer"}
+            /*
+              切输入模式。切到「终端原生输入」时**焦点也会跟回终端**——那件事由
+              `setInputMode` 一并做（`focusRequest`），这里只决定切到哪一边：
+              焦点规则留在状态层，往后多一个入口也不会漏掉它。
+            */
             onToggleInputMode={() => {
               if (!activeTerminalId) return;
               terminals.setInputMode(
@@ -891,7 +915,8 @@ export function App() {
           resumeSession: (session) => {
             if (selectedTarget) void beginResumeSession(selectedTarget, session);
           },
-          branchFromMessage: (sourceLine) => void console.branchFromMessage(sourceLine),
+          branchFromMessage: (sourceLine, sessionId) =>
+            void console.branchFromMessage(sourceLine, sessionId),
           // 消息弹框里导出的必须是**弹框里那条**：`runExport` 显式带编号，
           // 否则它会去读「当前选中」，而选中项未必是弹框正开着的那条会话。
           exportDetail: (session, format) => void runExport(format, session),

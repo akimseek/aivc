@@ -132,4 +132,66 @@ describe("ModelSelect", () => {
 
     await waitFor(() => expect(onError).toHaveBeenCalledWith("终端已关闭"));
   });
+
+  it("写入失败后选中项复位：同一个模型再选一次仍然发得出去", async () => {
+    // 不复位的话下拉停在刚选的那一项上，同值再选不触发 `onChange`——
+    // 那一次失败之后用户**再也切不过去**（除非先选一个别的再选回来）。
+    ipc.listVendorModels.mockResolvedValue([{ id: "gpt-5" }]);
+    ipc.writeTerminal.mockRejectedValueOnce(new Error("终端已关闭"));
+    const view = render(
+      <ModelSelect terminalId="t1" providerId="codex" vendorId="v1" onError={vi.fn()} />
+    );
+
+    fireEvent.pointerDown(select(view.container)!);
+    await waitFor(() => expect(select(view.container)!.options).toHaveLength(2));
+    fireEvent.change(select(view.container)!, { target: { value: "gpt-5" } });
+    await waitFor(() => expect(ipc.writeTerminal).toHaveBeenCalledTimes(1));
+    // 回到占位项（值不再是 gpt-5）。
+    await waitFor(() => expect(select(view.container)!.value).toBe(""));
+
+    fireEvent.change(select(view.container)!, { target: { value: "gpt-5" } });
+    await waitFor(() => expect(ipc.writeTerminal).toHaveBeenCalledTimes(2));
+  });
+
+  it("右键 / 中键不触发取数（Qoder 那一路会真起一次 CLI）", async () => {
+    const view = render(
+      <ModelSelect terminalId="t1" providerId="qoder" targetId="qoder:local" onError={vi.fn()} />
+    );
+
+    fireEvent.pointerDown(select(view.container)!, { button: 2 });
+    fireEvent.pointerDown(select(view.container)!, { button: 1 });
+    expect(ipc.listModels).not.toHaveBeenCalled();
+
+    // 主键才算「要去选」。
+    fireEvent.pointerDown(select(view.container)!, { button: 0 });
+    await waitFor(() => expect(ipc.listModels).toHaveBeenCalledWith("qoder:local"));
+  });
+
+  it("来源变了（供应商被自动换掉）就把清单作废，不再列旧家的模型", async () => {
+    // 自动故障转移全程没有用户操作：沿用旧清单会让用户把 `/model` 发给一家
+    // 已经不再服务这一路的供应商。
+    ipc.listVendorModels.mockResolvedValue([{ id: "gpt-5" }]);
+    const view = render(
+      <ModelSelect terminalId="t1" providerId="codex" vendorId="v1" onError={vi.fn()} />
+    );
+    fireEvent.pointerDown(select(view.container)!);
+    await waitFor(() => expect(select(view.container)!.options).toHaveLength(2));
+    fireEvent.change(select(view.container)!, { target: { value: "gpt-5" } });
+    await waitFor(() => expect(select(view.container)!.value).toBe("gpt-5"));
+
+    ipc.listVendorModels.mockResolvedValue([{ id: "claude-sonnet" }]);
+    view.rerender(
+      <ModelSelect terminalId="t1" providerId="codex" vendorId="v2" onError={vi.fn()} />
+    );
+
+    // 清单没了、选中项也清了：只剩余占位项那一条。
+    await waitFor(() => expect(select(view.container)!.options).toHaveLength(1));
+    expect(select(view.container)!.value).toBe("");
+    expect(select(view.container)!.textContent).toContain("选择模型");
+
+    // 重新展开取的是**新那一家**的清单。
+    fireEvent.pointerDown(select(view.container)!);
+    await waitFor(() => expect(ipc.listVendorModels).toHaveBeenCalledWith("v2"));
+    await waitFor(() => expect(select(view.container)!.textContent).toContain("claude-sonnet"));
+  });
 });

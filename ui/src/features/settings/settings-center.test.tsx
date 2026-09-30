@@ -134,15 +134,20 @@ describe("SettingsCenter 导航", () => {
       // 激活态恰好一个，且就是点的那一项。
       expect(view.container.querySelectorAll(".settings-nav-item.on")).toHaveLength(1);
       expect(view.container.querySelector(".settings-nav-item.on")).toBe(item);
+      // 读屏那一份：当前页在 `aria-current` 上，而不是只靠 `.on`。
+      expect(item.getAttribute("aria-current")).toBe("page");
       const content = view.container.querySelector(".settings-content");
       await waitFor(() => expect(content?.textContent ?? "").toContain(markers[label]));
     }
   });
 
-  it("默认打开供应商管理", () => {
-    const { view } = setup();
+  it("默认打开供应商管理，并用 aria-current 标出当前页", () => {
+    const { view, items } = setup();
     const active = view.container.querySelector(".settings-nav-item.on");
     expect(active?.textContent).toBe("供应商管理");
+    // `.on` 只是视觉高亮，读屏读不到——当前页要写在 `aria-current` 上。
+    expect(active?.getAttribute("aria-current")).toBe("page");
+    expect(items().filter((item) => item.hasAttribute("aria-current"))).toHaveLength(1);
   });
 });
 

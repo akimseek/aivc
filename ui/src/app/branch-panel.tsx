@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { displayTitle, formatWhen } from "./session-display";
 import type { AiSession } from "../types";
@@ -24,6 +24,12 @@ import type { AiSession } from "../types";
  * - **子分支**：每个子会话一个按钮（标题 + 相对时间）；
  * - `正在加载…` 的加载态；
  * - **父与子都没有时整块不渲染**——大多数会话没有分支，留一个空框只会占地方。
+ *
+ * # 根会话（没有父）也必须拉子分支
+ *
+ * 曾经这里「没有 `parentSessionId` 就直接 return」：于是**根会话永远看不到自己的
+ * 子分支**——而「从一个根分出去好几条」恰恰是最需要看血缘的场景。父会话解析不出来
+ * 只是「来源那一格退化成短编号」，与「有没有子分支」是两件毫不相干的事。
  */
 export type BranchPanelProps = {
   session: AiSession;
@@ -47,40 +53,57 @@ export function shortId(id: string): string {
 export function BranchPanel({ session, resolveParent, listChildren, onOpen }: BranchPanelProps) {
   const branch = session.metadata?.branch;
   const parentSessionId = branch?.parentSessionId;
-  const [children, setChildren] = useState<AiSession[]>([]);
-  const [loading, setLoading] = useState(Boolean(parentSessionId));
+  /**
+   * 子分支**连同它是哪条会话的**一起存。
+   *
+   * 只存一个数组的话，换会话后的那一次渲染会拿旧数组配新会话（effect 要等提交之后
+   * 才跑），屏幕上闪出的是上一条会话的子分支。
+   */
+  const [loaded, setLoaded] = useState<{ forId: string; children: AiSession[] }>({
+    forId: "",
+    children: []
+  });
+  const children = loaded.forId === session.id ? loaded.children : [];
+  const loading = loaded.forId !== session.id;
+
+  /**
+   * 最新的 `listChildren` 放在 ref 里。
+   *
+   * 它是调用方**每次渲染新建**的箭头函数（`overlay-layer` 与 `app.tsx` 两处都是
+   * 内联写的）。写进依赖数组等于「上层每重渲一次就重拉一次子分支」——终端一有输出
+   * 上层一秒能重渲好几次，那些 IPC 全是白发的。判据只有会话编号。
+   */
+  const listChildrenRef = useRef(listChildren);
+  listChildrenRef.current = listChildren;
 
   useEffect(() => {
-    if (!parentSessionId) {
-      setChildren([]);
-      setLoading(false);
-      return;
-    }
     let cancelled = false;
-    setLoading(true);
-    void listChildren(session.id)
+    // **无论有没有父都拉**：没有父的根会话同样可能有分出去的子分支（见文件头）。
+    void listChildrenRef
+      .current(session.id)
       .then((list) => {
         // 组件已经换了一个会话时不要再写状态，否则会把上一个会话的子分支显示出来。
-        if (!cancelled) setChildren(list);
+        if (!cancelled) setLoaded({ forId: session.id, children: list });
       })
       .catch(() => {
         // 列不出来不是致命错误：来源那一行仍然有意义，不因此整块变成错误。
-        if (!cancelled) setChildren([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoaded({ forId: session.id, children: [] });
       });
     return () => {
       cancelled = true;
     };
-    // 会话换了就要重新拉；`listChildren` 由调用方注入，通常是稳定引用。
-  }, [session.id, parentSessionId, listChildren]);
+    // 只有「换了一条会话」才重拉，理由见 `listChildrenRef`。
+  }, [session.id]);
 
   const parent = parentSessionId ? resolveParent?.(parentSessionId) : undefined;
   const hasParent = Boolean(parentSessionId);
 
   // 父与子都没有：整块不渲染。
-  if (!hasParent && children.length === 0 && !loading) return null;
+  //
+  // 子分支**还在拉的那一刻也算「没有」**：绝大多数会话没有任何分支，先摆一个
+  // 「正在加载…」的框再收回去，正文会白白跳一下。反过来，真要显示子分支时，
+  // 这条 IPC 通常在一次往返内就回来了。
+  if (!hasParent && children.length === 0) return null;
 
   return (
     <nav className="lineage-bar" aria-label="分支关系">

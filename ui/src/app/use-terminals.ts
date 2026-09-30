@@ -55,7 +55,22 @@ export type VendorSwitch = {
  *
  * 于是 `TerminalPane` 改成受控：它只报告「收到了输出」，可见性与模式由这里决定。
  */
-export type TerminalUiState = { inputMode: TerminalInputMode; composerVisible: boolean };
+export type TerminalUiState = {
+  inputMode: TerminalInputMode;
+  composerVisible: boolean;
+  /**
+   * 「把焦点交给这一路终端」的**消费式信号**：递增计数，缺席等于 0。
+   *
+   * 与标签栏的 `findSignal` 同一种做法——**只有变化才算一次请求**，由
+   * `TerminalPane` 用 ref 记住已消费的值。否则挂载时拿到的那个数会被当成一次请求，
+   * 新建的终端一挂上去就自己抢焦点。
+   *
+   * 为什么需要它：输入区那个模式按钮删掉之后，状态栏胶囊成了唯一的模式入口，
+   * 而点它时焦点在**胶囊上**（键盘用户）或仍留在自管输入框里——不把焦点送回终端，
+   * 「终端原生输入」就只是个标签，用户敲的字进不了 PTY。
+   */
+  focusRequest?: number;
+};
 
 /** 一路终端。 */
 export type TerminalSession = {
@@ -439,22 +454,36 @@ export function useTerminals() {
   /**
    * 切换一路终端的输入模式。
    *
-   * **切到自管输入时顺带把输入框显出来**——否则用户看到的是「切过去了但看不见框」：
-   * 输入框藏在恢复会话的初始状态里时，模式切了也没有任何可见变化。
+   * 两种模式各自带一个**与之绑定的动作**——它们不是装饰，少了任何一个模式都会
+   * 退化成一句空话：
+   *
+   * | 切到 | 顺带做什么 | 不做会怎样 |
+   * | --- | --- | --- |
+   * | `composer` | 把输入框显出来 | 用户看到的是「切过去了但看不见框」 |
+   * | `terminal` | **把焦点交回终端** | 键盘输入还落在输入框/胶囊上，敲字进不了 PTY |
+   *
+   * 绑定动作写在这里而不是调用点：状态栏胶囊是唯一入口，但把「模式与焦点必须同时
+   * 生效」这条规则留在状态层，调用点就漏不掉它。焦点经由 `focusRequest` 计数下发，
+   * 这里够不着 DOM——持有 xterm 实例的是 `TerminalPane`。
    */
-  const setInputMode = useCallback((id: string, mode: TerminalInputMode) => {
-    setUiStates((current) => {
-      const state = current[id] ?? { inputMode: "composer" as const, composerVisible: false };
-      return {
-        ...current,
-        [id]: {
-          ...state,
-          inputMode: mode,
-          composerVisible: mode === "composer" ? true : state.composerVisible
-        }
-      };
-    });
-  }, []);
+  const setInputMode = useCallback(
+    (id: string, mode: TerminalInputMode) => {
+      setUiStates((current) => {
+        const state = current[id] ?? { inputMode: "composer" as const, composerVisible: false };
+        return {
+          ...current,
+          [id]: {
+            ...state,
+            inputMode: mode,
+            composerVisible: mode === "composer" ? true : state.composerVisible,
+            // 切回自管输入**不请求焦点**：那一刻用户要打字的地方正是输入框。
+            ...(mode === "terminal" ? { focusRequest: (state.focusRequest ?? 0) + 1 } : {})
+          }
+        };
+      });
+    },
+    []
+  );
 
   /**
    * 收到输出。

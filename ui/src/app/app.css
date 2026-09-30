@@ -70,7 +70,10 @@ select {
 /* 提示条是**浮层**，不是布局的一部分。
    外壳是 100vh 的网格（40px / 1fr / 28px），正文里插进一条提示会把状态栏挤到屏幕外
    （它此前是 `.shell` 的网格行，改造后那些行是固定高度）。固定在标题栏下方，
-   几秒后自己消失。 */
+   几秒后自己消失。
+
+   底与文字色不在这里：它总是与 `.export-hint` 一起用，那一条在文件后面、同权重，
+   所以这里再写一遍 `background` 是**永远不生效**的死声明。 */
 .hint-float {
   position: fixed;
   top: calc(40px + var(--ui-space-2));
@@ -79,7 +82,6 @@ select {
   max-width: min(560px, calc(100vw - 48px));
   border: 1px solid var(--ui-accent-border);
   border-radius: var(--ui-radius-lg);
-  background: var(--ui-bg-modal);
   box-shadow: var(--ui-shadow);
 }
 
@@ -337,11 +339,6 @@ select {
   cursor: pointer;
 }
 
-/* 悬停：边框收到文色（三种 tone 各自的色），不引入新的颜色 token。 */
-.gateway-pill:hover {
-  border-color: currentColor;
-}
-
 .gateway-pill.tone-warn {
   border-color: var(--ui-warn-border);
   background: var(--ui-warn-soft);
@@ -352,6 +349,14 @@ select {
   border-color: var(--ui-border);
   background: var(--ui-bg-card);
   color: var(--ui-muted);
+}
+
+/* 悬停：边框收到文色（三种 tone 各自的色），不引入新的颜色 token。
+   **必须放在 tone 之后**：三者同权重（类 + 伪类 / 类 + 类），后写的赢；
+   摆在前面时 tone-warn 与 tone-off 会把悬停反馈整个盖掉——只剩 tone-ok 有反应，
+   而「网关没在跑」恰恰是用户最想点进去看一眼的那一格。 */
+.gateway-pill:hover {
+  border-color: currentColor;
 }
 
 .gateway-pill-label {
@@ -1137,7 +1142,12 @@ select {
   transition: opacity 120ms ease;
 }
 
-.messages-item:hover .messages-branch {
+/* 分支动作：默认不显眼，悬停到消息上才出现——
+   它是低频动作，常驻会干扰阅读。
+   `:focus-visible` 那一条是给键盘用户的：不加的话 Tab 停在按钮上时它是透明的
+   （与 `.history-branch` 同一处理）。 */
+.messages-item:hover .messages-branch,
+.messages-branch:focus-visible {
   opacity: 1;
 }
 
@@ -2100,10 +2110,6 @@ select {
   flex: 1;
   min-height: 0;
   background: var(--term-bg);
-}
-
-.terminal-stack.hidden {
-  display: none;
 }
 
 .terminal-loading {

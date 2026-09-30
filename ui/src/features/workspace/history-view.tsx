@@ -42,7 +42,13 @@ export function HistoryView({
   hasEarlier: boolean;
   loadingMore: boolean;
   onLoadEarlier: () => void;
-  onBranch: (sourceLine: number) => void;
+  /**
+   * 从某条消息处分支。
+   *
+   * 带 `sessionId`：视图讲的是**标签上这条**会话，而上层动作读的是列表的选中项，
+   * 两者在「切到没有会话编号的新标签」之后会分叉——显式传编号才不会分错。
+   */
+  onBranch: (sourceLine: number, sessionId: string) => void;
   onOpenSession: (session: AiSession) => void;
   branchParent: (sessionId: string) => AiSession | undefined;
   branchChildren: (parentSessionId: string) => Promise<AiSession[]>;
@@ -114,7 +120,9 @@ export function HistoryView({
             onBranch={
               // 只有带原始行号的消息才能分支——后端要靠行号定位到原始记录，
               // 拿可见序号去截会截错位置。
-              message.sourceLine === undefined ? undefined : () => onBranch(message.sourceLine!)
+              message.sourceLine === undefined
+                ? undefined
+                : () => onBranch(message.sourceLine!, session.id)
             }
           />
         ))}

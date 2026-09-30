@@ -106,13 +106,20 @@ export function SessionWorkspace({
   vendors: ApiVendor[];
   /** 历史视图头部的「继续会话」；没有可恢复的东西时不传。 */
   onResumeSession?: () => void;
+  /**
+   * **活动标签真正挂着的那条**会话；新标签还没有编号时是 `null`。
+   *
+   * 信息条与历史视图都用它。不能用列表的选中项顶替：那会让新终端的标签顶着另一条
+   * 会话的标题与编号（判据与理由在 `app.tsx` 的 `tabSession` 那里）。
+   */
   session: AiSession | null;
   messageTotal: number | null;
   messages: AiMessage[];
   hasEarlier: boolean;
   loadingMore: boolean;
   onLoadEarlier: () => void;
-  onBranch: (sourceLine: number) => void;
+  /** 从某条消息处分支；带会话编号，见 `HistoryView` 的同名 prop。 */
+  onBranch: (sourceLine: number, sessionId: string) => void;
   onOpenSession: (session: AiSession) => void;
   branchParent: (sessionId: string) => AiSession | undefined;
   branchChildren: (parentSessionId: string) => Promise<AiSession[]>;

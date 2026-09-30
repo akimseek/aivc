@@ -35,3 +35,5 @@ Thumbs.db
 # 因此用 -RunRoot <仓库根> 做验证时会落到这里——实测已经误提交过一次。
 /stderr.txt
 /stdout.txt
+# subagent-driven-development 的工作区（台账/简报/报告，git 可见即噪音）
+.superpowers/

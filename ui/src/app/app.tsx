@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ToolbarSpacer, useToast, type TabItem } from "../components";
 import { SessionsSidebar } from "../features/sessions/sessions-sidebar";
 import type { SettingsTab } from "../features/settings/settings-center";
+import { WorkbenchSidebar } from "../features/workbench/workbench-sidebar";
 import * as api from "../ipc/commands";
 import { ActivityBar } from "../shell/activity-bar";
 import { AppShell } from "../shell/app-shell";
@@ -14,7 +15,6 @@ import { supportsBranch, supportsDuplicate } from "./provider-capabilities";
 import { planResume } from "./resume-session";
 import { SessionWorkspace, WorkspaceTrailing, canStartCodex } from "./session-workspace";
 import { displayTitle } from "./session-display";
-import { SidebarWorkbench } from "./sidebar-workbench";
 import { resolveStageContent } from "./stage-content";
 import { nextPreference } from "./theme";
 import { useConsole } from "./use-console";
@@ -608,18 +608,24 @@ export function App() {
               <aside className="sidebar hidden" aria-label="侧栏（已折叠）" />
             ) : (
               /* 工作台**整块替换**会话侧栏——活动栏切的是「哪一处地方」。
-                 Task 8 会把它包成自己的侧栏壳（`WorkbenchSidebar`），此刻先直接渲染。 */
-              <aside className="sidebar" aria-label="工作台侧栏">
-                <SidebarWorkbench
-                  provider={console.providers.find((item) => item.id === console.providerId)}
-                  target={selectedTarget}
-                  session={console.selectedSession}
-                  gateway={console.gateway}
-                  vendors={sidebarVendors}
-                  lastSwitch={lastRouteSwitch}
-                  refreshToken={workbenchToken}
-                />
-              </aside>
+                 `WorkbenchSidebar` 自带 `<aside className="sidebar workbench">`
+                 与滚动容器（R24），这里不再包一层 <aside>。 */
+              <WorkbenchSidebar
+                provider={console.providers.find((item) => item.id === console.providerId)}
+                target={selectedTarget}
+                session={console.selectedSession}
+                gateway={console.gateway}
+                vendors={sidebarVendors}
+                lastSwitch={lastRouteSwitch}
+                refreshToken={workbenchToken}
+                // 关闭 = 回会话：与活动栏的 onActivity 同一个语义（含把侧栏叫回来）。
+                onClose={() => {
+                  console.setPane("sessions");
+                  setSidebarCollapsed(false);
+                }}
+                onOpenUsage={() => openSettings("usage")}
+                onOpenFailures={() => openSettings("failures")}
+              />
             )
           ) : (
             <SessionsSidebar

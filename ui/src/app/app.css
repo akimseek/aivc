@@ -1198,20 +1198,188 @@ select {
   font-size: 11.5px;
 }
 
-/* ── 侧栏工作台 ──────────────────────────────────────── */
+/* ── 工作台侧栏 ──────────────────────────────────────── */
 
 /*
- * 工作台在 `.rows`（一个滚动容器）里。
+ * 工作台比会话侧栏宽 30px：卡片里是「标签 + 数字 + 进度条」几种信息并排，
+ * 310px 会把读数和条挤到换行。宽度写在侧栏自己身上（`.app-body` 那一列是 `auto`），
+ * 与会话侧栏同一个道理。
  *
- * 卡片之间要有间隔：它们是**四块不同的信息**，贴在一起会读成一整片。
- * 底部留出的余量比别处大——最后一张卡片紧贴滚动条底部会让人以为还有内容。
+ * 折叠态走 `.sidebar.hidden`（宽度归零），那个节点上**没有** `workbench` 类，
+ * 因此这条规则不会把折叠态又撑开。
  */
-.rows > .card {
+.sidebar.workbench {
+  width: 340px;
+}
+
+/*
+ * 头部固定、只让卡片区滚动（裁定 R24）。
+ *
+ * `.sidebar` 整体是 `overflow: hidden`，而五张卡远高于一屏：此前这块内容被直接塞在
+ * 裸 `.sidebar` 里，窗口一矮卡片就被压缩、末两张根本滚不到。
+ * 滚动容器因此是侧栏**自己的事**：`flex: 1` 拿走剩余高度，`min-height: 0` 让它
+ * 真的缩得下去（flex 项默认 `min-height: auto`，不写这行它会把侧栏整个撑高）。
+ */
+.workbench-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-4) var(--ui-space-3) var(--ui-space-3);
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+/* 头部两行：标题与关闭一行，性质徽章与刷新一行。挤成一行时 340px 放不下
+   （标题 8 个汉字 + 徽章 + 两个按钮），会横向溢出（`.sidebar` 是 `overflow: hidden`，
+   溢出的部分直接看不见）。 */
+.workbench-head-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  min-width: 0;
+}
+
+.workbench-title {
+  margin: 0;
+  font-size: var(--ui-text-lg);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+}
+
+.workbench-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ui-space-4) var(--ui-space-3);
+}
+
+/* 卡片之间要有间隔：它们是**五块不同的信息**，贴在一起会读成一整片。
+   空态提示（没有路由变更）也吃同一份节奏，否则它会与下一张卡粘住。 */
+.workbench-body > * {
   margin-bottom: var(--ui-space-3);
 }
 
-.rows > .card:last-child {
-  margin-bottom: var(--ui-space-2);
+.workbench-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.workbench-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+}
+
+.workbench-context {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+}
+
+.workbench-context-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+}
+
+.workbench-hint {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+}
+
+/* 速率窗口：一个窗口一组（标签 + 读数 / 条 / 重置时间）。 */
+.rate-windows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-3);
+}
+
+.rate-window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+}
+
+.rate-window-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-2);
+  font-size: var(--ui-text-xs);
+}
+
+.rate-window-label {
+  color: var(--ui-muted);
+}
+
+.rate-window-value {
+  font-weight: 600;
+}
+
+.rate-window-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+}
+
+/* 路由变更：一行读完（供应商 ➔ 名字 + 时间）。 */
+.route-change {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-2);
+  min-width: 0;
+}
+
+.route-change-label {
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+}
+
+.route-change-arrow {
+  color: var(--ui-accent);
+}
+
+.route-change-vendor {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-accent-strong);
+  font-size: var(--ui-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-change-time {
+  margin-left: auto;
+  color: var(--ui-faint);
+  font-size: var(--ui-text-xs);
+}
+
+/* 今日用量：三个数并排，扫一眼读到「忙不忙 / 稳不稳 / 慢不慢」。 */
+.usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ui-space-2);
+}
+
+.usage-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  min-width: 0;
+}
+
+.usage-metric-value {
+  font-size: var(--ui-text-lg);
+  font-weight: 700;
+}
+
+.usage-metric-label {
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
 }
 
 /* 异常列表：一条一行的紧凑排版，与表格区分开——它只有两行信息，做表格是浪费。 */

@@ -803,7 +803,9 @@ export const resetVendorHealth = (vendorId?: string) =>
  * 路径是否存在。
  *
  * 带上 `targetId`：后端**按目标分流**，WSL 目标的路径在本机看来毫无意义，
- * 它会显式拒绝而不是按本机路径误判成「不存在」。不传就按本机处理。
+ * 它会显式拒绝而不是按本机路径误判成「不存在」。`require_local` 认得的形制是后端
+ * 自己发出的 `codex:wsl:<distro>` 等带前缀编号，加上旧缓存里的裸 `wsl:<distro>`
+ * （见 `aivc-core/src/target.rs` 的 `wsl_distro_of`）。不传就按本机处理。
  */
 export const pathExists = (path: string, targetId?: string) =>
   invoke<boolean>("shell:path-exists", {

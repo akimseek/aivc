@@ -9,9 +9,11 @@ import { GatewayUsagePanel } from "./gateway-usage-panel";
  *
  * # 为什么这组断言非有不可
  *
- * 卡片上的数是**这一页的结论**，而汇总字段在真实后端上缺失是常态（不同上游记录的
- * 信息多寡不一样）。缺字段时给 `0` 或 `NaN` 都会被当真：`0` 读作「确实没有」、
- * `NaN` 读作「坏了」。因此这里钉住：**缺数据一律 `-`**。
+ * 卡片上的数是**这一页的结论**，而汇总里**token 与费用**那几项在真实后端上缺失是
+ * 常态（不同上游记录的信息多寡不一样；`requestCount` / `successCount` 则必有字段，
+ * 但界面按可缺处理）。缺字段时给 `0` 或 `NaN` 都会被当真：`0` 读作「确实没有」、
+ * `NaN` 读作「坏了」。因此这里钉住：**缺数据一律 `-`**，成功率的两项缺任何一个
+ * 也给 `-`（补成 `0` 会算出 `0.0%`，那读起来是「全都失败了」）。
  *
  * 零请求那份还要单独钉一次：`0/0` 算出来的成功率会被读成「全都失败了」，
  * 它必须是 `-`。
@@ -69,7 +71,7 @@ function setup(answers: Record<string, unknown>) {
 
 describe("GatewayUsagePanel：三张汇总卡", () => {
   it("请求数（含成功率）、累计 Tokens、预估费用各一张", async () => {
-    const { view } = setup({
+    const { view, invocations } = setup({
       "gateway:get-usage-report": report({
         requestCount: 1280,
         successCount: 1216,
@@ -85,11 +87,22 @@ describe("GatewayUsagePanel：三张汇总卡", () => {
       { label: "累计 Tokens", value: "2.85M", note: "" },
       { label: "预估费用", value: "$3.4200", note: "" }
     ]);
+
+    // 请求参数就是区间边界：后端 `period()` 缺 `periodStart` / `periodEnd` 会直接报错。
+    // 默认区间是「近 7 天」（由 `rangeBounds` 算出），因此两端正好差 7 天。
+    expect(invocations[0]).toEqual({
+      command: "gateway:get-usage-report",
+      args: { periodStart: expect.any(String), periodEnd: expect.any(String) }
+    });
+    expect(
+      Date.parse(invocations[0]!.args!.periodEnd!) - Date.parse(invocations[0]!.args!.periodStart!)
+    ).toBe(7 * 24 * 60 * 60 * 1000);
   });
 
   it("**字段缺失时给 `-`**，不是 `NaN`、也不是假的 `0`", async () => {
     const { view } = setup({
-      // 真实后端的「未知」就是字段不出现（不同上游记录的信息多寡不一样）。
+      // 「未知」在真实后端上表现为字段不出现——**token 与费用**那几个分项尤其如此
+      // （不同上游记录的信息多寡不一样）。
       "gateway:get-usage-report": report({
         requestCount: undefined,
         successCount: undefined,
@@ -104,6 +117,23 @@ describe("GatewayUsagePanel：三张汇总卡", () => {
     // 「不知道」被画成 0 的话，用户会以为这个区间真的没有用量。
     expect(cards(view).some((item) => item.value === "0")).toBe(false);
     expect(cards(view)[0]!.note).toContain("-");
+  });
+
+  it("有请求数但**缺成功数**时成功率是 `-`：补成 0 会算出 `0.0%`（读起来是全都失败了）", async () => {
+    const { view } = setup({
+      "gateway:get-usage-report": report({
+        requestCount: 1280,
+        successCount: undefined,
+        totalTokens: 0,
+        costUsd: 0
+      })
+    });
+
+    await waitFor(() => expect(cards(view)).toHaveLength(3));
+    // 请求数这一格照常显示（它自己有值），只有比值退到 `-`。
+    expect(cards(view)[0]).toEqual({ label: "请求数", value: "1280", note: "成功率 -" });
+    expect(view.container.textContent).not.toContain("0.0%");
+    expect(view.container.textContent).not.toContain("NaN");
   });
 
   it("零请求时成功率是 `-`（`0/0` 算出来的 `0.0%` 会被读成全都失败了）", async () => {

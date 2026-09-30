@@ -169,6 +169,10 @@ export function GatewayLogPanel({
 
           <ToolbarSpacer />
 
+          {/*
+            本页无分页：「全选当前页」实为**全部已加载条目**；「全部时间」会拉回全表
+            ——按钮上的措辞容易被当成「只看这一屏」，因此把真实范围记在这里。
+          */}
           <Button small onClick={toggleAll} disabled={entries.length === 0}>
             {allSelected ? "取消全选" : "全选当前页"}
           </Button>

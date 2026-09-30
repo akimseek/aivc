@@ -173,7 +173,7 @@ function SummaryCards({ summary }: { summary: UsageSummary }) {
           单独一张「-」的卡片占位却什么都没说。
         */}
         <span className="stat-card-note">
-          成功率 {successRateText(summary.requestCount ?? 0, summary.successCount ?? 0)}
+          成功率 {rateText(summary.requestCount, summary.successCount)}
         </span>
       </div>
       <div className="stat-card">
@@ -196,6 +196,21 @@ function SummaryCards({ summary }: { summary: UsageSummary }) {
  */
 function formatCount(value: number | undefined): string {
   return value === undefined || Number.isNaN(value) ? "-" : String(value);
+}
+
+/**
+ * 成功率。
+ *
+ * **缺任何一个都给 `-`**，而不是把缺的那个补齐成 `0` 再算：请求数有值而成功数缺失时，
+ * `0/1280` 会算出 `0.0%`——那读起来是「请求全都失败了」，真相却是这个数没给
+ * （与 `formatCount` 同一条规矩：不知道就说不知道）。
+ *
+ * `UsageSummary` 里这两项是必有字段，但界面此前就按「可能缺」写过（`?? 0`）：
+ * 值来自 IPC、绕不过类型，因此这里保留那份防御，只是不再用 0 去凑一个比值。
+ */
+function rateText(requestCount: number | undefined, successCount: number | undefined): string {
+  if (requestCount === undefined || successCount === undefined) return "-";
+  return successRateText(requestCount, successCount);
 }
 
 /**

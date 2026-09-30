@@ -171,13 +171,17 @@ export function SkillsPanel({
       )}
 
       {/* 技能列表收进一张卡：一个目标的技能是一个整体，散着排会让人以为
-          每一行都是独立的一块。空态也放进卡里，页面上只有这一块能是空的。 */}
+          每一行都是独立的一块。空态也放进卡里，页面上只有这一块能是空的。
+          加载中且还什么都没有时**不出空列表容器**：一个空的 `.list-rows` 会占着
+          卡片的间距，看起来像「已经加载完，只是没有内容」。 */}
       <Card>
-        {!loading && skills.length === 0 ? (
-          <EmptyState
-            message={mode === "trash" ? "回收站是空的。" : "这个目标下还没有技能。"}
-            hint={mode === "trash" ? undefined : "把技能目录放进目标的 skills/ 下即可。"}
-          />
+        {skills.length === 0 ? (
+          loading ? null : (
+            <EmptyState
+              message={mode === "trash" ? "回收站是空的。" : "这个目标下还没有技能。"}
+              hint={mode === "trash" ? undefined : "把技能目录放进目标的 skills/ 下即可。"}
+            />
+          )
         ) : (
           <div className="list-rows">
             {skills.map((skill) => (

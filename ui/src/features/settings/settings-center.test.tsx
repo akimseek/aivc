@@ -23,8 +23,9 @@ function fakeCore(): void {
     "skill:list-trash": [],
     "workspace:list-presets": [],
     // 日志页走**分页**那条路（带 page/pageSize ⇒ 后端返回分页对象）。
-    // 给裸数组会让 `entries` 落到 `Array.prototype.entries` 上，测试却看起来是绿的。
-    "gateway:query-logs": { entries: [], total: 0, page: 1, pageSize: 20 },
+    // 给裸数组会让 `items` 查出来是 `undefined`，面板悄悄渲染成空列表，
+    // 测试却看起来是绿的——假后端必须与真实命令的分页形状一致。
+    "gateway:query-logs": { items: [], total: 0, page: 1, pageSize: 20 },
     "gateway:list-failover-rules": [],
     "gateway:get-vendor-health": [],
     "gateway:get-port": null,

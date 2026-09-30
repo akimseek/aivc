@@ -464,7 +464,8 @@ export const getFailureDiagnostics = (request: {
  *
  * - **不带** `page`/`pageSize`：后端返回裸数组（全量）——与加参数之前完全一致，
  *   「最近请求」（`GatewayInsights`）那条旧调用不受影响；
- * - **带上**（必须两个一起给）：后端返回 `{ entries, total, page, pageSize }`。
+ * - **带上**（必须两个一起给）：后端返回 `{ items, total, page, pageSize }`
+ *   （与先例 `gateway:get-failure-diagnostics` 逐字同形）。
  *
  * 两种形状用重载分开声明，调用方不必自己 `Array.isArray` 收窄；
  * 只给一个参数在**编译期**就通不过（后端也会报「参数无效」——静默忽略参数

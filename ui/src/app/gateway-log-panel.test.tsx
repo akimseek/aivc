@@ -61,7 +61,7 @@ function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
 
 /**
  * 假后端：按请求的页码切出一页，`total` 固定——这正是真实命令的行为
- * （`{ entries, total, page, pageSize }`，`total` 是匹配总数而不是本页条数）。
+ * （`{ items, total, page, pageSize }`，`total` 是匹配总数而不是本页条数）。
  */
 function setup(
   options: { confirm?: boolean; removed?: number; total?: number } = {}
@@ -74,7 +74,7 @@ function setup(
       const start = (current - 1) * size;
       const count = Math.max(0, Math.min(size, total - start));
       return {
-        entries: Array.from({ length: count }, (_, index) => entry(`r${start + index + 1}`)),
+        items: Array.from({ length: count }, (_, index) => entry(`r${start + index + 1}`)),
         total,
         page: current,
         pageSize: size
@@ -213,16 +213,43 @@ describe("GatewayLogPanel：分页", () => {
       buttonNamed(view.container, "全选当前页").click();
     });
     expect(rowBoxes().every((box) => box.checked)).toBe(true);
-    // 计数是这一页的 20 条（不是 `total` 的 21 条）。
-    expect(buttonNamed(view.container, "删除选中").textContent).toContain("20");
+    // 计数是这一页的 20 条（不是 `total` 的 21 条）；用等值断言，
+    // `toContain("20")` 会匹配到别的文本（页数、总数里都有 20）。
+    expect(buttonNamed(view.container, "删除选中").textContent).toBe("删除选中（20）");
 
     await act(async () => {
       buttonNamed(view.container, "下一页").click();
     });
     await waitFor(() => expect(invocations).toHaveLength(2));
     // 翻页清空勾选：屏幕上看不见的条目不该还留在「删除选中」里。
-    expect(buttonNamed(view.container, "删除选中").textContent).toContain("0");
+    expect(buttonNamed(view.container, "删除选中").textContent).toBe("删除选中（0）");
     expect(rowBoxes().every((box) => !box.checked)).toBe(true);
+  });
+
+  it("手动「重新查询」清空勾选，但留在当前页", async () => {
+    const { view, invocations } = setup({ total: PAGE_SIZE + 1 });
+    await waitFor(() => expect(invocations).toHaveLength(1));
+
+    await act(async () => {
+      buttonNamed(view.container, "下一页").click();
+    });
+    await waitFor(() => expect(invocations).toHaveLength(2));
+
+    await act(async () => {
+      buttonNamed(view.container, "全选当前页").click();
+    });
+    // 第 2 页只有 1 条。
+    expect(buttonNamed(view.container, "删除选中").textContent).toBe("删除选中（1）");
+
+    await act(async () => {
+      buttonNamed(view.container, "重新查询").click();
+    });
+    await waitFor(() => expect(invocations).toHaveLength(3));
+
+    // 刷新后行会位移：留着的旧勾选会让「删除选中（N）」数到屏幕上看不见的 id。
+    expect(buttonNamed(view.container, "删除选中").textContent).toBe("删除选中（0）");
+    // 它只是重查、不是换筛选：页码不动（还在第 2 页）。
+    expect(invocations[2]!.args).toMatchObject({ page: 2 });
   });
 
   it("删光当前页（且不是第一页）⇒ 退回上一页重查", async () => {

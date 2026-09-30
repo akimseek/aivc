@@ -520,12 +520,12 @@ export type GatewayLogEntry = {
  * 形状与加参数之前完全一致）。两个参数必须**一起给**，只给一个后端会报「参数无效」
  * ——它此前吃过一次「参数被静默忽略、调用方以为在分页」的亏。
  *
- * 与 [`FailureDiagnosticsPage`] 同形（条目 + 总数 + 页码 + 每页条数），
- * 只有条目字段名不同：那边是 `items`，这里是 `entries`。
+ * 与 [`FailureDiagnosticsPage`] **逐字同形**（`items` + 总数 + 页码 + 每页条数）：
+ * 日志与异常是同一类分页表，字段名不该有第二套（旧平台同名命令也是 `items`）。
  */
 export type GatewayLogsPage = {
   /** 本页条目（按时间倒序）。 */
-  entries: GatewayLogEntry[];
+  items: GatewayLogEntry[];
   /** 满足筛选条件的总数（**不是**本页条数），分页控件据此算页数。 */
   total: number;
   /** 当前页码（1 起）。 */

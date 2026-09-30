@@ -203,9 +203,10 @@ describe("GatewayInsights", () => {
     expect(args.periodStart).not.toBe("");
   });
 
-  it("日志查询也带上区间，而不是传被忽略的 page/pageSize", async () => {
-    // 后端 `query_logs` 只读 `vendorId` / `outcome` / `periodStart` / `periodEnd`；
-    // 传 `page` / `pageSize` 会被**静默忽略**，函数看起来分页、实际每次全量。
+  it("日志查询也带上区间，而不是传会改变返回形状的 page/pageSize", async () => {
+    // 后端 `query_logs` 的 `page` / `pageSize` 现在真的生效（可选分页）：带上就不再
+    // 返回裸数组，而是 `{ items, total, page, pageSize }`。「最近请求」要的是一瞥的
+    // 全量数组，因此这条调用**不能**带分页参数——带错了形状，列表会静默变空。
     const runtime = fakeRuntime();
     await renderInsights(runtime);
 

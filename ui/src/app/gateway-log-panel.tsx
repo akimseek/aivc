@@ -39,8 +39,8 @@ const PAGE_SIZE = 20;
  *
  * 批次二裁定过不做客户端分页：日志只会越攒越多，前端把全表拉回来再切页，
  * 「翻到第 5 页」的开销与「只看一屏」一样大。现在 `gateway:query-logs` 支持
- * `page`/`pageSize`（**带上这两个参数**时返回 `{ entries, total, page, pageSize }`），
- * 这一页因此与异常诊断页同形：20 条一页、首/上/下翻页。
+ * `page`/`pageSize`（**带上这两个参数**时返回 `{ items, total, page, pageSize }`，
+ * 与异常诊断页逐字同形），这一页因此也同形：20 条一页、首/上/下翻页。
  *
  * # 「清空全部日志」为什么在这里
  *
@@ -106,7 +106,7 @@ export function GatewayLogPanel({
         : { ok: true as const, ...rangeBounds(picker.range) };
     if (!bounds.ok) {
       return Promise.resolve<GatewayLogsPage>({
-        entries: [],
+        items: [],
         total: 0,
         page: 1,
         pageSize: PAGE_SIZE
@@ -122,11 +122,11 @@ export function GatewayLogPanel({
   }, [page, outcome, picker.range, picker.start, picker.end]);
 
   const logs = useAsyncData(load, { errorMessage: "日志查询失败" });
-  const entries: GatewayLogEntry[] = logs.data?.entries ?? [];
+  const items: GatewayLogEntry[] = logs.data?.items ?? [];
   const total = logs.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   // 勾选与这一页的条目对齐：翻页与换筛选都会清空，因此这里比的就是当前页。
-  const allSelected = entries.length > 0 && selected.size === entries.length;
+  const allSelected = items.length > 0 && selected.size === items.length;
 
   const toggle = (requestId: string) => {
     setSelected((current) => {
@@ -138,7 +138,7 @@ export function GatewayLogPanel({
   };
 
   const toggleAll = () => {
-    setSelected(allSelected ? new Set() : new Set(entries.map((item) => item.requestId)));
+    setSelected(allSelected ? new Set() : new Set(items.map((item) => item.requestId)));
   };
 
   /** 删掉勾选的条目。**删除后再查一次**，而不是在本地把它们抹掉——
@@ -146,7 +146,7 @@ export function GatewayLogPanel({
   const removeSelected = useCallback(async () => {
     if (selected.size === 0) return;
     // 先把「这一页是否被整页删光」记下来：下面据此决定要不要退回上一页。
-    const emptiedThePage = entries.length === selected.size;
+    const emptiedThePage = items.length === selected.size;
     try {
       const removed = await api.deleteGatewayLogEntries([...selected]);
       setSelected(new Set());
@@ -158,7 +158,7 @@ export function GatewayLogPanel({
     } catch (problem) {
       onError(problem instanceof Error ? problem.message : String(problem));
     }
-  }, [selected, entries.length, page, logs, toast, onError]);
+  }, [selected, items.length, page, logs, toast, onError]);
 
   /**
    * 清空**全部**日志。
@@ -191,7 +191,16 @@ export function GatewayLogPanel({
         title="请求日志"
         description="按时间区间与结果筛选。逐条勾选后可以只删掉选中的那些。"
         actions={
-          <Button small onClick={() => void logs.reload()}>
+          <Button
+            small
+            onClick={() => {
+              // 手动重查也清空勾选（留在当前页，只清勾选）：刷新后行会位移，
+              // 留在集合里的 id 会让「删除选中（N）」数到屏幕上看不见的条目。
+              // 旧平台每次刷新（含手动）都清空，理由相同。
+              setSelected(new Set());
+              void logs.reload();
+            }}
+          >
             重新查询
           </Button>
         }
@@ -227,7 +236,7 @@ export function GatewayLogPanel({
             「全选当前页」就是字面意思：勾上**这一页**的 20 条。
             翻页会清空勾选（见 `gotoPage`），因此不存在「跨页累计」这种状态。
           */}
-          <Button small onClick={toggleAll} disabled={entries.length === 0}>
+          <Button small onClick={toggleAll} disabled={items.length === 0}>
             {allSelected ? "取消全选" : "全选当前页"}
           </Button>
           <Button
@@ -275,7 +284,7 @@ export function GatewayLogPanel({
           <LoadingBlock label="正在查询日志…" />
         ) : logs.error ? (
           <EmptyState message="日志查询失败。" hint={logs.error} />
-        ) : entries.length === 0 ? (
+        ) : items.length === 0 ? (
           <EmptyState
             message="这个条件下没有日志。"
             hint="换个时间区间或结果类型看看。"
@@ -296,7 +305,7 @@ export function GatewayLogPanel({
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry) => (
+              {items.map((entry) => (
                 <tr key={entry.requestId}>
                   <td>
                     <input

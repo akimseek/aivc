@@ -192,22 +192,20 @@
     check("探针造的规则已删掉（不污染真实数据）", !cleaned, String(cleaned));
 
     // ── 界面：表单里真的有这两个输入与「试一下」 ─────────
-    const toolbox = [...document.querySelectorAll("button")].find(
-      (item) => clean(item) === "工具箱"
-    );
-    if (toolbox) {
-      toolbox.click();
-      await p.sleep(500);
-      const item = [...document.querySelectorAll("button")].find(
-        (sub) => clean(sub) === "网关"
-      );
-      if (item) item.click();
-      for (let index = 0; index < 10 && !document.querySelector(".overlay-body"); index += 1) {
+    // 入口是活动栏底部的设置按钮（批次二移除了菜单栏），再点导航项进「本地网关 & 路由」。
+    const settings = document.querySelector(".activity-bottom button");
+    if (settings) {
+      settings.click();
+      for (let index = 0; index < 10 && !document.querySelector(".settings-panel"); index += 1) {
         await p.sleep(400);
       }
+      const page = [...document.querySelectorAll(".settings-nav-item")].find(
+        (item) => clean(item) === "本地网关 & 路由"
+      );
+      if (page) page.click();
     }
-    await p.sleep(1500);
-    const newRule = [...document.querySelectorAll(".overlay-body button")].find(
+    await p.sleep(2000);
+    const newRule = [...document.querySelectorAll(".settings-content button")].find(
       (item) => clean(item) === "新增规则"
     );
     check("网关页里有「新增规则」", Boolean(newRule), String(Boolean(newRule)));
@@ -215,7 +213,7 @@
       newRule.click();
       await p.sleep(700);
     }
-    const overlay = document.querySelector(".overlay-body");
+    const overlay = document.querySelector(".settings-content");
     const overlayText = overlay ? clean(overlay) : "";
     const placeholders = overlay
       ? [...overlay.querySelectorAll("input")].map((item) => item.placeholder)
@@ -269,7 +267,7 @@
       let verdict = "";
       for (let index = 0; index < 16; index += 1) {
         await p.sleep(300);
-        const text = clean(document.querySelector(".overlay-body") ?? document.body);
+        const text = clean(document.querySelector(".settings-content") ?? document.body);
         if (text.includes("会命中") || text.includes("不会命中")) {
           verdict = text.includes("会命中：状态码匹配")
             ? "status"

@@ -16,21 +16,13 @@
 
   const clean = (selector) => p.clean((document.querySelector(selector) || {}).textContent);
   const openTab = async (label) => {
-    if (!document.querySelector(".overlay-panel")) {
-      const toolbox = [...document.querySelectorAll("button")].find(
-        (item) => clean0(item) === "工具箱"
-      );
-      if (toolbox) {
-        toolbox.click();
-        await p.sleep(400);
-        const gateway = [...document.querySelectorAll("button")].find(
-          (item) => clean0(item) === "网关"
-        );
-        if (gateway) gateway.click();
-      }
+    if (!document.querySelector(".settings-panel")) {
+      // 入口是活动栏底部的设置按钮（批次二移除了菜单栏）。
+      const settings = document.querySelector(".activity-bottom button");
+      if (settings) settings.click();
       await p.sleep(2200);
     }
-    const chip = [...document.querySelectorAll(".overlay-tabs .chip")].find(
+    const chip = [...document.querySelectorAll(".settings-nav-item")].find(
       (item) => clean0(item) === label
     );
     if (!chip) return false;
@@ -66,8 +58,8 @@
   }
 
   // ── 6.1 CLI 环境页 ──────────────────────────────────────
-  out.openedEnvironment = await openTab("环境");
-  const envText = clean(".overlay-body");
+  out.openedEnvironment = await openTab("运行时环境");
+  const envText = clean(".settings-content");
   out.envText = envText.slice(0, 400);
 
   // 拿后端真实返回，用它来断言界面上的字。
@@ -109,7 +101,7 @@
   );
 
   // Node 大版本选择：两个选项来自后端的推荐与最低版本。
-  const nodeSelect = [...document.querySelectorAll(".overlay-body select")].find((item) =>
+  const nodeSelect = [...document.querySelectorAll(".settings-content select")].find((item) =>
     [...item.options].some((option) => /LTS/.test(option.textContent ?? ""))
   );
   out.nodeSelectOptions = nodeSelect
@@ -130,8 +122,8 @@
   );
 
   // ── 5.5 诊断页 ─────────────────────────────────────────
-  out.openedDiagnostics = await openTab("诊断");
-  const diagText = clean(".overlay-body");
+  out.openedDiagnostics = await openTab("系统诊断");
+  const diagText = clean(".settings-content");
   out.diagText = diagText.slice(0, 500);
 
   check(
@@ -174,8 +166,8 @@
 
   // ── 4.6 全局检索按平台筛选 ──────────────────────────────
   // 先关掉覆盖层，再切到搜索面板。
-  const closeButton = [...document.querySelectorAll(".overlay-head button")].find(
-    (item) => clean0(item) === "关闭"
+  const closeButton = [...document.querySelectorAll(".settings-head button")].find(
+    (item) => (item.getAttribute("aria-label") || "").trim() === "关闭"
   );
   if (closeButton) {
     closeButton.click();

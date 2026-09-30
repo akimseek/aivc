@@ -71,11 +71,17 @@ $steps = @(
     },
     @{
         Name  = "04-配置"
-        Probe = '(async()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="配置");if(!b)return "NO-BUTTON";b.click();await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({overlay:!!document.querySelector(".overlay-panel"),tabs:[...document.querySelectorAll(".overlay-tabs button")].map(x=>x.textContent.trim())});})()'
+        # 入口从菜单栏的「配置」改成活动栏底部的设置按钮：批次二移除了菜单栏，
+        # 设置中心现在只有这一个入口（`ui/src/shell/activity-bar.tsx`）。
+        # 面板与页签的类名也跟着换了：`.overlay-panel` → `.settings-panel`、
+        # `.overlay-tabs button` → `.settings-nav-item`。
+        Probe = '(async()=>{const b=document.querySelector(".activity-bottom button");if(!b)return "NO-BUTTON";b.click();await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({panel:!!document.querySelector(".settings-panel"),tabs:[...document.querySelectorAll(".settings-nav-item")].map(x=>x.textContent.trim())});})()'
     },
     @{
         Name  = "05-退出确认"
-        Probe = '(async()=>{const inv=(c,a)=>window.__TAURI__.core.invoke("aivc_invoke",{command:c,args:a??null});await inv("app:command",{command:"quit"});await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({dialog:!!document.querySelector(".overlay-panel-confirm"),buttons:[...document.querySelectorAll(".overlay-foot button")].map(x=>x.textContent.trim())});})()'
+        # 退出确认框批次二换成共享 `Dialog`：外壳与页脚的类名是
+        # `.dialog-panel` / `.dialog-footer button`，不再是 `.overlay-panel-confirm` / `.overlay-foot`。
+        Probe = '(async()=>{const inv=(c,a)=>window.__TAURI__.core.invoke("aivc_invoke",{command:c,args:a??null});await inv("app:command",{command:"quit"});await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({dialog:!!document.querySelector(".dialog-panel"),buttons:[...document.querySelectorAll(".dialog-footer button")].map(x=>x.textContent.trim())});})()'
     }
 )
 

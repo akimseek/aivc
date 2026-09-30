@@ -145,22 +145,21 @@
   );
 
   // ── 4. 界面上真的写着它 ──────────────────────────────────
-  const toolbox = [...document.querySelectorAll("button")].find(
-    (item) => p.clean(item.textContent) === "工具箱"
-  );
-  if (toolbox) {
-    toolbox.click();
-    await p.sleep(400);
-    const gateway = [...document.querySelectorAll("button")].find(
-      (item) => p.clean(item.textContent) === "网关"
+  // 入口是活动栏底部的设置按钮（批次二移除了菜单栏），再点导航项进「本地网关 & 路由」。
+  const settings = document.querySelector(".activity-bottom button");
+  if (settings) {
+    settings.click();
+    await p.sleep(1200);
+    const page = [...document.querySelectorAll(".settings-nav-item")].find(
+      (item) => p.clean(item.textContent) === "本地网关 & 路由"
     );
-    if (gateway) gateway.click();
+    if (page) page.click();
     await p.sleep(2500);
   }
 
   // 面板挂载时会自己取一次状态；点一次「刷新」强制它重取，
   // 以排除「面板挂载那一刻刚好没取到」这种时序问题。
-  const reload = [...document.querySelectorAll(".overlay-body button")].find(
+  const reload = [...document.querySelectorAll(".settings-content button")].find(
     (item) => p.clean(item.textContent) === "刷新"
   );
   if (reload) {
@@ -168,7 +167,7 @@
     await p.sleep(2000);
   }
 
-  const panelText = p.clean((document.querySelector(".overlay-body") || {}).textContent);
+  const panelText = p.clean((document.querySelector(".settings-content") || {}).textContent);
   out.panelText = panelText.slice(0, 300);
   out.hasAddressRow = Boolean(document.querySelector(".gateway-address"));
 
@@ -180,7 +179,7 @@
     `shown=${out.shownAddress} expected=${after.baseUrl} hasRow=${out.hasAddressRow}`
   );
 
-  const panelButtons = [...document.querySelectorAll(".overlay-body button")].map((item) =>
+  const panelButtons = [...document.querySelectorAll(".settings-content button")].map((item) =>
     p.clean(item.textContent)
   );
   out.panelButtons = panelButtons;
@@ -195,7 +194,7 @@
   );
 
   // ── 5. 端口输入框里不再是字符串 "undefined" ──────────────
-  const portInput = [...document.querySelectorAll(".overlay-body input")].find((item) =>
+  const portInput = [...document.querySelectorAll(".settings-content input")].find((item) =>
     (item.inputMode ?? "") === "numeric"
   );
   out.portInputValue = portInput ? portInput.value : null;

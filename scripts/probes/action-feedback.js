@@ -128,23 +128,17 @@
     //
     // 这一条走的是**另一条通道**（`ConfigOverlay` 的 onNotify → 面板），
     // 与上面 useConsole 那条不是同一条代码路径。
-    const toolbox = [...document.querySelectorAll("button")].find(
-      (item) => clean(item) === "工具箱"
-    );
-    if (toolbox) {
-      toolbox.click();
-      await p.sleep(500);
-      const item = [...document.querySelectorAll("button")].find(
-        (sub) => clean(sub) === "供应商管理"
-      );
-      if (item) item.click();
-      for (let index = 0; index < 10 && !document.querySelector(".overlay-body"); index += 1) {
+    const settings = document.querySelector(".activity-bottom button");
+    if (settings) {
+      // 入口是活动栏底部的设置按钮（批次二移除了菜单栏）。
+      settings.click();
+      for (let index = 0; index < 10 && !document.querySelector(".settings-content"); index += 1) {
         await p.sleep(400);
       }
     }
     await p.sleep(1200);
 
-    const overlayOpened = Boolean(document.querySelector(".overlay-body"));
+    const overlayOpened = Boolean(document.querySelector(".settings-content"));
     check("能打开供应商管理页", overlayOpened, String(overlayOpened));
 
     // 造一条供应商并删掉它——两个动作各应有一句话。
@@ -158,17 +152,17 @@
       enabled: false
     });
     // 让面板重新列一次，才能点到「删除」。
-    const reload = [...document.querySelectorAll(".overlay-body button")].find(
+    const reload = [...document.querySelectorAll(".settings-content button")].find(
       (item) => clean(item) === "刷新"
     );
     if (reload) reload.click();
     await p.sleep(900);
-    // 供应商列表没有「刷新」，靠切页签重取。
-    const gatewayTab = [...document.querySelectorAll(".overlay-tabs .chip")].find(
-      (item) => clean(item) === "网关"
+    // 供应商列表没有「刷新」，靠切导航项重取。
+    const gatewayTab = [...document.querySelectorAll(".settings-nav-item")].find(
+      (item) => clean(item) === "本地网关 & 路由"
     );
-    const vendorTab = [...document.querySelectorAll(".overlay-tabs .chip")].find(
-      (item) => clean(item) === "供应商"
+    const vendorTab = [...document.querySelectorAll(".settings-nav-item")].find(
+      (item) => clean(item) === "供应商管理"
     );
     if (gatewayTab && vendorTab) {
       gatewayTab.click();
@@ -177,7 +171,7 @@
       await p.sleep(1400);
     }
 
-    const probeRow = [...document.querySelectorAll(".overlay-body tr")].find((item) =>
+    const probeRow = [...document.querySelectorAll(".settings-content tr")].find((item) =>
       clean(item).includes(PROBE)
     );
     out.probeRowFound = Boolean(probeRow);

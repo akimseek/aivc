@@ -24,27 +24,25 @@
   try {
     await p.waitForTargets();
 
-    /** 打开工具箱的某一页。 */
-    const openTab = async (menuLabel) => {
-      const toolbox = [...document.querySelectorAll("button")].find(
-        (item) => clean(item) === "工具箱"
-      );
-      if (!toolbox) return false;
-      toolbox.click();
+    /** 打开设置中心的某一页（入口是活动栏底部的设置按钮，批次二移除了菜单栏）。 */
+    const openTab = async (navLabel) => {
+      const settings = document.querySelector(".activity-bottom button");
+      if (!settings) return false;
+      settings.click();
       await p.sleep(500);
-      const item = [...document.querySelectorAll("button")].find(
-        (sub) => clean(sub) === menuLabel
+      const item = [...document.querySelectorAll(".settings-nav-item")].find(
+        (sub) => clean(sub) === navLabel
       );
       if (!item) return false;
       item.click();
-      for (let index = 0; index < 12 && !document.querySelector(".overlay-body"); index += 1) {
+      for (let index = 0; index < 12 && !document.querySelector(".settings-content"); index += 1) {
         await p.sleep(400);
       }
-      return Boolean(document.querySelector(".overlay-body"));
+      return Boolean(document.querySelector(".settings-content"));
     };
 
     const switchOverlayTab = async (label) => {
-      const chip = [...document.querySelectorAll(".overlay-tabs .chip")].find(
+      const chip = [...document.querySelectorAll(".settings-nav-item")].find(
         (item) => clean(item) === label
       );
       if (!chip) return false;
@@ -54,14 +52,14 @@
     };
 
     // ── A9：三个面板都有「自定义」与两个日期框 ───────────
-    const opened = await openTab("网关");
+    const opened = await openTab("本地网关 & 路由");
     check("能打开网关配置页", opened, String(opened));
     await p.sleep(800);
 
     out.ranges = {};
-    for (const tab of ["用量", "异常", "日志"]) {
+    for (const tab of ["用量报表", "异常诊断", "请求日志"]) {
       const switched = await switchOverlayTab(tab);
-      const select = document.querySelector('.overlay-body select[aria-label="时间范围"]');
+      const select = document.querySelector('.settings-content select[aria-label="时间范围"]');
       const options = select ? [...select.options].map((item) => item.value) : [];
       out.ranges[tab] = { switched, options };
       check(
@@ -77,16 +75,16 @@
     }
 
     // 切到「自定义」：两个日期框应当出现，并给出「请选择完整的起止日期。」
-    await switchOverlayTab("用量");
-    const select = document.querySelector('.overlay-body select[aria-label="时间范围"]');
+    await switchOverlayTab("用量报表");
+    const select = document.querySelector('.settings-content select[aria-label="时间范围"]');
     if (select) {
       const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
       setter.call(select, "custom");
       select.dispatchEvent(new Event("change", { bubbles: true }));
       await p.sleep(600);
     }
-    const startInput = document.querySelector('.overlay-body input[aria-label="开始日期"]');
-    const endInput = document.querySelector('.overlay-body input[aria-label="结束日期"]');
+    const startInput = document.querySelector('.settings-content input[aria-label="开始日期"]');
+    const endInput = document.querySelector('.settings-content input[aria-label="结束日期"]');
     out.dateInputs = { start: Boolean(startInput), end: Boolean(endInput) };
     check("**选「自定义」后出现开始日期与结束日期两个框**", Boolean(startInput) && Boolean(endInput), JSON.stringify(out.dateInputs));
 
@@ -99,13 +97,13 @@
 
     // 只填开始 → 「请选择完整的起止日期。」
     await setDate(startInput, "2026-01-01");
-    let bodyText = clean(document.querySelector(".overlay-body"));
+    let bodyText = clean(document.querySelector(".settings-content"));
     out.incompleteHint = bodyText.includes("请选择完整的起止日期。");
     check("**只填一端时提示「请选择完整的起止日期。」**", out.incompleteHint, String(out.incompleteHint));
 
     // 再填一个更早的结束 → 「起始日期不能晚于结束日期。」
     await setDate(endInput, "2025-01-01");
-    bodyText = clean(document.querySelector(".overlay-body"));
+    bodyText = clean(document.querySelector(".settings-content"));
     out.reversedHint = bodyText.includes("起始日期不能晚于结束日期。");
     check("**起止颠倒时提示「起始日期不能晚于结束日期。」**", out.reversedHint, String(out.reversedHint));
     check(
@@ -116,7 +114,7 @@
 
     // 填成合法区间 → 提示消失。
     await setDate(endInput, "2026-02-01");
-    bodyText = clean(document.querySelector(".overlay-body"));
+    bodyText = clean(document.querySelector(".settings-content"));
     check(
       "填成合法区间后提示消失",
       !bodyText.includes("请选择完整的起止日期。") &&
@@ -131,7 +129,7 @@
     //
     // 控制实验：**先把区间设成「没有记录」的范围**（1970 年），确认那时候界面上
     // 没有「缓存输入」这几个字，避免把静态表头当成动态数据。
-    await switchOverlayTab("用量");
+    await switchOverlayTab("用量报表");
     /*
       **必须限定在总览那个 `<dl>` 里读**，不能拿整页文本去搜。
       
@@ -139,7 +137,7 @@
       于是「总览里有缓存输入」这条断言靠表头就能通过——而总览里有没有根本没验到。
       这个形状的错本轮已经出现过三次（断言的字面在别处也存在），因此这里明确取元素。
     */
-    const summary = document.querySelector(".overlay-body .description-list");
+    const summary = document.querySelector(".settings-content .description-list");
     const summaryText = summary ? clean(summary) : "";
     out.usageSummary = summaryText.slice(0, 260);
     check("找到了用量总览那个列表（找不到的话下面两条会空过）", Boolean(summary), String(Boolean(summary)));
@@ -186,11 +184,11 @@
     }
 
     // ── A12：网关未监听时的引导文案 ─────────────────────
-    await switchOverlayTab("网关");
-    const gatewayText = clean(document.querySelector(".overlay-body"));
+    await switchOverlayTab("本地网关 & 路由");
+    const gatewayText = clean(document.querySelector(".settings-content"));
     out.gatewayGuidance = {
       // 有地址时应当有「复制」；没地址时应当给出下一步该做什么。
-      hasAddress: Boolean(document.querySelector(".overlay-body .gateway-address")),
+      hasAddress: Boolean(document.querySelector(".settings-content .gateway-address")),
       text: gatewayText.slice(0, 260)
     };
     const guidance = gatewayText.includes("启用网关") || gatewayText.includes("复制");
@@ -210,8 +208,8 @@
     // 这条是**反向断言**：旧平台有「仅文件日志 / 仅请求记录 / 两者」，
     // 而本工程只有数据库里的请求记录，因此这一项**不该**出现——
     // 出现就意味着有人以为存在一个并不存在的文件日志。
-    await switchOverlayTab("日志");
-    const logText = clean(document.querySelector(".overlay-body"));
+    await switchOverlayTab("请求日志");
+    const logText = clean(document.querySelector(".settings-content"));
     out.logPanel = logText.slice(0, 200);
     check(
       "日志页**没有**「仅文件日志 / 文件日志和请求记录」这类选项（本工程没有文本日志）",

@@ -26,23 +26,22 @@
    * 找不到就静默跳过，于是后面基于「面板文本」的断言**全部空过**。
    * 因此这里返回是否真的打开了，调用方必须断言它。
    */
-  const openConfigTab = async (menuLabel) => {
-    if (document.querySelector(".overlay-body")) return true;
-    const toolbox = [...document.querySelectorAll("button")].find(
-      (item) => clean(item) === "工具箱"
-    );
-    if (!toolbox) return false;
-    toolbox.click();
+  const openConfigTab = async (navLabel) => {
+    if (document.querySelector(".settings-content")) return true;
+    // 入口是活动栏底部的设置按钮（批次二移除了菜单栏）。
+    const settings = document.querySelector(".activity-bottom button");
+    if (!settings) return false;
+    settings.click();
     await p.sleep(500);
-    const item = [...document.querySelectorAll("button")].find(
-      (sub) => clean(sub) === menuLabel
+    const item = [...document.querySelectorAll(".settings-nav-item")].find(
+      (sub) => clean(sub) === navLabel
     );
     if (!item) return false;
     item.click();
-    for (let index = 0; index < 10 && !document.querySelector(".overlay-body"); index += 1) {
+    for (let index = 0; index < 10 && !document.querySelector(".settings-content"); index += 1) {
       await p.sleep(400);
     }
-    return Boolean(document.querySelector(".overlay-body"));
+    return Boolean(document.querySelector(".settings-content"));
   };
 
   // 整段包一层：探针自己抛异常只会留下一句「求值结果抛异常」，
@@ -145,7 +144,7 @@
   check("能打开供应商管理页（打不开的话下面两条会空过）", vendorPanelOpened, String(vendorPanelOpened));
   await p.sleep(1200);
 
-  const row = [...document.querySelectorAll(".overlay-body tr")].find((item) =>
+  const row = [...document.querySelectorAll(".settings-content tr")].find((item) =>
     clean(item).includes(PROBE_NAME)
   );
   out.foundProbeRow = Boolean(row);
@@ -157,7 +156,7 @@
     editButton.click();
     await p.sleep(700);
   }
-  const overlay = document.querySelector(".overlay-body");
+  const overlay = document.querySelector(".settings-content");
   const priceInputs = overlay
     ? [...overlay.querySelectorAll("input")].map((item) => item.value).filter((v) => v !== "")
     : [];
@@ -175,8 +174,9 @@
   );
 
   // 关掉覆盖层，后面的终端那几条要干净的界面。
-  const closeOverlay = [...document.querySelectorAll(".overlay-head button")].find(
-    (item) => clean(item) === "关闭"
+  // 设置中心的关闭是**图标按钮**（没有文字），只能按无障碍名找。
+  const closeOverlay = [...document.querySelectorAll(".settings-head button")].find(
+    (item) => (item.getAttribute("aria-label") || "").trim() === "关闭"
   );
   if (closeOverlay) {
     closeOverlay.click();
@@ -201,7 +201,7 @@
   // ── A4：那句文案 ────────────────────────────────────────
   const stillOpen = await openConfigTab("供应商管理");
   await p.sleep(600);
-  const overlayText = clean(document.querySelector(".overlay-body") ?? document.body);
+  const overlayText = clean(document.querySelector(".settings-content") ?? document.body);
   out.overlayText = overlayText.slice(0, 300);
   // **先正向确认真的在供应商页上**：不然下面那条否定断言会空过
   // （面板没打开时「找不到那句话」当然成立）。这是本轮第三次抓到自己写的空过断言。

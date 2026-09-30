@@ -125,20 +125,20 @@
     );
 
     // ── 界面：三个输入框真的在网关页上 ───────────────────
-    const toolbox = [...document.querySelectorAll("button")].find(
-      (item) => clean(item) === "工具箱"
-    );
-    if (toolbox) {
-      toolbox.click();
-      await p.sleep(500);
-      const item = [...document.querySelectorAll("button")].find((sub) => clean(sub) === "网关");
-      if (item) item.click();
-      for (let index = 0; index < 12 && !document.querySelector(".overlay-body"); index += 1) {
+    // 入口是活动栏底部的设置按钮（批次二移除了菜单栏），再点导航项进「本地网关 & 路由」。
+    const settings = document.querySelector(".activity-bottom button");
+    if (settings) {
+      settings.click();
+      for (let index = 0; index < 12 && !document.querySelector(".settings-panel"); index += 1) {
         await p.sleep(400);
       }
+      const page = [...document.querySelectorAll(".settings-nav-item")].find(
+        (item) => clean(item) === "本地网关 & 路由"
+      );
+      if (page) page.click();
     }
-    await p.sleep(1500);
-    const overlay = document.querySelector(".overlay-body");
+    await p.sleep(2000);
+    const overlay = document.querySelector(".settings-content");
     const labels = [
       "异常切换阈值",
       "熔断次数",
@@ -162,8 +162,8 @@
     );
 
     // 关掉覆盖层，下面要用终端。
-    const close = [...document.querySelectorAll(".overlay-head button")].find(
-      (item) => clean(item) === "关闭"
+    const close = [...document.querySelectorAll(".settings-head button")].find(
+      (item) => (item.getAttribute("aria-label") || "").trim() === "关闭"
     );
     if (close) {
       close.click();

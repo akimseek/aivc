@@ -204,52 +204,43 @@
     await p.sleep(800);
   });
 
-  // ── 5. 配置覆盖层的新页签：用量 / 异常 / 日志 ───────────
+  // ── 5. 设置中心的新导航项：用量报表 / 异常诊断 / 请求日志 ───────────
   await safe("openConfig", async () => {
-    // 走菜单：工具箱 → 网关。
-    const toolbox = [...document.querySelectorAll("button")].find(
-      (item) => (item.textContent || "").trim() === "工具箱"
-    );
-    if (toolbox) {
-      toolbox.click();
-      await p.sleep(500);
-      const gateway = [...document.querySelectorAll("button")].find(
-        (item) => (item.textContent || "").trim() === "网关"
-      );
-      if (gateway) gateway.click();
-    }
+    // 入口是活动栏底部的设置按钮——批次二移除了菜单栏，旧的「工具箱 → 网关」不存在了。
+    const settings = document.querySelector(".activity-bottom button");
+    if (settings) settings.click();
     await p.sleep(2500);
   });
-  const overlay = document.querySelector(".overlay-panel");
-  check("配置覆盖层能打开", Boolean(overlay), overlay ? "已打开" : "没有 .overlay-panel");
+  const overlay = document.querySelector(".settings-panel");
+  check("设置中心能打开", Boolean(overlay), overlay ? "已打开" : "没有 .settings-panel");
   if (overlay) {
-    const tabs = [...overlay.querySelectorAll(".overlay-tabs .chip")].map((item) =>
+    const tabs = [...overlay.querySelectorAll(".settings-nav-item")].map((item) =>
       p.clean(item.textContent)
     );
-    check("配置页签含用量", tabs.includes("用量"), `页签=${JSON.stringify(tabs)}`);
-    check("配置页签含异常", tabs.includes("异常"), `页签=${JSON.stringify(tabs)}`);
-    check("配置页签含日志", tabs.includes("日志"), `页签=${JSON.stringify(tabs)}`);
+    check("设置导航含用量报表", tabs.includes("用量报表"), `导航=${JSON.stringify(tabs)}`);
+    check("设置导航含异常诊断", tabs.includes("异常诊断"), `导航=${JSON.stringify(tabs)}`);
+    check("设置导航含请求日志", tabs.includes("请求日志"), `导航=${JSON.stringify(tabs)}`);
 
-    // 切到「用量」页，确认它真的渲染出报表（而不是空白）。
-    const usageChip = [...overlay.querySelectorAll(".overlay-tabs .chip")].find(
-      (item) => p.clean(item.textContent) === "用量"
+    // 切到「用量报表」页，确认它真的渲染出报表（而不是空白）。
+    const usageChip = [...overlay.querySelectorAll(".settings-nav-item")].find(
+      (item) => p.clean(item.textContent) === "用量报表"
     );
     if (usageChip) usageChip.click();
     await p.sleep(2500);
-    const body = p.clean((document.querySelector(".overlay-body") || {}).textContent);
+    const body = p.clean((document.querySelector(".settings-content") || {}).textContent);
     check(
       "用量页渲染报表（按供应商/按模型）",
       body.includes("按供应商") && body.includes("按模型"),
       body.slice(0, 200)
     );
 
-    // 切到「日志」，确认有查询范围与结果类型两个筛选。
-    const logChip = [...overlay.querySelectorAll(".overlay-tabs .chip")].find(
-      (item) => p.clean(item.textContent) === "日志"
+    // 切到「请求日志」，确认有查询范围与结果类型两个筛选。
+    const logChip = [...overlay.querySelectorAll(".settings-nav-item")].find(
+      (item) => p.clean(item.textContent) === "请求日志"
     );
     if (logChip) logChip.click();
     await p.sleep(2500);
-    const logBody = p.clean((document.querySelector(".overlay-body") || {}).textContent);
+    const logBody = p.clean((document.querySelector(".settings-content") || {}).textContent);
     check(
       // 标签从「查询范围」改成「时间范围」：三个观测面板现在**共用同一个**
       // `GatewayRangePicker`，那个组件的字段名就是「时间范围」。
@@ -263,7 +254,11 @@
 
   // 关掉配置。
   await safe("closeConfig", async () => {
-    if (overlay) clickText(overlay, "关闭");
+    // 关闭是**图标按钮**（没有文字），按无障碍名找。
+    const close = [...document.querySelectorAll(".settings-head button")].find(
+      (item) => (item.getAttribute("aria-label") || "").trim() === "关闭"
+    );
+    if (close) close.click();
     await p.sleep(800);
   });
 

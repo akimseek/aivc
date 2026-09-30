@@ -41,21 +41,13 @@
 
   /** 打开配置覆盖层并切到某一页。 */
   const openTab = async (label) => {
-    if (!document.querySelector(".overlay-panel")) {
-      const toolbox = [...document.querySelectorAll("button")].find(
-        (item) => (item.textContent || "").trim() === "工具箱"
-      );
-      if (toolbox) {
-        toolbox.click();
-        await p.sleep(400);
-        const gateway = [...document.querySelectorAll("button")].find(
-          (item) => (item.textContent || "").trim() === "网关"
-        );
-        if (gateway) gateway.click();
-      }
+    if (!document.querySelector(".settings-panel")) {
+      // 入口是活动栏底部的设置按钮（批次二移除了菜单栏）。
+      const settings = document.querySelector(".activity-bottom button");
+      if (settings) settings.click();
       await p.sleep(2500);
     }
-    const chip = [...document.querySelectorAll(".overlay-tabs .chip")].find(
+    const chip = [...document.querySelectorAll(".settings-nav-item")].find(
       (item) => p.clean(item.textContent) === label
     );
     if (!chip) return false;
@@ -64,10 +56,10 @@
     return true;
   };
 
-  const bodyText = () => p.clean((document.querySelector(".overlay-body") || {}).textContent);
+  const bodyText = () => p.clean((document.querySelector(".settings-content") || {}).textContent);
 
   // ── 用量 ───────────────────────────────────────────────
-  out.openedUsage = await openTab("用量");
+  out.openedUsage = await openTab("用量报表");
   const usage = bodyText();
   out.usageText = usage.slice(0, 400);
 
@@ -113,7 +105,7 @@
   );
 
   // ── 异常 ───────────────────────────────────────────────
-  out.openedFailures = await openTab("异常");
+  out.openedFailures = await openTab("异常诊断");
   const failures = bodyText();
   out.failureText = failures.slice(0, 400);
 
@@ -132,7 +124,7 @@
   );
 
   // ── 日志 ───────────────────────────────────────────────
-  out.openedLogs = await openTab("日志");
+  out.openedLogs = await openTab("请求日志");
   const logs = bodyText();
   out.logText = logs.slice(0, 400);
 

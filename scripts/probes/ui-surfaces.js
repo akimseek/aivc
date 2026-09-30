@@ -80,22 +80,31 @@
     out.rowCount = document.querySelectorAll(".sidebar .rows .row").length;
   });
 
-  // ── 1. 侧栏一级导航里有「工作台」 ──────────────────────
+  // ── 1. 活动栏里有「工作台」 ────────────────────────────
+  //
+  // 批次一之后一级去处从侧栏 chips 搬到了活动栏（`.activity-item`，
+  // `shell/activity-bar.tsx`），旧探针找的 `.pane-nav .chip` 不存在了。
   const sidebar = document.querySelector(".sidebar");
-  const paneChips = [...document.querySelectorAll(".pane-nav .chip")].map((item) =>
-    p.clean(item.textContent)
+  const activityLabels = [...document.querySelectorAll(".activity-top .activity-item")].map(
+    (item) => item.getAttribute("aria-label") || ""
   );
-  check("侧栏一级导航含工作台", paneChips.includes("工作台"), `导航=${JSON.stringify(paneChips)}`);
+  check(
+    "活动栏一级去处含工作台",
+    activityLabels.includes("工作台与运行概览"),
+    `去处=${JSON.stringify(activityLabels)}`
+  );
 
   // ── 2. 工作台能打开，并渲染出四块内容 ────────────────────
   await safe("workbench", async () => {
-    const chip = [...document.querySelectorAll(".pane-nav .chip")].find(
-      (item) => p.clean(item.textContent) === "工作台"
+    const item = [...document.querySelectorAll(".activity-top .activity-item")].find(
+      (x) => (x.getAttribute("aria-label") || "") === "工作台与运行概览"
     );
-    if (chip) chip.click();
+    if (item) item.click();
     await p.sleep(2500);
   });
-  const workbenchText = p.clean((document.querySelector(".rows") || {}).textContent);
+  // 工作台侧栏的类是 `.workbench-body`（`features/workbench/workbench-sidebar.tsx`），
+  // 旧的 `.rows` 是会话列表容器，工作台里根本没有。
+  const workbenchText = p.clean((document.querySelector(".workbench-body") || {}).textContent);
   check(
     "工作台渲染运行上下文",
     workbenchText.includes("运行上下文"),
@@ -106,10 +115,10 @@
 
   // 回到会话列表。
   await safe("back", async () => {
-    const chip = [...document.querySelectorAll(".pane-nav .chip")].find(
-      (item) => p.clean(item.textContent) === "会话"
+    const item = [...document.querySelectorAll(".activity-top .activity-item")].find(
+      (x) => (x.getAttribute("aria-label") || "") === "AI 会话管理"
     );
-    if (chip) chip.click();
+    if (item) item.click();
     await p.sleep(1500);
   });
 
@@ -129,9 +138,14 @@
   );
 
   await safe("expand", async () => {
-    const button = document.querySelector('button[aria-label="展开侧栏"]');
-    if (button) button.click();
-    await p.sleep(600);
+    // 展开入口**不是**一个「展开侧栏」按钮（按 aria-label 找它永远是 null）：
+    // 折叠后点活动栏里的「会话」或「工作台」把侧栏叫回来
+    // （`features/sessions/sessions-sidebar.tsx` 文件头与 `app.tsx` 的 onActivity）。
+    const item = [...document.querySelectorAll(".activity-top .activity-item")].find(
+      (x) => (x.getAttribute("aria-label") || "") === "AI 会话管理"
+    );
+    if (item) item.click();
+    await p.sleep(800);
   });
   const expandedWidth = (document.querySelector(".sidebar") || { getBoundingClientRect: () => ({ width: 0 }) })
     .getBoundingClientRect().width;
@@ -141,52 +155,40 @@
     `展开后=${Math.round(expandedWidth)}px`
   );
 
-  // ── 4. 会话详情弹层：能从会话头打开，且分页控件在 ────────
+  // ── 4. 会话详情弹层：能从标签栏打开，且分页控件在 ────────
   //
-  // 注意**必须切到会话标签**：点会话行会同时打开终端并让它到前台，而终端的
-  // 正文区不渲染会话头（那是设计：终端在前台时不该被会话正文挤占）。
-  // 上一版探针漏了这一步，于是「找不到详情按钮」——那是探针的问题，不是功能的问题。
+  // 批次三：主列表的行是 `.session-card`（`features/sessions/session-card.tsx`），
+  // 单击是「打开历史正文」；详情入口在**标签栏**的动作区（「消息与分支」，
+  // `features/workspace/tab-bar.tsx`）——不是在正文头部：进了终端之后正文不再渲染，
+  // 放在那里等于「进了终端就再也看不到详情」。
   await safe("openDetail", async () => {
-    const rows = [...document.querySelectorAll(".row")];
-    if (rows[0]) rows[0].click();
-    await p.sleep(3000);
+    const card = document.querySelector(".sidebar .rows .session-card");
+    if (card) card.click();
+    for (let index = 0; index < 12 && !document.querySelector(".history-head"); index += 1) {
+      await p.sleep(500);
+    }
+    await p.sleep(1500);
   });
 
-  const tabLabels = [...document.querySelectorAll(".tab")].map((item) => p.clean(item.textContent));
+  const tabLabels = [...document.querySelectorAll(".tab-pill")].map((item) => p.clean(item.textContent));
   out.tabs = tabLabels;
-  await safe("switchToSessionTab", async () => {
-    // 会话标签在前台之外的那一张：先看有没有已经带 `on` 的终端标签。
-    const tabs = [...document.querySelectorAll(".tab")];
-    const current = tabs.find((item) => item.className.includes("on"));
-    // 点第一张（会话标签通常先建），再确认会话头出现了。
-    if (tabs[0] && tabs[0] !== current) {
-      tabs[0].click();
-      await p.sleep(1500);
-    }
-  });
-  out.sessionHeadPresent = Boolean(document.querySelector(".session-head"));
+  out.historyHeadPresent = Boolean(document.querySelector(".history-head"));
 
   await safe("detailButton", async () => {
-    // 「详情」现在在**标签栏**上，不在 `.session-head` 里。
-    //
-    // 移动它是为了修一个真实缺陷：原来它随会话正文一起渲染，于是**点历史会话
-    // 进入终端后正文不渲染、详情入口就消失了**，用户到不了「从此处分支」。
-    // 旧平台也是放在标签之上那一行。
-    const head = document.querySelector(".session-head");
-    if (head) clickText(head, "详情");
-    // 正文头部那条路已经不通了，从整页找——包括标签栏里的那一个。
-    if (!document.querySelector(".session-detail-dialog")) {
-      clickText(document.body, "详情");
+    if (!document.querySelector(".messages-panel")) {
+      clickText(document.body, "消息与分支");
     }
     await p.sleep(2000);
   });
-  const detail = document.querySelector(".session-detail-dialog");
+  // 会话详情弹层的类是 `.messages-panel`（`features/workspace/messages-modal.tsx`）；
+  // 旧的 `.session-detail-dialog` / `.session-detail-modal` 都不存在了。
+  const detail = document.querySelector(".messages-panel");
   check(
     "会话详情弹层能打开",
     Boolean(detail),
     detail
       ? "已打开"
-      : `没有 .session-detail-dialog（会话头=${out.sessionHeadPresent}，标签=${JSON.stringify(out.tabs)}）`
+      : `没有 .messages-panel（会话头=${out.historyHeadPresent}，标签=${JSON.stringify(out.tabs)}）`
   );
   if (detail) {
     const detailText = p.clean(detail.textContent);
@@ -198,9 +200,18 @@
       ),
       detailText.slice(0, 160)
     );
+    check(
+      "详情标题写的是消息与分支（不是空壳）",
+      detailText.includes("会话消息历史与分支演进"),
+      detailText.slice(0, 160)
+    );
   }
   await safe("closeDetail", async () => {
-    if (detail) clickText(detail, "关闭");
+    // 关闭是**图标按钮**（没有文字）：按无障碍名找。
+    const close = [...document.querySelectorAll(".messages-head button")].find(
+      (item) => (item.getAttribute("aria-label") || "").trim() === "关闭"
+    );
+    if (close) close.click();
     await p.sleep(800);
   });
 

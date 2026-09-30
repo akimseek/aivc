@@ -50,6 +50,21 @@ if ($missingBom.Count -gt 0) {
     $failures += 'bom'
 }
 
+# 探针选择器守卫：脚本（探针 / 基线）里引用的类名必须真的存在于 `ui/src`。
+#
+# 与上面那条同一个思路：这类腐坏**不会自己报错**——探针只会静默地查不到元素，
+# 打印一个 `NO-ROW` 或空对象，截图依旧是一张 PNG，看的人以为界面里就是没有。
+# 规则、排除项与白名单的理由都写在 `scripts/check-probe-selectors.cjs` 的文件头。
+Write-Host "=== 探针选择器 (check-probe-selectors) ===" -ForegroundColor Cyan
+node (Join-Path $PSScriptRoot "check-probe-selectors.cjs")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "失败（exit $LASTEXITCODE）：脚本引用了 ui/src 里不存在的类名" -ForegroundColor Red
+    $failures += 'probe-selectors'
+}
+else {
+    Write-Host "通过" -ForegroundColor Green
+}
+
 function Invoke-Step {
     param(
         [string]$Name,

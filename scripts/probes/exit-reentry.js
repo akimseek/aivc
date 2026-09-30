@@ -34,7 +34,9 @@
   };
 
   const snapshot = (label) => {
-    const tabs = [...document.querySelectorAll(".tab")];
+    // 批次一改了类名：标签是 `.tab-pill`（`features/workspace/tab-bar.tsx`），
+    // 主列表的行是 `.session-card`（`features/sessions/session-card.tsx`）。
+    const tabs = [...document.querySelectorAll(".tab-pill")];
     const active = tabs.find((item) => item.className.includes("on"));
     return {
       label,
@@ -42,7 +44,7 @@
       tabLabels: tabs.map((item) => p.clean(item.textContent)),
       activeTab: active ? p.clean(active.textContent) : null,
       xterms: document.querySelectorAll(".terminal-stack .xterm").length,
-      rows: document.querySelectorAll(".row").length,
+      rows: document.querySelectorAll(".session-card").length,
       screen: p.rows().slice(0, 70)
     };
   };
@@ -76,36 +78,34 @@
    *
    * 这一版比上一版多做两件事，因为上一次它只是反复失败、说不出原因：
    *
-   * 1. 逐个点 `.pane-nav` 里的 chip（不再靠文本精确匹配那一个）；
-   * 2. 每轮都把左侧的真实状态记下来（有哪些 chip、侧栏文本、行数），
+   * 1. 点**活动栏**里的「会话」（一级去处不再是 `.pane-nav .chip`，
+   *    见 `shell/activity-bar.tsx`）；
+   * 2. 每轮都把左侧的真实状态记下来（有哪些去处、侧栏文本、行数），
    *    这样失败时看到的是**证据**而不是一句「找不到行」。
    */
   const sidebarState = () => ({
-    chips: [...document.querySelectorAll(".pane-nav .chip")].map((item) =>
-      p.clean(item.textContent)
+    activities: [...document.querySelectorAll(".activity-top .activity-item")].map(
+      (item) => item.getAttribute("aria-label") || ""
     ),
-    activeChip: p.clean(
-      (document.querySelector(".pane-nav .chip.on") || {}).textContent
-    ),
-    rows: document.querySelectorAll(".row").length,
+    rows: document.querySelectorAll(".session-card").length,
     sidebarText: p.clean((document.querySelector(".sidebar") || {}).textContent).slice(0, 80)
   });
 
   const ensureRows = async (attempts = 24) => {
     for (let round = 0; round < attempts; round += 1) {
-      if (document.querySelectorAll(".row").length > 0) return true;
-      const chips = [...document.querySelectorAll(".pane-nav .chip")];
-      // 轮流点：哪一个是「会话」由界面决定，探针不猜文本。
-      const chip = chips[round % Math.max(chips.length, 1)];
-      if (chip) chip.click();
+      if (document.querySelectorAll(".session-card").length > 0) return true;
+      const item = [...document.querySelectorAll(".activity-top .activity-item")].find(
+        (x) => (x.getAttribute("aria-label") || "") === "AI 会话管理"
+      );
+      if (item) item.click();
       await p.sleep(700);
     }
-    return document.querySelectorAll(".row").length > 0;
+    return document.querySelectorAll(".session-card").length > 0;
   };
 
-  /** 按标题找会话行；找不到返回 null——**不拿 rows[0] 顶上**，那会点错对象。 */
+  /** 按标题找会话卡片；找不到返回 null——**不拿 rows[0] 顶上**，那会点错对象。 */
   const findRow = (title) =>
-    [...document.querySelectorAll(".row")].find(
+    [...document.querySelectorAll(".session-card")].find(
       (item) => (item.getAttribute("title") || "").trim() === (title || "").trim()
     ) || null;
 
@@ -120,19 +120,21 @@
   out.targetSelect = await safe("targetSelect", async () => {
     const select = await p.waitForTargets();
     if (!select) return { ok: false, reason: "等不到目标下拉框" };
-    const local = [...select.options].find((option) => option.value.endsWith(":local"));
-    if (!local) return { ok: false, reason: "下拉框里没有本机目标" };
+    // **用「第一个非空选项」**：本机目标的编号形如 `codex:local:C:\...\.codex`，
+    // 不以 `:local` 结尾——按旧过滤条件找，一个都匹配不到。
+    const local = [...select.options].find((option) => option.value !== "");
+    if (!local) return { ok: false, reason: "下拉框里没有可选目标" };
     p.selectValue(select, local.value);
     await p.sleep(2500);
     return { ok: true, picked: local.value };
   });
   out.steps.push(`选中目标：${JSON.stringify(out.targetSelect)}`);
 
-  // 会话页本身也要真的被选中（默认可能是别的页）。
-  const chipSession = [...document.querySelectorAll(".pane-nav .chip")].find(
-    (item) => p.clean(item.textContent) === "会话"
+  // 会话那一块也要真的被选中（默认可能停在工作台）。
+  const itemSession = [...document.querySelectorAll(".activity-top .activity-item")].find(
+    (item) => (item.getAttribute("aria-label") || "") === "AI 会话管理"
   );
-  if (chipSession) chipSession.click();
+  if (itemSession) itemSession.click();
   await p.sleep(2500);
 
   out.rowsReady = await ensureRows();
@@ -144,7 +146,7 @@
 
   const row = findRow(pick.title);
   if (!row) {
-    out.verdict = `FAIL：列表里找不到标题为「${pick.title}」的会话行（行数 ${document.querySelectorAll(".row").length}）`;
+    out.verdict = `FAIL：列表里找不到标题为「${pick.title}」的会话行（行数 ${document.querySelectorAll(".session-card").length}）`;
     return out;
   }
 
@@ -153,8 +155,9 @@
     if (!terminalId) terminalId = event.payload.terminalId;
   });
 
-  row.click();
-  out.steps.push("第一次点击会话行");
+  // **双击**才是「在终端中恢复」（单击只打开历史正文，起不了终端）。
+  row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  out.steps.push("第一次双击会话卡片");
   for (let index = 0; index < 40 && !terminalId; index += 1) await p.sleep(500);
   out.terminalId = terminalId;
   if (!terminalId) return { ...out, verdict: "FAIL：点了会话但没有终端产出，拿不到终端编号" };
@@ -246,8 +249,8 @@
     }
   });
 
-  row2.click();
-  out.steps.push("第二次点击会话行");
+  row2.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  out.steps.push("第二次双击会话卡片");
   for (let index = 0; index < 40 && !newTerminalId; index += 1) await p.sleep(500);
   await p.sleep(3000);
 

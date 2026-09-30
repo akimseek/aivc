@@ -51,23 +51,30 @@ New-Item -ItemType Directory -Path $shots -Force | Out-Null
 # 「页面当时到底处于什么状态」——只看图有时分不清「没这个元素」和「图拍早了」。
 $steps = @(
     @{
-        # **不叫「会话列表」**：应用会记住上次选中的会话，启动时详情已经打开了，
-        # 所以这一张拍到的其实是「默认启动状态」而不是一张纯列表。
+        # **不叫「会话列表」**：应用**启动后什么都不选**（平台/目标/会话都空），
+        # 所以这一张拍到的其实是「默认启动状态」而不是一张列表。
         # 名字要如实反映拍到了什么——叫错了会让后来看基线的人对着图找不存在的差异。
-        # （第一次跑时它叫「会话列表」，实测与「02-会话详情」**逐字节相同**。）
+        #
+        # 批次三：列表行从 `.rows .row` 换成了卡片（`features/sessions/session-card.tsx`），
+        # 正文头部从 `.session-head` 换成了 `.history-head`（`features/workspace/history-view.tsx`）。
         Name  = "01-启动默认"
-        Probe = 'JSON.stringify({rows:document.querySelectorAll(".rows .row").length,detailOpen:!!document.querySelector(".session-head")})'
+        Probe = 'JSON.stringify({cards:document.querySelectorAll(".sidebar .rows .session-card").length,detailOpen:!!document.querySelector(".history-head"),sideHint:(document.querySelector(".sidebar .rows")?.textContent??"").trim().slice(0,40)})'
     },
     @{
+        # 批次三：主列表的行是 `.session-card`，单击它打开的是**历史正文**
+        # （双击才是恢复终端）。这一步因此先按用户的真实路径选平台与目标，
+        # 列表才有行可点——否则拍到的是空列表 + `NO-CARD`。
         Name  = "02-会话详情"
-        Probe = '(async()=>{const r=document.querySelector(".rows .row");if(!r)return "NO-ROW";r.click();await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({head:document.querySelector(".session-head .meta")?.textContent?.trim()??null,messages:document.querySelectorAll(".message").length});})()'
+        Probe = '(async()=>{const set=(el,v)=>{Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(el,v);el.dispatchEvent(new Event("change",{bubbles:true}));};const sels=()=>[...document.querySelectorAll(".sidebar .pickers select")];const p0=[...((sels()[0]||{}).options||[])].find(o=>o.value==="codex");if(p0)set(sels()[0],"codex");await new Promise(t=>setTimeout(t,2500));const s1=sels();const t=[...((s1[1]||{}).options||[])].find(o=>o.value!=="");if(t)set(s1[1],t.value);for(let i=0;i<24&&!document.querySelector(".sidebar .rows .session-card");i++)await new Promise(r=>setTimeout(r,500));const c=document.querySelector(".sidebar .rows .session-card");if(!c)return "NO-CARD";c.click();await new Promise(t=>setTimeout(t,' + $StepWait + '));return JSON.stringify({head:(document.querySelector(".history-head .meta")?.textContent??"").trim()||null,messages:document.querySelectorAll(".history-message").length});})()'
     },
     @{
         Name  = "03-终端"
-        # 这里原本找的是「+ Shell」（系统终端）。那个功能已按用户要求整体移除，
-        # 改成「+ Codex」再确认「新会话」对话框——用现在唯一存在的终端类型
-        # 把终端开出来，验的东西没变（终端能不能起、xterm 有没有挂上）。
-        Probe = '(async()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="+ Codex");if(!b)return "NO-BUTTON";b.click();await new Promise(t=>setTimeout(t,1200));const c=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="打开");if(c)c.click();for(let i=0;i<40;i++){await new Promise(t=>setTimeout(t,250));if(document.querySelector(".xterm-helper-textarea"))break;}return JSON.stringify({term:!!document.querySelector(".xterm")});})()'
+        # 「+ Shell」整体移除后又跟着批次一换了入口：旧侧栏的「+ Codex」不存在了，
+        # 现在唯一的新会话入口是**标签栏右侧动作区**的按钮
+        # （`features/workspace/tab-bar.tsx`，`aria-label="新建会话"`），
+        # 弹的是共享 `Dialog`（附加类名 `.new-session-dialog`，`app/new-session-dialog.tsx`）。
+        # 验的东西没变：终端能不能起、xterm 有没有挂上。
+        Probe = '(async()=>{const b=[...document.querySelectorAll(".tab-bar-action")].find(x=>(x.getAttribute("aria-label")||"")==="新建会话");if(!b)return "NO-BUTTON";b.click();await new Promise(t=>setTimeout(t,1200));const c=[...document.querySelectorAll(".new-session-dialog button")].find(x=>x.textContent.trim()==="打开");if(c)c.click();for(let i=0;i<40;i++){await new Promise(t=>setTimeout(t,250));if(document.querySelector(".xterm-helper-textarea"))break;}return JSON.stringify({term:!!document.querySelector(".xterm"),dialog:!!document.querySelector(".new-session-dialog")});})()'
     },
     @{
         Name  = "04-配置"

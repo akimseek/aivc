@@ -165,7 +165,7 @@
   );
 
   // ── 4.6 全局检索按平台筛选 ──────────────────────────────
-  // 先关掉覆盖层，再切到搜索面板。
+  // 先关掉覆盖层，再切到会话侧栏。
   const closeButton = [...document.querySelectorAll(".settings-head button")].find(
     (item) => (item.getAttribute("aria-label") || "").trim() === "关闭"
   );
@@ -173,20 +173,37 @@
     closeButton.click();
     await p.sleep(600);
   }
-  const toSessions = [...document.querySelectorAll(".pane-nav .chip")].find(
-    (item) => clean0(item) === "会话"
+  // 一级去处现在在**活动栏**（`shell/activity-bar.tsx`），不再是 `.pane-nav .chip`。
+  // 会话本来就是默认那一项，点它只是保证侧栏不是工作台。
+  const toSessions = [...document.querySelectorAll(".activity-item")].find(
+    (item) => (item.getAttribute("aria-label") || "") === "AI 会话管理"
   );
   if (toSessions) {
     toSessions.click();
     await p.sleep(800);
   }
-  const allSessions = [...document.querySelectorAll("button")].find(
-    (item) => clean0(item) === "全部会话"
-  );
-  out.clickedAllSessions = Boolean(allSessions);
-  if (allSessions) {
-    allSessions.click();
+  /*
+    **「全部会话」按钮已随旧搜索行移除。**
+
+    现在的入口是用户真实那条路：在搜索框里打字（列表进入筛选态），
+    再点「在所有目标中搜索」把关键词送进 `globalQuery`；那之后侧栏才渲染
+    「按平台筛选 / 按目标筛选」两个下拉（`features/sessions/sessions-sidebar.tsx`）。
+    照着旧按钮找会永远停在本地筛选态，两个下拉根本不存在——这正是它原来 3 条 FAIL 的根因。
+  */
+  const searchInput = document.querySelector(".sidebar-search input");
+  if (searchInput) {
+    const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setInput.call(searchInput, "a");
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
     await p.sleep(1200);
+  }
+  const searchAll = [...document.querySelectorAll(".search-actions button")].find(
+    (item) => clean0(item) === "在所有目标中搜索"
+  );
+  out.clickedSearchAll = Boolean(searchAll);
+  if (searchAll) {
+    searchAll.click();
+    await p.sleep(2500);
   }
 
   const searchText = clean(".sidebar");

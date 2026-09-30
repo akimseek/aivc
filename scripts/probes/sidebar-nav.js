@@ -5,8 +5,8 @@
  *    `capabilities.batchActions` 判定。若后端实际发的是 snake_case
  *    （`batch_actions`），判定会永远为 `false`——**回收站在所有平台上都消失**，
  *    而界面上没有任何提示说它为什么不见了。
- * 2. **侧栏两级导航的形状**与旧平台一致：一级只有 工作台/会话，
- *    二级是 当前会话/收藏夹/回收站，搜索行里有「全部会话」按钮。
+ * 2. **导航的形状**：一级去处只有 会话 / 工作台（活动栏），侧栏里是
+ *    筛选 chips（全部 N / ★ 收藏 N）与回收站图标按钮。
  */
 (async () => {
   const p = window.__p;
@@ -23,7 +23,7 @@
     **先自己选平台。**
     
     本应用现在**启动后什么都不选**（刻意如此：此前三处「还原不上就挑第一个」，
-    于是界面替你选好了平台/目标/会话）。而二级导航里的「回收站」是按
+    于是界面替你选好了平台/目标/会话）。而筛选行里的「回收站」按钮是按
     **当前平台的能力**启用/禁用的（`canUseTrash = supportsTrash(providers, providerId)`）
     ——没选平台时它是禁用的，并提示「请选择支持回收站的平台」。
     
@@ -76,64 +76,65 @@
     `qoder.trash=${String(qoder?.capabilities?.trash)}`
   );
 
-  // ── 2. 两级导航的形状 ─────────────────────────────────
+  // ── 2. 导航与筛选的形状 ───────────────────────────────
+  //
+  // 批次一之后一级去处搬到**活动栏**（`shell/activity-bar.tsx` 的 `.activity-item`），
+  // 侧栏里只剩筛选 chips（`.filter-chips .chip`，形态「全部 N」/「★ 收藏 N」）
+  // 与右侧的回收站图标按钮。旧探针找的 `.pane-nav .chip` / `.view-nav .chip` /
+  // `.session-search-row` 全部不存在了——照旧找会得到「导航为空」的假结论。
   const labels = (selector) =>
     [...document.querySelectorAll(selector)].map((item) => p.clean(item.textContent));
+  const attrs = (selector, name) =>
+    [...document.querySelectorAll(selector)].map((item) => item.getAttribute(name) || "");
 
-  out.paneNav = labels(".pane-nav .chip");
-  out.viewNav = labels(".view-nav .chip");
-
+  out.activities = attrs(".activity-top .activity-item", "aria-label");
+  out.settingsEntry = attrs(".activity-bottom .activity-item", "aria-label");
   check(
-    "一级导航只有 工作台 / 会话",
-    JSON.stringify(out.paneNav) === JSON.stringify(["工作台", "会话"]),
-    JSON.stringify(out.paneNav)
+    "一级去处只有 会话 / 工作台（在活动栏，不在侧栏）",
+    JSON.stringify(out.activities) === JSON.stringify(["AI 会话管理", "工作台与运行概览"]),
+    JSON.stringify(out.activities)
   );
   check(
-    "二级导航是 当前会话 / 收藏夹 / 回收站",
-    JSON.stringify(out.viewNav) === JSON.stringify(["当前会话", "收藏夹", "回收站"]),
-    JSON.stringify(out.viewNav)
+    "设置入口在活动栏底部",
+    out.settingsEntry.length === 1,
+    JSON.stringify(out.settingsEntry)
   );
 
-  // 「全部会话」按钮在搜索行里（不在导航里）。
-  const searchRowButton = [...document.querySelectorAll(".session-search-row button")].map((item) =>
-    p.clean(item.textContent)
-  );
-  out.searchRowButtons = searchRowButton;
+  out.filterChips = labels(".filter-chips .chip");
   check(
-    "搜索行里有「全部会话」按钮",
-    searchRowButton.includes("全部会话"),
-    JSON.stringify(searchRowButton)
+    "侧栏筛选是「全部 N」与「★ 收藏 N」两个 chip",
+    out.filterChips.length === 2 &&
+      /^全部 \d+$/.test(out.filterChips[0] ?? "") &&
+      /^★ 收藏 \d+$/.test(out.filterChips[1] ?? ""),
+    JSON.stringify(out.filterChips)
   );
 
-  // 回收站那一项**可见且可点**（Codex 支持回收站），而不是被隐藏。
-  const trashChip = [...document.querySelectorAll(".view-nav .chip")].find(
-    (item) => p.clean(item.textContent) === "回收站"
-  );
-  out.trashDisabled = trashChip ? trashChip.disabled : null;
-  check("Codex 下「回收站」可点", trashChip && trashChip.disabled === false, `disabled=${out.trashDisabled}`);
+  // 回收站是筛选行右端的**图标按钮**（不在导航里），仍按平台能力启用/禁用。
+  const trashButton = document.querySelector('.filter-chips button[aria-label="回收站"]');
+  out.trashDisabled = trashButton ? trashButton.disabled : null;
+  check("Codex 下「回收站」可点", Boolean(trashButton) && trashButton.disabled === false, `disabled=${out.trashDisabled}`);
 
-  // 点收藏夹：二级高亮要跟着走，且一级仍停在「会话」（同属会话这一组）。
-  const fav = [...document.querySelectorAll(".view-nav .chip")].find(
-    (item) => p.clean(item.textContent) === "收藏夹"
+  // 点收藏夹：要有高亮，且**没有**搜索动作行（旧平台在收藏夹里也不显示搜索行）。
+  const fav = [...document.querySelectorAll(".filter-chips .chip")].find(
+    (item) => /^★ 收藏/.test(p.clean(item.textContent))
   );
   if (fav) {
     fav.click();
     await p.sleep(600);
   }
   out.afterFavorites = {
-    paneNav: labels(".pane-nav .chip.on"),
-    viewNav: labels(".view-nav .chip.on"),
-    searchRowPresent: Boolean(document.querySelector(".session-search-row"))
+    activeChip: p.clean((document.querySelector(".filter-chips .chip.on") || {}).textContent),
+    searchActionsPresent: Boolean(document.querySelector(".search-actions"))
   };
   check(
-    "点收藏夹后二级高亮是「收藏夹」",
-    out.afterFavorites.viewNav.includes("收藏夹"),
+    "点收藏夹后高亮跟着走",
+    /^★ 收藏/.test(out.afterFavorites.activeChip ?? ""),
     JSON.stringify(out.afterFavorites)
   );
   check(
-    "收藏夹里**没有**搜索行（旧平台也不显示）",
-    out.afterFavorites.searchRowPresent === false,
-    `present=${out.afterFavorites.searchRowPresent}`
+    "收藏夹里**没有**搜索动作行（旧平台也不显示）",
+    out.afterFavorites.searchActionsPresent === false,
+    `present=${out.afterFavorites.searchActionsPresent}`
   );
 
   const failed = out.checks.filter((item) => !item.ok);

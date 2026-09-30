@@ -70,11 +70,11 @@
     // 收藏是**最轻**的动作：不改磁盘上的东西（只是元数据），失败了也能复原，
     // 而且列表里本来就有会话。用它来验「动作 → 提示」这条链。
     //
-    // 类名是 `.rows > .row`（`components/list.tsx`），不是 `.list-row`——
-    // 第一版按后者找，一行都没有，看起来像「没有会话」。
+    // 批次三：主列表的行是 `.session-card`（`features/sessions/session-card.tsx`），
+    // 旧的 `.rows > .row`（`components/list.tsx`）只剩收藏夹与搜索结果在用。
     let row = null;
     for (let index = 0; index < 20 && !row; index += 1) {
-      row = document.querySelector(".sidebar .rows .row");
+      row = document.querySelector(".sidebar .rows .session-card");
       if (!row) await p.sleep(500);
     }
     out.hasRow = Boolean(row);
@@ -87,7 +87,10 @@
     row.click();
     await p.sleep(1200);
 
-    const star = row.querySelector(".star");
+    // 收藏星是卡片里的**图标按钮**（`.star` 那条 CSS 规则已没有消费者），
+    // 按无障碍名找它：`session-card.tsx` 写的是一对
+    // 「标记收藏 / 取消收藏」。
+    const star = row.querySelector('button[aria-label="标记收藏"], button[aria-label="取消收藏"]');
     out.hasStar = Boolean(star);
 
     // 记下点之前提示里是什么（应当是空的）。

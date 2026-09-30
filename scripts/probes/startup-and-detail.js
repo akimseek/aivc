@@ -5,7 +5,8 @@
  *
  * 1. **启动后不选任何平台 / 目标 / 历史会话**——此前三处都会「还原不上就挑第一个」。
  * 2. **右侧那一排「详情 / 重命名 / 复制 / 导出 MD / 导出 JSON / 另存到…」是我自造的**：
- *    旧平台的终端工作区头部**只有「详情」与「新会话」**，其余在右键菜单与菜单栏里。
+ *    终端/会话区的详情入口最终固定在**标签栏**的「消息与分支」上，
+ *    其余在右键菜单与设置中心里。
  * 3. **点历史会话进入终端后要能打开详情**（也就到得了「从此处分支」）——
  *    详情原来放在会话正文头部，进终端后正文不渲染，入口就消失了。
  *
@@ -54,8 +55,10 @@
     // 因此「目标列表为空」就证明平台没选；这也正是用户看到的那句话。
     const initialText = clean(document.querySelector(".sidebar") ?? document.body);
     out.initial = {
-      sessionHead: Boolean(document.querySelector(".session-head")),
-      rowCount: document.querySelectorAll(".sidebar .rows .row").length,
+      // 批次三：正文头部是 `.history-head`（`features/workspace/history-view.tsx`），
+      // 主列表的行是 `.session-card`。
+      sessionHead: Boolean(document.querySelector(".history-head")),
+      rowCount: document.querySelectorAll(".sidebar .rows .session-card").length,
       targetSelectDisabled: pickers()[1]?.disabled ?? null,
       text: initialText.slice(0, 200)
     };
@@ -74,7 +77,6 @@
       out.initial.rowCount === 0 && !out.initial.sessionHead,
       `rows=${out.initial.rowCount} sessionHead=${out.initial.sessionHead}`
     );
-
     // ── 2. 用户自己选平台与目标 ──────────────────────────
     const [providerSelect, targetSelect] = pickers();
     if (!providerSelect || !targetSelect) {
@@ -94,14 +96,14 @@
     // ── 3. 列表有内容，但**仍然没有任何会话被自动选中** ───
     //
     // 这一条才是真正要验的：列表装进来了，而旧行为会把第一项选中。
-    for (let index = 0; index < 20 && document.querySelectorAll(".sidebar .rows .row").length === 0; index += 1) {
+    for (let index = 0; index < 20 && document.querySelectorAll(".sidebar .rows .session-card").length === 0; index += 1) {
       await p.sleep(500);
     }
     out.loaded = {
-      rowCount: document.querySelectorAll(".sidebar .rows .row").length,
-      sessionHead: Boolean(document.querySelector(".session-head")),
-      rowActive: document.querySelectorAll(".sidebar .rows .row.on").length,
-      detailBefore: buttons().includes("详情")
+      rowCount: document.querySelectorAll(".sidebar .rows .session-card").length,
+      sessionHead: Boolean(document.querySelector(".history-head")),
+      rowActive: document.querySelectorAll(".sidebar .rows .session-card.on").length,
+      detailBefore: buttons().includes("消息与分支")
     };
     check(
       "选了目标之后会话列表**确实装进了内容**（否则下面的断言没有意义）",
@@ -114,7 +116,7 @@
       JSON.stringify(out.loaded)
     );
     check(
-      "没有选中任何会话时**不显示「详情」**（没有可查看的对象）",
+      "没有选中任何会话时**不显示「消息与分支」**（没有可查看的对象）",
       !out.loaded.detailBefore,
       `detail=${out.loaded.detailBefore}`
     );
@@ -128,16 +130,16 @@
       JSON.stringify(out.inventedPresent)
     );
 
-    // ── 2. 点一条历史会话 → 进入终端 ─────────────────────
+    // ── 2. 双击一条历史会话 → 恢复并进入终端 ──────────────
     //
-    // 侧栏里点会话行就是「恢复它并进入终端」（`onOpen={onResume}`），
-    // 也就是用户描述的那条路径。
-    const row = document.querySelector(".sidebar .rows .row");
+    // 批次一改了手势：**单击**是打开历史正文（`onOpen`），**双击**才是恢复终端
+    // （`onResume`，`features/sessions/session-card.tsx`）。单击在这里什么终端都起不来。
+    const row = document.querySelector(".sidebar .rows .session-card");
     if (!row) {
       out.verdict = "FAIL：没有可点的会话行，无法验证第 2、3 条";
       return out;
     }
-    row.click();
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     // 终端要起来（xterm 挂上）。
     for (let index = 0; index < 40 && !document.querySelector(".xterm"); index += 1) {
       await p.sleep(500);
@@ -145,32 +147,32 @@
     await p.sleep(2500);
     out.afterOpen = {
       xterm: Boolean(document.querySelector(".xterm")),
-      sessionHead: Boolean(document.querySelector(".session-head")),
-      detail: buttons().includes("详情")
+      sessionHead: Boolean(document.querySelector(".history-head")),
+      detail: buttons().includes("消息与分支")
     };
     check(
-      "点会话行进入了终端（正文不再渲染，`session-head` 消失）",
+      "双击会话行进入了终端（正文不再渲染，`history-head` 消失）",
       out.afterOpen.xterm && !out.afterOpen.sessionHead,
       JSON.stringify(out.afterOpen)
     );
     check(
-      "**进入终端后仍然有「详情」按钮**（此前它随正文一起消失，于是到不了「从此处分支」）",
+      "**进入终端后仍然有「消息与分支」按钮**（此前详情入口随正文一起消失，于是到不了「从此处分支」）",
       out.afterOpen.detail,
       JSON.stringify(out.afterOpen)
     );
 
-    // ── 3. 点「详情」→ 弹层打开 ──────────────────────────
+    // ── 3. 点「消息与分支」→ 弹层打开 ────────────────────
     //
-    // 类名是 `.session-detail-dialog`（`Dialog` 的 `panelClassName`），
-    // 不是 `.session-detail-modal`——后者是**旧平台**的叫法，照它找会永远找不到。
-    const dialog = () => document.querySelector(".session-detail-dialog");
+    // 类名是 `.messages-panel`（`features/workspace/messages-modal.tsx`）——
+    // 旧的 `.session-detail-dialog` / `.session-detail-modal` 都不存在了。
+    const dialog = () => document.querySelector(".messages-panel");
     check(
       "点之前详情弹层**没有**开着（否则下面「开了」不算数）",
       !dialog(),
       String(Boolean(dialog()))
     );
-    const clicked = clickText("详情");
-    check("点到了「详情」按钮", clicked, String(clicked));
+    const clicked = clickText("消息与分支");
+    check("点到了「消息与分支」按钮", clicked, String(clicked));
     let opened = false;
     for (let index = 0; index < 30; index += 1) {
       await p.sleep(400);
@@ -180,7 +182,7 @@
       }
     }
     out.detail = { opened, text: clean(dialog() ?? document.body).slice(0, 200) };
-    check("**点「详情」打开了会话详情弹层**", opened, out.detail.text);
+    check("**点「消息与分支」打开了会话详情弹层**", opened, out.detail.text);
     // 弹层要有实际内容，不能是个空壳。
     check(
       "详情弹层里渲染出了会话内容（不是空壳）",

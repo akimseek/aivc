@@ -15,7 +15,8 @@
   const step = (name, detail) => out.steps.push({ name, detail: detail ?? "" });
   const clean = (element) => p.clean(element.textContent ?? "");
   const pickers = () => [...document.querySelectorAll(".sidebar .pickers select")];
-  const rows = () => document.querySelectorAll(".sidebar .rows .row").length;
+  // 批次三：主列表的行是 `.session-card`（`features/sessions/session-card.tsx`）。
+  const rows = () => document.querySelectorAll(".sidebar .rows .session-card").length;
   const setSelect = async (element, value) => {
     Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(element, value);
     element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -55,7 +56,7 @@
       picked: target?.value ?? "(没有真实目标 ↯ 这一步没执行)",
       targetValue: pickers()[1]?.value ?? "",
       rows: rows(),
-      sessionHead: Boolean(document.querySelector(".session-head")),
+      sessionHead: Boolean(document.querySelector(".history-head")),
       sidebar: clean(document.querySelector(".sidebar") ?? document.body).slice(0, 180)
     }));
 

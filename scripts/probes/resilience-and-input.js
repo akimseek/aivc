@@ -174,16 +174,16 @@
     //
     // 先开一路 Codex 终端（它会渲染输入框）。
     //
-    // 这里原来点的是「+ Shell」（系统终端）。那个功能已按用户要求整体移除，
-    // 改成「+ Codex」——A11 验的是**输入模式切换**，与终端类型无关。
-    // 「+ Codex」会先弹「新会话」对话框，要再点一次「打开」。
-    const newTerminal = [...document.querySelectorAll("button")].find(
-      (item) => clean(item) === "+ Codex"
+    // 入口是**标签栏动作区**的按钮（`features/workspace/tab-bar.tsx`）：
+    // 旧侧栏的「+ Shell」/「+ Codex」都已随侧栏重做移除。
+    // 它会先弹共享 `Dialog` 形态的「新会话」对话框，要再点一次「打开」。
+    const newTerminal = [...document.querySelectorAll(".tab-bar-action")].find(
+      (item) => (item.getAttribute("aria-label") || "") === "新建会话"
     );
     if (newTerminal) {
       newTerminal.click();
       await p.sleep(1200);
-      const confirm = [...document.querySelectorAll("button")].find(
+      const confirm = [...document.querySelectorAll(".new-session-dialog button")].find(
         (item) => clean(item) === "打开"
       );
       if (confirm) confirm.click();
@@ -197,24 +197,24 @@
     out.composerPresent = Boolean(composerActions);
     check("终端下出现了自管输入框", Boolean(composerActions), String(Boolean(composerActions)));
 
-    /** 工具条里那个切换按钮：字只可能是这两个之一。 */
-    const toggleButton = () => {
-      const buttons = [...(document.querySelector(".composer-actions")?.querySelectorAll("button") ?? [])];
-      return buttons.find(
-        (item) => clean(item) === "终端输入" || clean(item) === "自管输入"
+    /*
+      **切换按钮在状态栏上**（`.input-mode-pill`，`shell/status-bar.tsx`）。
+
+      批次一把它从输入框工具条搬回了状态栏——这一格写的是**当前在哪**（状态指示），
+      而工具条那个按钮写的是「点下去会切到哪」。文字只有两种：「自管输入」/「终端原生输入」
+      （旧的「终端输入」措辞已改）。
+    */
+    const toggleButton = () =>
+      [...document.querySelectorAll(".statusbar button")].find(
+        (item) => clean(item) === "自管输入" || clean(item) === "终端原生输入"
       );
-    };
 
     const first = toggleButton();
     out.firstLabel = first ? clean(first) : "";
+    check("**状态栏里有输入模式切换按钮**（`.input-mode-pill`）", Boolean(first), out.firstLabel);
     check(
-      "**输入框工具条里有切换按钮**（旧平台这个按钮在状态栏上）",
-      Boolean(first),
-      out.firstLabel
-    );
-    check(
-      "初始是「自管输入框」模式，因此按钮写着「终端输入」",
-      out.firstLabel === "终端输入",
+      "初始是「自管输入框」模式，因此按钮写着「自管输入」（终端的一格写的是「当前在哪」）",
+      out.firstLabel === "自管输入",
       out.firstLabel
     );
     check(
@@ -229,8 +229,8 @@
       const second = toggleButton();
       out.secondLabel = second ? clean(second) : "";
       check(
-        "**点一下之后字变成「自管输入」**（说明模式真的切了，不是个静态按钮）",
-        out.secondLabel === "自管输入",
+        "**点一下之后字变成「终端原生输入」**（说明模式真的切了，不是个静态按钮）",
+        out.secondLabel === "终端原生输入",
         out.secondLabel
       );
       check(
@@ -245,8 +245,8 @@
       const third = toggleButton();
       out.thirdLabel = third ? clean(third) : "";
       check(
-        "再点一次切回「终端输入」（两个方向都能走）",
-        out.thirdLabel === "终端输入",
+        "再点一次切回「自管输入」（两个方向都能走）",
+        out.thirdLabel === "自管输入",
         out.thirdLabel
       );
     }

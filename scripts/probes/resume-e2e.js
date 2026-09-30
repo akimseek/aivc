@@ -66,21 +66,44 @@
   if (!pick) return { ...out, verdict: "SKIP：没有可恢复的历史会话" };
   out.clickedSessionId = pick.id;
 
+  // **在界面上选中平台与目标**：应用启动后什么都不选（批次一去掉「还原上次选择」），
+  // 不选就一行会话都不会列出来。这里走用户真实的两步。
+  out.targetSelect = await safe("targetSelect", async () => {
+    const pickers = [...document.querySelectorAll(".sidebar .pickers select")];
+    const providerOption = [...(pickers[0]?.options ?? [])].find((item) => item.value === "codex");
+    if (pickers[0] && providerOption) {
+      p.selectValue(pickers[0], "codex");
+      await p.sleep(2500);
+    }
+    const selects = [...document.querySelectorAll(".sidebar .pickers select")];
+    // 第一个非空选项：本机目标的编号形如 `codex:local:C:\...\.codex`，不以 `:local` 结尾。
+    const option = [...(selects[1]?.options ?? [])].find((item) => item.value !== "");
+    if (!option) return { ok: false, reason: "目标下拉里没有可选项" };
+    p.selectValue(selects[1], option.value);
+    await p.sleep(2500);
+    return { ok: true, picked: option.value };
+  });
+
   let terminalId = null;
   await window.__TAURI__.event.listen("terminal:data", (event) => {
     if (!terminalId) terminalId = event.payload.terminalId;
   });
 
   out.terminalsBefore = document.querySelectorAll(".terminal-stack .xterm").length;
-  out.tabsBefore = document.querySelectorAll(".tab").length;
+  // 批次一的类名：标签是 `.tab-pill`，会话卡片是 `.session-card`。
+  out.tabsBefore = document.querySelectorAll(".tab-pill").length;
 
-  const rows = [...document.querySelectorAll(".row")];
+  for (let index = 0; index < 20 && document.querySelectorAll(".session-card").length === 0; index += 1) {
+    await p.sleep(500);
+  }
+  const rows = [...document.querySelectorAll(".session-card")];
   const row =
     rows.find((item) => (item.getAttribute("title") || "").trim() === (pick.title || "").trim()) ||
     rows[0];
   if (!row) return { ...out, verdict: "FAIL：列表里没有会话行" };
-  row.click();
-  out.steps.push("已点击会话行");
+  // **双击**才是「在终端中恢复」：单击只打开历史正文（`session-card.tsx`）。
+  row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  out.steps.push("已双击会话卡片");
 
   for (let index = 0; index < 40 && !terminalId; index += 1) await p.sleep(500);
   out.terminalId = terminalId;
@@ -125,7 +148,7 @@
   }
 
   out.terminalsAfter = document.querySelectorAll(".terminal-stack .xterm").length;
-  out.tabsAfter = document.querySelectorAll(".tab").length;
+  out.tabsAfter = document.querySelectorAll(".tab-pill").length;
   const usage = await safe("usage", () => p.usage());
   out.requestCount = usage ? usage.requestCount : 0;
 

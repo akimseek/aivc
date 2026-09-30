@@ -55,8 +55,10 @@
   out.targetSelect = await safe("targetSelect", async () => {
     const select = await p.waitForTargets();
     if (!select) return { ok: false, reason: "等不到目标下拉框" };
-    const option = [...select.options].find((item) => item.value.endsWith(":local"));
-    if (!option) return { ok: false, reason: "下拉框里没有本机目标" };
+    // **用「第一个非空选项」**：本机目标的编号形如 `codex:local:C:\...\.codex`，
+    // 不以 `:local` 结尾——按旧过滤条件找，一个都匹配不到。
+    const option = [...select.options].find((item) => item.value !== "");
+    if (!option) return { ok: false, reason: "下拉框里没有可选目标" };
     p.selectValue(select, option.value);
     await p.sleep(2000);
     return { ok: true, picked: option.value };
@@ -66,10 +68,13 @@
   // ── 开一路新会话 ───────────────────────────────────────
   // 新会话的输入框**一进去就该在**，不需要等输出——这是 `initialComposerVisible`
   // 的语义（`!sessionId`）。
-  const newCodex = [...document.querySelectorAll("button")].find((item) =>
-    (item.textContent || "").includes("+ Codex")
+  //
+  // 入口是**标签栏动作区**的按钮（`features/workspace/tab-bar.tsx`）：
+  // 旧侧栏的「+ Codex」已随侧栏重做移除。
+  const newCodex = [...document.querySelectorAll(".tab-bar-action")].find(
+    (item) => (item.getAttribute("aria-label") || "") === "新建会话"
   );
-  if (!newCodex) return { ...out, verdict: "FAIL：找不到「+ Codex」按钮" };
+  if (!newCodex) return { ...out, verdict: "FAIL：找不到「新建会话」按钮" };
 
   let terminalId = null;
   await window.__TAURI__.event.listen("terminal:data", (event) => {
@@ -77,7 +82,7 @@
   });
 
   newCodex.click();
-  out.steps.push("点击 + Codex");
+  out.steps.push("点击 新建会话");
 
   // 新会话对话框：直接确认。
   for (let round = 0; round < 20; round += 1) {

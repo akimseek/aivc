@@ -26,8 +26,9 @@
     out.providerOptions = [...(pickers[0]?.options ?? [])].map((item) => item.value);
     out.targetOptions = [...(pickers[1]?.options ?? [])].map((item) => item.value);
     out.sidebarText = clean(document.querySelector(".sidebar") ?? document.body).slice(0, 240);
-    out.sessionRows = document.querySelectorAll(".sidebar .rows .row").length;
-    out.sessionHead = Boolean(document.querySelector(".session-head"));
+    // 批次三：主列表的行是 `.session-card`，正文头部是 `.history-head`。
+    out.sessionRows = document.querySelectorAll(".sidebar .rows .session-card").length;
+    out.sessionHead = Boolean(document.querySelector(".history-head"));
 
     // 平台：**下拉显示的文字应当是「请选择平台」**——这是用户直接看到的东西。
     //

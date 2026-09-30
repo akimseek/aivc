@@ -22,12 +22,13 @@
   out.initialButtons = [...document.querySelectorAll("button")].map((item) =>
     p.clean(item.textContent)
   ).slice(0, 40);
-  out.initialDialogs = [...document.querySelectorAll("[role='dialog'], .dialog")].map((item) =>
+  // 弹层壳统一是 `Dialog`：面板类名 `.dialog-panel`，`.dialog` 这个类不存在。
+  out.initialDialogs = [...document.querySelectorAll("[role='dialog']")].map((item) =>
     p.clean(item.textContent).slice(0, 60)
   );
 
   // 探针启动时**没有任何平台 / 目标被选中**（刻意的：不替用户选），
-  // 因此「+ Codex」是禁用的，点了不会弹对话框。
+  // 因此标签栏的「新建会话」是禁用的，点了不会弹对话框。
   // 这里先按用户真实路径选平台与目标——否则后面根本走不到终端。
   const pickers = [...document.querySelectorAll(".sidebar .pickers select")];
   const setSelect = async (element, value) => {
@@ -115,24 +116,18 @@
   //
   // 自管输入只在前台的终端里渲染，因此必须先有终端。
   //
-  // 这里原来点的是「+ Shell」（系统终端）。那个功能已按用户要求整体移除，
-  // 改成点「+ Codex」——**同一个探针验的东西没变**（自管输入框与图片面），
-  // 只是用现在唯一存在的终端类型把它开出来。
+  // 现在唯一的新会话入口是**标签栏动作区**的按钮（`features/workspace/tab-bar.tsx`，
+  // `aria-label="新建会话"`，目标没选时它是禁用的）；旧侧栏的
+  // 「+ Codex」/「新建终端」都已随侧栏重做移除。
   //
-  // 「+ Codex」会先弹「新会话」对话框（工作目录 + 提示词），要再点一次「打开」。
-  const NEW_TERMINAL_LABELS = ["+ Codex", "新建终端"];
-  for (const label of NEW_TERMINAL_LABELS) {
-    const button = [...document.querySelectorAll("button")].find(
-      (item) => p.clean(item.textContent) === label
-    );
-    if (button) {
-      button.click();
-      break;
-    }
-  }
+  // 它会先弹「新会话」对话框（工作目录 + 提示词），要再点一次「打开」。
+  const newSession = [...document.querySelectorAll(".tab-bar-action")].find(
+    (item) => (item.getAttribute("aria-label") || "") === "新建会话"
+  );
+  if (newSession) newSession.click();
   await p.sleep(1200);
   // 对话框出现就确认它（默认目录是后端给的当前会话目录，可直接用）。
-  const confirm = [...document.querySelectorAll("button")].find(
+  const confirm = [...document.querySelectorAll(".new-session-dialog button")].find(
     (item) => p.clean(item.textContent) === "打开"
   );
   out.confirmedNewSession = Boolean(confirm);

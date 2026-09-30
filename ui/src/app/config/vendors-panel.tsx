@@ -769,7 +769,7 @@ export function VendorsPanel({
               表单保存本身改的只是应用数据库里的那条记录；凭据由网关在终端启动时注入。
             */}
             <span className="row-meta">
-              表单保存的是**应用数据库里的记录**；「启用」会把配置模板写进你的 CLI
+              表单保存的是<strong>应用数据库里的记录</strong>；「启用」会把配置模板写进你的 CLI
               配置文件（写前备份），「禁用」只翻启用位、不改动文件。
             </span>
           </Toolbar>

@@ -140,7 +140,7 @@ export function GatewayFailurePanel({
           <label className="field">
             <span className="field-label">按供应商筛选</span>
             <input
-              className="control"
+              className="control vendor-id-filter"
               value={vendorId}
               placeholder="供应商编号，留空表示全部"
               onChange={(event) => applyFilter(() => setVendorId(event.target.value.trim()))}

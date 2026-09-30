@@ -44,7 +44,14 @@
   outline-offset: 1px;
 }
 
+/*
+ * 禁用态一律中性化——**底也要一起换**，不能只改字色。
+ * 只改字色的话，`.btn-primary` 的绿底（`--ui-accent`）会留着，灰字落在上面
+ * 实测对比度约 1.26:1，字几乎读不出来。强调色只属于**可用的**主操作。
+ * 本条按权重（类 + 伪类）盖过 `.btn-primary`，不依赖书写顺序。
+ */
 .btn:disabled {
+  background: var(--ui-bg-badge);
   color: var(--ui-faint);
   border-color: var(--ui-border);
   cursor: not-allowed;
@@ -79,6 +86,9 @@
 .chip-group {
   display: flex;
   gap: 3px;
+  /* 与 `.chip` 的 `white-space: nowrap` 成对：chip 自己不再折行之后，
+     一排放不下得在**组内**折行，否则会溢出所在的列、压到旁边的字段上。 */
+  flex-wrap: wrap;
 }
 
 .chip {
@@ -89,6 +99,9 @@
   color: var(--ui-muted);
   cursor: pointer;
   font-size: 12px;
+  /* 「Claude Code」这类带空格的标签会在窄列里被折成两行；同一排 chip 默认
+     拉伸对齐，选中态那个圆角胶囊就被撑成一个竖直大椭圆。 */
+  white-space: nowrap;
 }
 
 .chip:hover {

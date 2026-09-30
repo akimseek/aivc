@@ -53,13 +53,13 @@
 .btn-primary {
   border-color: var(--ui-accent);
   background: var(--ui-accent);
-  color: #fff;
+  color: var(--ui-on-accent);
 }
 
 .btn-primary:hover:not(:disabled) {
   border-color: var(--ui-accent-strong);
   background: var(--ui-accent-strong);
-  color: #fff;
+  color: var(--ui-on-accent);
 }
 
 /* 危险动作与普通动作必须在视觉上分开：这一下会把文件移走或删掉。 */
@@ -295,19 +295,6 @@
   color: var(--ui-faint);
   text-align: center;
   font-size: var(--ui-text-xs);
-}
-
-/* 盖在已有内容之上：旧数据还看得见，但要在视觉上说明「正在换」。 */
-.loading-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--ui-space-2);
-  background: rgb(255 255 255 / 72%);
-  color: var(--ui-text-soft);
-  font-size: var(--ui-text-sm);
 }
 
 /* ── 卡片 ────────────────────────────────────────────── */

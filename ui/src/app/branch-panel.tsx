@@ -106,7 +106,9 @@ export function BranchPanel({ session, resolveParent, listChildren, onOpen }: Br
   if (!hasParent && children.length === 0) return null;
 
   return (
-    <nav className="lineage-bar" aria-label="分支关系">
+    // 地标角色（`nav`）对一行条过重：读屏的「跳转到导航」列表里会多出一个只含
+    // 一条血缘的入口。`group` 保留标签语义，不冒充地标。
+    <div className="lineage-bar" role="group" aria-label="分支关系">
       <span className="lineage-label">血缘</span>
 
       {hasParent && (
@@ -174,6 +176,6 @@ export function BranchPanel({ session, resolveParent, listChildren, onOpen }: Br
           {loading && <span className="lineage-loading">正在加载…</span>}
         </>
       )}
-    </nav>
+    </div>
   );
 }

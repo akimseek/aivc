@@ -91,12 +91,13 @@ export function MessagesModal({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
 
-  // Escape 关闭。有更内层的东西开着（导出浮层）时让给它——不判断的话按一次 Escape
-  // 会同时关掉浮层与整个弹框。
+  // Escape 关闭。有更内层的东西开着（导出浮层、退出确认框）时让给它——不判断的话
+  // 按一次 Escape 会同时关掉浮层与整个弹框。退出确认框用的是 `.overlay`，
+  // 它在层级上盖在弹框之上，该由它先处理那一次 Escape。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (document.querySelector(".dialog-overlay, .popover")) return;
+      if (document.querySelector(".dialog-overlay, .popover, .overlay")) return;
       onClose();
     };
     document.addEventListener("keydown", onKeyDown);

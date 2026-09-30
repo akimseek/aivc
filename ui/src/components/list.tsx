@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 /**
  * 列表与行。
@@ -33,6 +33,10 @@ export type ListRowProps = {
  * `titleAttr` 与 `title` 是两件事：后者是**行内容**（可能被截断），
  * 前者是鼠标悬停时应该显示的**完整文本**。内容被 CSS 省略号截掉时，
  * 不给出完整文本用户就永远读不到它。
+ *
+ * 有 `onClick` 才渲染成可交互元素（`role="button"` + `tabIndex` + Enter/Space）：
+ * 行本身是 `<div>`，只挂 `onClick` 的话键盘用户**完全够不着**它——快捷访问与全局
+ * 搜索的结果行都会因此变成鼠标专属。没有 `onClick` 的行保持纯展示，不该进 Tab 序。
  */
 export function ListRow({
   leading,
@@ -48,6 +52,18 @@ export function ListRow({
   return (
     <div
       className={`row${active ? " on" : ""}`}
+      {...(onClick
+        ? {
+            role: "button",
+            tabIndex: 0,
+            onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              // Space 默认滚动页面；Enter 的默认行为在个别嵌入元素里也可能触发。
+              event.preventDefault();
+              onClick?.();
+            }
+          }
+        : {})}
       onClick={onClick}
       onContextMenu={onContextMenu}
       title={titleAttr}

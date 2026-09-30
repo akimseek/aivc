@@ -23,7 +23,7 @@ export { EmptyState, Notice } from "./feedback";
 /* 通用构件：弹层、加载态、卡片、列表。四者都在**多处**被用到，
  * 之前每一处各抄一遍骨架，是走样的来源。 */
 export { Dialog } from "./dialog";
-export { LoadingBlock, LoadingOverlay, Spinner } from "./loading";
+export { LoadingBlock, Spinner } from "./loading";
 export { Card, DescriptionList } from "./card";
 export { List, ListRow, MetaItem } from "./list";
 export type { ListRowProps } from "./list";

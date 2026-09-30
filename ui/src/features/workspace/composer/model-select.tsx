@@ -22,7 +22,11 @@ import { resolveModelSource } from "./models";
  *
  * 每开一路终端就发一次请求是不可接受的（Qoder 那条还要起一次 CLI 进程、最长 20 秒）。
  * 用户**真的去碰这个下拉**才算一次需要——原生 `<select>` 没有可靠的「展开」事件，
- * 因此 `pointerdown` / `focus` 是能拿到的最早信号（只认主键：右键与中键不算「要去选」）。
+ * 因此 `pointerdown` / 展开按键是能拿到的最早信号（只认主键：右键与中键不算「要去选」）。
+ *
+ * **不能拿 `focus` 当信号**：键盘用户 Tab 穿过输入区时焦点会经过这个下拉，那一下
+ * 就会真起一个 CLI 进程——「路过」不该有副作用。原生 `<select>` 用
+ * `↓` / `Enter` / `Space` 展开，所以这三个键才是键盘上的「要去选」。
  *
  * # 失败要能再试
  *
@@ -180,14 +184,18 @@ export function ModelSelect({
       title="选择模型：选中后立即生效（向 CLI 写 /model <id>）"
       value={selected}
       /*
-        `pointerdown` / `focus` 就是「用户正要打开它」的最早信号，见文件头注释。
+        `pointerdown` 与展开按键就是「用户正要打开它」的最早信号，见文件头注释。
         只认**主键**（`button === 0`）：右键是「看看有什么选项」的前置动作、中键是
         粘贴，两者都不该触发取数——Qoder 那一路的取数会真起一次 CLI 进程（最长 20 秒）。
       */
       onPointerDown={(event) => {
         if (event.button === 0) expand();
       }}
-      onFocus={expand}
+      onKeyDown={(event) => {
+        // 原生 `<select>` 就用这三个键展开；不 preventDefault——展开是浏览器的行为，
+        // 我们只是提前把清单取回来。
+        if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") expand();
+      }}
       onChange={(event) => {
         const id = event.target.value;
         if (id) void pick(id);

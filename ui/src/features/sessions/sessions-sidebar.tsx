@@ -310,7 +310,13 @@ export function SessionsSidebar({
               文案与旧平台一致（它有 `请选择平台` / `请选择一个目标`）。
             */}
             <option value="">请选择平台</option>
-            {state.providers.length === 0 && <option value="">加载中…</option>}
+            {/*
+              加载提示**不带 `value=""`**：平台列表为空时它和上面那条占位项同时存在，
+              两个 `value=""` 的 option 会让「哪一条是占位」变得有歧义（原生 select 只
+              认第一个匹配项，第二条永远选不中）。不给 value 时它的值退化成文字，
+              与空值不再相撞，显示的仍是占位项。
+            */}
+            {state.providers.length === 0 && <option>加载中…</option>}
             {state.providers.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}

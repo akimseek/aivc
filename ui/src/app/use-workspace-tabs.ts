@@ -205,16 +205,22 @@ export function useWorkspaceTabs(
    * **不再起终端**：单击的意图多半是看历史，拉起一个 CLI 进程既慢又意外；
    * 恢复终端改成显式动作（标签栏的「继续会话」）。
    *
-   * 只认 `selectedSession` 一个依赖：把 `state` 也绑上，任何一次标签变化（刚起了
-   * 终端、刚切了标签）都会让它重跑，把激活键抢回选中会话那张标签——用户手动切走
-   * 的标签会被弹回去。最新标签从更新函数的当前值里取，不需要额外的 ref。
+   * 依赖是**会话编号**而不是整个对象：`console.selectedSession` 由
+   * `sessions.find(...)` 得来，每次列表刷新（搜索框防抖、点「刷新」）都会给出
+   * 一个新对象——按对象身份触发的话，用户在列表里刷新一下就会让 `openSessionTab`
+   * 走「已有标签」那条路、把画布从正在跑的新会话终端抢回更早的选中会话上。
+   * 编号没变就不是一次「换了会话」。effect 体内仍从**本次渲染**读对象，标题不丢。
+   *
+   * 不绑 `state`：把 `state` 也绑上，任何一次标签变化（刚起了终端、刚切了标签）
+   * 都会让它重跑，把激活键抢回选中会话那张标签——用户手动切走的标签会被弹回去。
+   * 最新标签从更新函数的当前值里取，不需要额外的 ref。
    */
   useEffect(() => {
     if (!selectedSession) return;
     const id = selectedSession.id;
     const title = displayTitle(selectedSession);
     update((current) => ({ next: openSessionTab(current.tabs, { id, title }) }));
-  }, [selectedSession, update]);
+  }, [selectedSession?.id, update]);
 
   /**
    * **干净退出的终端：收掉它的标签。**

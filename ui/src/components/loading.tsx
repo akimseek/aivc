@@ -7,13 +7,15 @@ import type { ReactNode } from "react";
  *
  * 「正在加载」此前在项目里散成三种写法：`.terminal-loading` 一段文字、
  * 表格里一句「正在查询…」、按钮上把文字改成「加载中…」。它们的**语义其实不同**，
- * 混成一个组件就只能取其一。这里分三种，各自对应一种真实处境：
+ * 混成一个组件就只能取其一。这里分两种，各自对应一种真实处境：
  *
  * | 组件 | 用在哪 | 它回答的问题 |
  * | --- | --- | --- |
  * | [`Spinner`] | 按钮、行内 | 「它在动吗」 |
  * | [`LoadingBlock`] | 区域占位 | 「这一块为什么是空的」 |
- * | [`LoadingOverlay`] | 盖住已有内容 | 「旧内容还在，但正在被替换」 |
+ *
+ * 曾经还有第三种「盖住已有内容」（`LoadingOverlay`）：它一个调用方都没有，
+ * 而那条 `background: rgb(255 255 255 / 72%)` 在暗色下是一块白板——留着比删掉更危险。
  */
 
 /** 转圈。`label` 会同时进 `aria-label`，屏幕阅读器才读得出。 */
@@ -39,16 +41,6 @@ export function LoadingBlock({ label, hint }: { label: string; hint?: ReactNode 
       <Spinner />
       <span className="loading-label">{label}</span>
       {hint !== undefined && <span className="loading-hint">{hint}</span>}
-    </div>
-  );
-}
-
-/** 盖在已有内容之上。用在「刷新表格」这类**旧数据还看得见**的场合。 */
-export function LoadingOverlay({ label }: { label: string }) {
-  return (
-    <div className="loading-overlay" role="status">
-      <Spinner size={18} />
-      <span className="loading-label">{label}</span>
     </div>
   );
 }

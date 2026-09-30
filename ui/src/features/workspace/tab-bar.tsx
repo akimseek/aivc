@@ -122,6 +122,10 @@ export function TabBar({
                   className="tab-pill-close"
                   aria-label={`关闭 ${item.label}`}
                   title="关闭"
+                  // 非激活标签的关闭按钮不进 Tab 序：整条标签栏只该占一个停留点
+                  // （roving tabindex）。要关哪张就先按 Enter 激活它——那时这个按钮
+                  // 才成为序列里的下一个停留点。
+                  tabIndex={active ? 0 : -1}
                   onClick={(event) => {
                     // 点关闭不该顺带把标签切到前台——那是两件事。
                     event.stopPropagation();

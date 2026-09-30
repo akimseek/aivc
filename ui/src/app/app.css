@@ -1021,11 +1021,6 @@ select {
   padding: 22px 26px 40px;
 }
 
-/* 关注中心条：贴在内容顶部，不占满整屏——它是提醒，不是主体。 */
-.attention-bar {
-  padding: 10px 22px 0;
-}
-
 .load-earlier {
   display: flex;
   justify-content: center;
@@ -1302,11 +1297,6 @@ select {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-}
-
-.overlay-tabs {
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--ui-divider);
 }
 
 .overlay-body {
@@ -2686,12 +2676,6 @@ select {
   display: flex;
   align-items: center;
   gap: var(--ui-space-2);
-}
-
-.session-template-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ui-space-1);
 }
 
 .dialog-panel code {

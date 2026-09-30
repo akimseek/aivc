@@ -83,7 +83,18 @@ export function SessionCard({
   return (
     <div
       className={`session-card${active ? " on" : ""}`}
+      // 整张卡片是一个可点区域，键盘上必须等价：`role` + `tabIndex` 让它进 Tab
+      // 序列，`onKeyDown` 让 Enter / Space 与单击同一个动作（不劫持方向键——
+      // 列表里的上下移动留给将来的列表导航，卡片不该先抢）。
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        // Space 默认会滚动页面；Enter 在个别控件上会触发默认行为。
+        event.preventDefault();
+        onOpen();
+      }}
       onDoubleClick={onResume}
       onContextMenu={(event) => {
         event.preventDefault();

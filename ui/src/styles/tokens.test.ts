@@ -15,6 +15,12 @@ import { describe, expect, it } from "vitest";
  * 过去，暗色下才显形，于是它经常活到用户来报。这类缺陷已经在批次一里出现过一次
  * （B2：引用了一个不存在的令牌名）。
  *
+ * # 为什么还要扫 ts/tsx
+ *
+ * 样式**也可以内联**写（`style={{ … }}`），那里同样会静默失效：React 只是把
+ * 认不出的 `var()` 原样写进 `style`，浏览器照样丢掉那一条声明。它是另一种拼错
+ * 令牌名的方式，漏扫等于留一个与 B2 同类、同样没人报错的口子。
+ *
  * 反向（tokens.css 里定义了却没人用）**不检查**：那是留白，不是缺陷，
  * 而且会逼着人删掉「这一批还没接上的令牌」。
  */
@@ -23,13 +29,13 @@ const STYLES_DIR = fileURLToPath(new URL(".", import.meta.url));
 const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
 const TOKENS_CSS = readFileSync(join(STYLES_DIR, "tokens.css"), "utf8");
 
-/** `ui/src/**` 下的全部 CSS（令牌真源自己也在里面——它同样不许引用没定义的名字）。 */
-function cssFiles(dir: string): string[] {
+/** `ui/src/**` 下按后缀收集文件（令牌真源自己也在里面——它同样不许引用没定义的名字）。 */
+function filesWith(dir: string, suffixes: string[]): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) found.push(...cssFiles(full));
-    else if (entry.name.endsWith(".css")) found.push(full);
+    if (entry.isDirectory()) found.push(...filesWith(full, suffixes));
+    else if (suffixes.some((suffix) => entry.name.endsWith(suffix))) found.push(full);
   }
   return found;
 }
@@ -42,6 +48,24 @@ const DEFINED = new Set(
 /** `var(--name)` 与 `var(--name, fallback)` 都算引用，取名字即可。 */
 const REFERENCE = /var\(\s*(--[\w-]+)/g;
 
+/**
+ * 去掉注释：文档注释里会**逐字引述** CSS（`tokens.css` 的说明、组件注释里都有
+ * 例子），不剥掉就会把说明当成真引用。
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
+/** 一段 ts/tsx 源码里**未定义**的内联引用（引用都存在时是空数组）。 */
+function missingInlineTokens(source: string): string[] {
+  const missing: string[] = [];
+  for (const match of withoutComments(source).matchAll(REFERENCE)) {
+    const name = match[1]!;
+    if (!DEFINED.has(name)) missing.push(name);
+  }
+  return missing;
+}
+
 describe("tokens.css 的契约", () => {
   it("tokens.css 自己解析出了一批定义（哨兵：解析器坏掉时下面那条会假绿）", () => {
     expect(DEFINED.size).toBeGreaterThan(50);
@@ -49,7 +73,7 @@ describe("tokens.css 的契约", () => {
   });
 
   it("ui/src 里每个 `var(--…)` 引用都有定义", () => {
-    const files = cssFiles(SRC_DIR);
+    const files = filesWith(SRC_DIR, [".css"]);
     expect(files.length).toBeGreaterThan(0);
 
     let references = 0;
@@ -67,5 +91,33 @@ describe("tokens.css 的契约", () => {
     // 一个引用都没扫到时，上面那句 missing 为空是假的「通过」。
     expect(references).toBeGreaterThan(100);
     expect(missing).toEqual([]);
+  });
+
+  it("ts/tsx 里的内联 `var(--…)`：有的话同样必须已定义", () => {
+    const files = filesWith(SRC_DIR, [".ts", ".tsx"]);
+    expect(files.length).toBeGreaterThan(100);
+
+    const missing: string[] = [];
+    for (const file of files) {
+      for (const name of missingInlineTokens(readFileSync(file, "utf8"))) {
+        missing.push(`${file.slice(SRC_DIR.length)} 内联引用了未定义的 ${name}`);
+      }
+    }
+    /*
+      今天一处内联引用都没有（`grep var(--` 在 ts/tsx 里只命中注释）：行内只放数值、
+      坐标这类动态值，颜色与尺寸一律走类名。所以这一条先由**哨兵**证明检查器活着
+      （见下条），这里只钉「有则必须已定义」——不写死「零处」，将来谁真在 `style`
+      里用令牌也不会被这条挡住，写错名字才会。
+    */
+    expect(missing).toEqual([]);
+  });
+
+  it("哨兵：检查器认得出内联引用，也报得出未定义的名字", () => {
+    // 样例里的令牌名由拼接给出（不是字面量）：本文件也在扫描范围内，写成字面量
+    // 会被当成一处真引用，而 `--ui-missing` 并没有定义——等于自己把自己判红。
+    const bad = `color: var(${"--ui-missing"})`;
+    const good = `color: var(${"--ui-accent"})`;
+    expect(missingInlineTokens(bad)).toEqual(["--ui-missing"]);
+    expect(missingInlineTokens(good)).toEqual([]);
   });
 });

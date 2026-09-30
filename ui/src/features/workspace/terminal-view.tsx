@@ -79,12 +79,18 @@ export function TerminalView({
    */
   const title = session ? displayTitle(session) : activeTerminal?.title;
   const shortId = (session?.id ?? activeTerminal?.id)?.slice(0, 8);
-  const vendor = activeTerminal?.vendorId
-    ? `${vendorName(vendors, activeTerminal.vendorId)}（${
-        activeTerminal.vendorMode === "locked" ? "锁定" : "动态"
-      }）`
-    : // 没有供应商编号 = 这一路没走网关，CLI 用自己的凭据直连上游（见 `use-terminals`）。
-      "直连（用自己的密钥）";
+  /*
+    供应商这一项**先要有这一路终端**：没有终端就没有路由可说，写「直连」也是编的
+    （宁可短一项）。终端在、但没有供应商编号 = 这一路没走网关，CLI 用自己的凭据
+    直连上游（见 `use-terminals`）——那是**数据**，如实标出来，不是占位。
+  */
+  const vendor = !activeTerminal
+    ? null
+    : activeTerminal.vendorId
+      ? `${vendorName(vendors, activeTerminal.vendorId)}（${
+          activeTerminal.vendorMode === "locked" ? "锁定" : "动态"
+        }）`
+      : "直连（用自己的密钥）";
   const gatewayUrl = gateway?.baseUrl?.trim();
 
   return (

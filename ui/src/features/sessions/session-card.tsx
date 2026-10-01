@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { Icon, StatusDot } from "../../components";
 import type { AiSession } from "../../types";
 import {
@@ -33,8 +35,16 @@ import {
  * 单击的语义由上层决定（`onOpen` = 打开/激活标签，不看就只显示历史）；
  * 双击是**显式恢复**的手势，与标签栏的「继续会话」同一个动作。它不放在按钮里
  * 是因为卡片上已经有三个动作了，第四个按钮会把标题挤掉。
+ *
+ * # 为什么 `memo`，以及回调为什么要「回传会话」
+ *
+ * 会话多到 300+ 条时，父层任何一次与卡片无关的状态变化（搜索框每敲一个字、
+ * 勾掉一条）都会让整列重渲——那是肉眼可见的顿。`memo` 要生效，回调就必须是
+ * **稳定引用**：卡片不收「已经绑好某条会话的闭包」，而是收「同一个函数」并把它
+ * 自己这条 `session` 回传给调用方（按 id 的事件委托）。父层对全部卡片传同一份
+ * `useCallback`，`session` 对象在列表刷新之间保持同一引用，浅比较才通得过。
  */
-export function SessionCard({
+export const SessionCard = memo(function SessionCard({
   session,
   active,
   checked,
@@ -57,14 +67,15 @@ export function SessionCard({
   checked: boolean;
   selectable?: boolean;
   running?: boolean;
-  onOpen: () => void;
+  /** 单击：打开/激活。会话由卡片回传（见上面的说明）。 */
+  onOpen: (session: AiSession) => void;
   /** 双击：在终端中恢复。没给（例如这条会话的终端正在跑）时双击什么都不做。 */
-  onResume?: () => void;
-  onToggle: () => void;
-  onFavorite: () => void;
+  onResume?: (session: AiSession) => void;
+  onToggle: (session: AiSession) => void;
+  onFavorite: (session: AiSession) => void;
   /** 「消息与分支」：打开详情（消息列表 + 分支关系都在那里）。 */
-  onBranch: () => void;
-  onMenu: (x: number, y: number) => void;
+  onBranch: (session: AiSession) => void;
+  onMenu: (session: AiSession, x: number, y: number) => void;
 }) {
   const title = displayTitle(session);
   const favorite = session.metadata?.favorite === true;
@@ -88,7 +99,7 @@ export function SessionCard({
       // 列表里的上下移动留给将来的列表导航，卡片不该先抢）。
       role="button"
       tabIndex={0}
-      onClick={onOpen}
+      onClick={() => onOpen(session)}
       onKeyDown={(event) => {
         // 焦点在**卡内的控件**上时整个让给它：勾选框与动作按钮自己就认 Enter / Space。
         // 不让的话会同时发生两件坏事——`onOpen` 被多调一次（想勾一条却把会话开了），
@@ -98,12 +109,12 @@ export function SessionCard({
         if (event.key !== "Enter" && event.key !== " ") return;
         // Space 默认会滚动页面；Enter 在个别控件上会触发默认行为。
         event.preventDefault();
-        onOpen();
+        onOpen(session);
       }}
-      onDoubleClick={onResume}
+      onDoubleClick={onResume ? () => onResume(session) : undefined}
       onContextMenu={(event) => {
         event.preventDefault();
-        onMenu(event.clientX, event.clientY);
+        onMenu(session, event.clientX, event.clientY);
       }}
       title={title}
     >
@@ -118,7 +129,7 @@ export function SessionCard({
             // 勾选 / 双击都不该顺带打开会话或恢复终端——那是三件事。
             onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
-            onChange={onToggle}
+            onChange={() => onToggle(session)}
           />
         )}
         <span className="session-card-title">{title}</span>
@@ -144,7 +155,7 @@ export function SessionCard({
             // 双击同理——`dblclick` 是独立事件，光挡 `click` 挡不住它。
             onClick={(event) => {
               event.stopPropagation();
-              onFavorite();
+              onFavorite(session);
             }}
             onDoubleClick={(event) => event.stopPropagation()}
           >
@@ -156,7 +167,7 @@ export function SessionCard({
             aria-label="消息与分支"
             onClick={(event) => {
               event.stopPropagation();
-              onBranch();
+              onBranch(session);
             }}
             onDoubleClick={(event) => event.stopPropagation()}
           >
@@ -169,7 +180,7 @@ export function SessionCard({
             onClick={(event) => {
               // 右键菜单按**鼠标位置**开，所以这里回传的是点击坐标。
               event.stopPropagation();
-              onMenu(event.clientX, event.clientY);
+              onMenu(session, event.clientX, event.clientY);
             }}
             onDoubleClick={(event) => event.stopPropagation()}
           >
@@ -179,4 +190,4 @@ export function SessionCard({
       </div>
     </div>
   );
-}
+});

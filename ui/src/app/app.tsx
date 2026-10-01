@@ -543,6 +543,17 @@ export function App() {
   );
 
   /**
+   * 会话卡片的右键菜单与详情入口。
+   *
+   * 用 `useCallback` 而不是内联箭头：`SessionCard` 有 `memo`（P1-I），
+   * 内联箭头每次 App 重渲都换身份，整列卡片会跟着重渲——300+ 条时肉眼可见。
+   */
+  const openSessionMenu = useCallback((x: number, y: number, sessionId: string) => {
+    setMenu({ x, y, sessionId });
+  }, []);
+  const openSessionDetail = useCallback((session: AiSession) => setDetailSession(session), []);
+
+  /**
    * 「继续会话」这一刻有没有意义。
    *
    * 两个条件都要：标签挂着**会话编号**（全新会话还没有编号，无从恢复），
@@ -749,13 +760,13 @@ export function App() {
               selectedTarget={selectedTarget}
               onOpen={openSessionById}
               onResume={resumeById}
-              onMenu={(x, y, sessionId) => setMenu({ x, y, sessionId })}
+              onMenu={openSessionMenu}
               /*
                 「新建会话」与工作区那个 +Codex 同一个入口；
                 「消息与分支」打开会话详情——两者都在侧栏里，动作本身留在这一层。
               */
               onNewSession={beginNewSession}
-              onDetail={(session) => setDetailSession(session)}
+              onDetail={openSessionDetail}
               // 网关胶囊：设置中心的网关页（端口、启停、健康都在那里）。
               onOpenGateway={() => openSettings("gateway")}
               providers={console.providers}

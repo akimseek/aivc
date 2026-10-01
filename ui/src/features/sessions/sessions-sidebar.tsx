@@ -1,3 +1,5 @@
+import { useCallback } from "react";
+
 import {
   Button,
   ChipGroup,
@@ -210,6 +212,42 @@ export function SessionsSidebar({
   const canStart = Boolean(selectedTarget?.available);
   /** 网关胶囊的状态色（`off` 落到状态点的 `idle`）。 */
   const gwTone = gatewayTone(gateway);
+
+  /**
+   * 卡片回调：全部卡片共用同一份引用。
+   *
+   * # 为什么把会话作为实参回传，而不是每张卡各造一个闭包
+   *
+   * `SessionCard` 有 `memo`，浅比较要过，回调就必须跨渲染保持同一引用。
+   * 此前 `map` 里每张卡现造一组 `() => ...` 箭头，父层任何一次与卡片无关的
+   * 变化（搜索框每敲一个字、勾掉一条）都会让整列重渲——300+ 条时肉眼可见。
+   * 会话维度由卡片自己回传（`session` 参数），这里只留「一个动作一份实现」。
+   */
+  const handleOpen = useCallback(
+    (session: AiSession) => {
+      if (selectedTarget) onOpen(selectedTarget, session.id);
+    },
+    [selectedTarget, onOpen]
+  );
+  const handleResume = useCallback(
+    (session: AiSession) => {
+      if (selectedTarget) onResume(selectedTarget, session.id);
+    },
+    [selectedTarget, onResume]
+  );
+  const handleToggleSelected = useCallback(
+    (session: AiSession) => state.toggleSelected(session.id),
+    [state.toggleSelected]
+  );
+  const handleFavorite = useCallback(
+    (session: AiSession) => void state.toggleFavorite(session),
+    [state.toggleFavorite]
+  );
+  const handleBranch = useCallback((session: AiSession) => onDetail(session), [onDetail]);
+  const handleMenu = useCallback(
+    (session: AiSession, x: number, y: number) => onMenu(x, y, session.id),
+    [onMenu]
+  );
 
   /** 列表区该显示什么：全局 > 收藏夹 > 过滤 > 普通列表（顺序即理由，见 `sidebar-search.ts`）。 */
   const mode = resolveSidebarListMode({
@@ -589,19 +627,13 @@ export function SessionsSidebar({
                 checked={state.selectedIds.includes(session.id)}
                 selectable={canBatch}
                 running={running}
-                onOpen={() => {
-                  if (selectedTarget) onOpen(selectedTarget, session.id);
-                }}
+                onOpen={handleOpen}
                 // 终端已经在跑就不接双击：再起一路只会把它替换掉。
-                onResume={
-                  running || !selectedTarget
-                    ? undefined
-                    : () => onResume(selectedTarget, session.id)
-                }
-                onToggle={() => state.toggleSelected(session.id)}
-                onFavorite={() => void state.toggleFavorite(session)}
-                onBranch={() => onDetail(session)}
-                onMenu={(x, y) => onMenu(x, y, session.id)}
+                onResume={running ? undefined : handleResume}
+                onToggle={handleToggleSelected}
+                onFavorite={handleFavorite}
+                onBranch={handleBranch}
+                onMenu={handleMenu}
               />
             );
           })}

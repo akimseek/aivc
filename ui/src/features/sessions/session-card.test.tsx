@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
+import { useState } from "react";
+
 import { act, createEvent, fireEvent, render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AiSession } from "../../types";
+import * as sessionDisplay from "../../app/session-display";
 import { SessionCard } from "./session-card";
 
 /**
@@ -68,7 +71,7 @@ function setup(overrides: Partial<Parameters<typeof SessionCard>[0]> = {}) {
     ...overrides
   };
   const view = render(<SessionCard {...props} />);
-  return { view, handlers };
+  return { view, handlers, session: props.session };
 }
 
 describe("会话卡片内容", () => {
@@ -138,12 +141,12 @@ describe("点击的归属", () => {
   });
 
   it("「更多」回传的是**点击坐标**——右键菜单按它就着的位置开", () => {
-    const { view, handlers } = setup();
+    const { view, handlers, session: cardSession } = setup();
     const more = [...view.container.querySelectorAll<HTMLButtonElement>(".session-card-actions button")][2]!;
     act(() => {
       more.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 123, clientY: 45 }));
     });
-    expect(handlers.onMenu).toHaveBeenCalledWith(123, 45);
+    expect(handlers.onMenu).toHaveBeenCalledWith(cardSession, 123, 45);
   });
 
   it("双击卡片 → 在终端中恢复（显式手势，不是单击顺带起终端）", () => {
@@ -156,7 +159,7 @@ describe("点击的归属", () => {
   });
 
   it("右键回传坐标，并阻止浏览器默认菜单", () => {
-    const { view, handlers } = setup();
+    const { view, handlers, session: cardSession } = setup();
     const card = view.container.querySelector(".session-card") as HTMLElement;
     const event = new MouseEvent("contextmenu", {
       bubbles: true,
@@ -167,7 +170,7 @@ describe("点击的归属", () => {
     act(() => {
       card.dispatchEvent(event);
     });
-    expect(handlers.onMenu).toHaveBeenCalledWith(210, 90);
+    expect(handlers.onMenu).toHaveBeenCalledWith(cardSession, 210, 90);
     expect(event.defaultPrevented).toBe(true);
   });
 });
@@ -235,5 +238,60 @@ describe("键盘的归属", () => {
 
     // 六次按键一次都不许漏到卡片上——漏了就是「想收藏，结果把会话打开并抢了标签」。
     expect(handlers.onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe("memo（P1-I）", () => {
+  /**
+   * 渲染次数用 `displayTitle` 的调用次数来数——它是卡片渲染体里必经的纯函数。
+   * 不用 React Profiler：断言嵌在 React 的内部回调里，改动一两行就读不出意图。
+   */
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("props 引用不变时不重渲；对照：换了 prop 必须重渲", () => {
+    const displaySpy = vi.spyOn(sessionDisplay, "displayTitle");
+    const handlers = {
+      onOpen: vi.fn(),
+      onToggle: vi.fn(),
+      onFavorite: vi.fn(),
+      onBranch: vi.fn(),
+      onMenu: vi.fn()
+    };
+    // 同一个对象引用贯穿全程——会话对象在列表刷新之间保持同一引用是 memo 的前提。
+    const fixed = session();
+
+    function Harness() {
+      // 计数本身不参与渲染，只要它变化会让 Harness 重渲就够（这就是「无关状态」）。
+      const [, setNoise] = useState(0);
+      const [active, setActive] = useState(false);
+      return (
+        <div>
+          <button onClick={() => setNoise((value) => value + 1)}>无关状态</button>
+          <button onClick={() => setActive((value) => !value)}>切换选中</button>
+          <SessionCard
+            session={fixed}
+            active={active}
+            checked={false}
+            selectable
+            running={false}
+            {...handlers}
+          />
+        </div>
+      );
+    }
+
+    const view = render(<Harness />);
+    expect(displaySpy).toHaveBeenCalledTimes(1);
+
+    // 父组件因**无关状态**重渲：所有 props 都是同一引用 → memo 拦下，卡片一次都不重渲。
+    fireEvent.click(view.getByText("无关状态"));
+    expect(displaySpy).toHaveBeenCalledTimes(1);
+
+    // 对照组：`active` 真的变了 → 必须重渲。证明上面的计数抓的是卡片渲染次数，
+    // 而不是「计数从来没在工作」。
+    fireEvent.click(view.getByText("切换选中"));
+    expect(displaySpy).toHaveBeenCalledTimes(2);
   });
 });

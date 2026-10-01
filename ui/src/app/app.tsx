@@ -382,6 +382,21 @@ export function App() {
   /* ── 终端 ─────────────────────────────────────────────── */
 
   /**
+   * 「最新选中会话」的旁路引用。
+   *
+   * `console.selectedSession` 是 `find` 派生值——**点一条卡就会换引用**。它被
+   * `openTerminal`（cwd 兜底）与 `sessionForAction`（按编号还原）两处读取；
+   * 直接进依赖会让这两个回调连同下游的 `resumeById`/`openSessionById` 与侧栏
+   * 卡片回调每次选中变化都换引用，整列卡片白白重渲（P1-I 要治的正是这个规模）。
+   * 放进 ref 后回调始终读到最新值，引用本身不变。
+   */
+  const selectedSessionRef = useRef(console.selectedSession);
+  useEffect(() => {
+    // 在 effect 里写而不是渲染期写：被丢弃的渲染不该留下副作用。
+    selectedSessionRef.current = console.selectedSession;
+  });
+
+  /**
    * 起一路 Codex 终端。
    *
    * `options` 是新会话对话框确认后传来的：**工作目录与 CLI 参数**。
@@ -398,7 +413,7 @@ export function App() {
       try {
         const id = await terminals.openTerminal(
           selectedTarget,
-          options?.cwd ?? console.selectedSession?.cwd,
+          options?.cwd ?? selectedSessionRef.current?.cwd,
           options?.cliArgs,
           options?.prompt,
           options?.sessionId
@@ -412,15 +427,10 @@ export function App() {
       依赖只列**用到的成员**，不列 `terminals`/`console`/`workspace` 整对象：
       三者的 hook 每次渲染都返回新对象，列整对象会让这个回调——连同下游的
       `resumeById`/`openSessionById` 与侧栏卡片回调——每次 App 重渲都换引用，
-      `SessionCard` 的 memo（P1-I）随之失效。
+      `SessionCard` 的 memo（P1-I）随之失效。选中会话的 cwd 兜底经
+      `selectedSessionRef` 读（`find` 派生值每次选中变化都换引用，进依赖同样破 memo）。
     */
-    [
-      terminals.openTerminal,
-      selectedTarget,
-      console.selectedSession,
-      console.setError,
-      workspace.attachTerminalTab
-    ]
+    [terminals.openTerminal, selectedTarget, console.setError, workspace.attachTerminalTab]
   );
 
   /**
@@ -507,20 +517,6 @@ export function App() {
     // 引用，`SessionCard` 的 memo（P1-I）在真实树上失效。
     [console.openAt, openTerminal, workspace.selectSession]
   );
-
-  /**
-   * 「最新选中会话」的旁路引用。
-   *
-   * `console.selectedSession` 是 `find` 派生值——**点一条卡就会换引用**，直接进
-   * `sessionForAction` 的依赖会让它（连同下游 `openSessionById`/`resumeById`
-   * 与侧栏卡片回调）每次选中变化都换引用，整列卡片白白重渲（P1-I 要治的就是
-   * 这个规模）。放进 ref 后回调始终读到最新值，引用本身不变。
-   */
-  const selectedSessionRef = useRef(console.selectedSession);
-  useEffect(() => {
-    // 在 effect 里写而不是渲染期写：被丢弃的渲染不该留下副作用。
-    selectedSessionRef.current = console.selectedSession;
-  });
 
   /**
    * 两点共用：按编号还原出完整会话（侧栏只回传编号，它不持有会话内容）。

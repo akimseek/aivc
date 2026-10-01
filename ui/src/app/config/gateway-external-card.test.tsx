@@ -3,7 +3,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { GatewayExternalCard, buildExternalEndpoints } from "./gateway-external-card";
-import type { ExternalApiStatus } from "../../types";
+import type { AiProviderSummary, ExternalApiStatus } from "../../types";
 
 /**
  * 外部网关卡：端点清单必须是**后端真实路由**，不是 demo 里的字符串。
@@ -24,6 +24,22 @@ import type { ExternalApiStatus } from "../../types";
  */
 
 const STATUS: ExternalApiStatus = { enabled: true, hasToken: true };
+
+const HOST = "http://127.0.0.1:8787";
+
+/**
+ * 后端 `ai:list-providers` 的形制（顺序就是它给的顺序）。
+ *
+ * 端点清单与平台名都必须从这份数据派生：写死一份清单时，后端多一个平台
+ * 前端不会编译报错，只会静默少一条端点。
+ */
+const FOUR_PROVIDERS: AiProviderSummary[] = [
+  { id: "codex", label: "Codex", capabilities: {} },
+  { id: "gemini", label: "Gemini", capabilities: {} },
+  { id: "claude", label: "Claude Code", capabilities: {} },
+  { id: "qoder", label: "Qoder", capabilities: {} }
+];
+const THREE_PROVIDERS = FOUR_PROVIDERS.filter((item) => item.id !== "gemini");
 
 function fakeRuntime(handlers: Record<string, (args: Record<string, unknown>) => unknown>) {
   const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
@@ -48,26 +64,52 @@ function findButton(container: HTMLElement, text: string) {
   );
 }
 
-describe("buildExternalEndpoints：与 routes.rs 的形制一致", () => {
-  it("四个平台各一条，形如 `<base>/gateway/<平台>/<routeId>`", () => {
-    const endpoints = buildExternalEndpoints("http://127.0.0.1:8787");
+describe("buildExternalEndpoints：与 routes.rs 的形制一致，清单从 `providers` 派生", () => {
+  it("四个平台各一条，形如 `<base>/gateway/<平台>/<routeId>`（顺序即 providers 的顺序）", () => {
+    const endpoints = buildExternalEndpoints(HOST, FOUR_PROVIDERS);
     expect(endpoints.map((item) => item.url)).toEqual([
-      "http://127.0.0.1:8787/gateway/codex/<routeId>",
-      "http://127.0.0.1:8787/gateway/claude/<routeId>",
-      "http://127.0.0.1:8787/gateway/gemini/<routeId>",
-      "http://127.0.0.1:8787/gateway/qoder/<routeId>"
+      `${HOST}/gateway/codex/<routeId>`,
+      `${HOST}/gateway/gemini/<routeId>`,
+      `${HOST}/gateway/claude/<routeId>`,
+      `${HOST}/gateway/qoder/<routeId>`
+    ]);
+    // 显示名也取自 `providers`（与规则表同源），不从本地兜底表来。
+    expect(endpoints.map((item) => item.label)).toEqual([
+      "Codex",
+      "Gemini",
+      "Claude Code",
+      "Qoder"
+    ]);
+  });
+
+  it("**给三个平台就只出三条**：清单是 `providers` 的映射，不是本地那份写死的四个", () => {
+    expect(buildExternalEndpoints(HOST, THREE_PROVIDERS).map((item) => item.url)).toEqual([
+      `${HOST}/gateway/codex/<routeId>`,
+      `${HOST}/gateway/claude/<routeId>`,
+      `${HOST}/gateway/qoder/<routeId>`
+    ]);
+  });
+
+  it("拿不到 `providers` 时退回本地兜底清单（穷举表；claude 与后端逐字一致，不再漂移）", () => {
+    const endpoints = buildExternalEndpoints(HOST);
+    expect(endpoints.map((item) => item.url)).toHaveLength(4);
+    expect(endpoints.map((item) => item.label)).toEqual([
+      "Codex",
+      "Claude Code",
+      "Gemini",
+      "Qoder"
     ]);
   });
 
   it("**没有一个端点长得像旧平台的 `/external/...`**（demo 那串字符串不能照抄）", () => {
-    for (const item of buildExternalEndpoints("http://127.0.0.1:8787")) {
+    for (const item of buildExternalEndpoints(HOST, FOUR_PROVIDERS)) {
       expect(item.url).not.toContain("/external/");
     }
   });
 
   it("host 的尾斜杠被去掉（`build_route_url` 就是 trim 之后拼接）", () => {
-    expect(buildExternalEndpoints("http://127.0.0.1:8787///")[0]!.url).toBe(
-      "http://127.0.0.1:8787/gateway/codex/<routeId>"
+    expect(buildExternalEndpoints(`${HOST}///`)[0]!.url).toBe(
+      `${HOST}/gateway/codex/<routeId>`
     );
   });
 
@@ -76,15 +118,9 @@ describe("buildExternalEndpoints：与 routes.rs 的形制一致", () => {
     expect(buildExternalEndpoints("   ")).toEqual([]);
   });
 
-  it("平台清单可裁剪（顺序即显示顺序）", () => {
-    expect(buildExternalEndpoints("http://127.0.0.1:8787", ["claude"]).map((item) => item.url)).toEqual(
-      ["http://127.0.0.1:8787/gateway/claude/<routeId>"]
-    );
-  });
-
   it("每个平台带上它的凭据携带方式（照各家客户端的约定）", () => {
     const byProvider = new Map(
-      buildExternalEndpoints("http://127.0.0.1:8787").map((item) => [item.provider, item.auth])
+      buildExternalEndpoints(HOST, FOUR_PROVIDERS).map((item) => [item.provider, item.auth])
     );
     expect(byProvider.get("codex")).toContain("Authorization: Bearer");
     expect(byProvider.get("claude")).toContain("x-api-key");
@@ -111,6 +147,24 @@ describe("GatewayExternalCard", () => {
     // 认证协议说明要在：它是「怎么把令牌带上」的唯一线索。
     expect(text).toContain("Authorization: Bearer");
     expect(text).toContain("x-api-key");
+  });
+
+  it("端点清单与显示名都随 `providers` 走（三平台就渲染三条，名字照后端）", () => {
+    fakeRuntime({});
+    const view = render(
+      <GatewayExternalCard
+        baseUrl={HOST}
+        providers={THREE_PROVIDERS}
+        status={STATUS}
+        onStatusChange={vi.fn()}
+        onError={vi.fn()}
+      />
+    );
+    const names = [
+      ...view.container.querySelectorAll<HTMLElement>(".gateway-endpoint-platform")
+    ].map((item) => item.textContent);
+    expect(names).toEqual(["Codex", "Claude Code", "Qoder"]);
+    expect(view.container.textContent).toContain(`${HOST}/gateway/qoder/<routeId>`);
   });
 
   it("没有可用地址时说清下一步，而不是给一份空清单", () => {
@@ -165,7 +219,7 @@ describe("GatewayExternalCard", () => {
     ].map((item) => item.getAttribute("aria-label"));
     expect(labels).toEqual([
       "复制 Codex 端点",
-      "复制 Claude 端点",
+      "复制 Claude Code 端点",
       "复制 Gemini 端点",
       "复制 Qoder 端点"
     ]);

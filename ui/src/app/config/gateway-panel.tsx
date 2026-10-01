@@ -40,8 +40,8 @@ export function GatewayPanel({
   /**
    * 全部平台（后端 `label` 是唯一权威）。
    *
-   * 规则表要把「按平台 · Codex」写成**侧栏逐字相同**的名字，而那份名字只有后端有；
-   * 可选是为了让测试与旧调用点少传一个参数时仍能退回本地那四个名字。
+   * 外部卡的端点清单与规则表的平台名都从这里取——那份与侧栏逐字相同的名字
+   * 只有后端有；可选是为了让测试与旧调用点少传一个参数时仍能退回本地兜底清单。
    */
   providers?: AiProviderSummary[];
   onError: (message: string) => void;
@@ -199,6 +199,8 @@ export function GatewayPanel({
         // 端点清单要用真的监听地址：端口自动分配时它每次都不同，
         // 界面自己拼只会拼出 `http://127.0.0.1:0`。
         baseUrl={status.baseUrl}
+        // 端点清单与平台名都从后端平台列表派生（与规则表同源）。
+        providers={providers}
         status={external}
         // 失败时给的是占位值，卡片要在界面上写明，并给出重试入口。
         statusError={externalError}

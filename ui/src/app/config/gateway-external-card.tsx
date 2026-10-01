@@ -24,23 +24,50 @@ import { SwitchPill } from "./gateway-switch-pill";
  * `:682` 调它）。
  */
 
-/** 四个平台。顺序与侧栏/平台枚举一致，界面上的排列因此是稳定的。 */
-export const EXTERNAL_PROVIDERS: readonly AiProviderId[] = [
-  "codex",
-  "claude",
-  "gemini",
-  "qoder"
-];
+/**
+ * 本地兜底平台清单。
+ *
+ * **真源是后端 `ai:list-providers`**（`providers`）；这一份只在拿不到平台列表时
+ * 兜底。形制是 `Record<AiProviderId, true>` 再取键：新增平台时漏写一个键是
+ * **编译错误**，而不是界面上静默少一条端点。
+ */
+const FALLBACK_PROVIDERS: Record<AiProviderId, true> = {
+  codex: true,
+  claude: true,
+  gemini: true,
+  qoder: true
+};
+
+/** 兜底平台清单（`Object.keys` 保持声明顺序，界面上的排列因此是稳定的）。 */
+export const EXTERNAL_PROVIDERS: readonly AiProviderId[] = Object.keys(
+  FALLBACK_PROVIDERS
+) as readonly AiProviderId[];
 
 /**
- * 平台编号 → 显示名。
+ * 平台编号序列（清单的**唯一推导点**）。
  *
- * 导出给网关&路由页的其他卡用（故障规则表的作用域列要写「按平台 · Codex」）：
- * 平台名只该有一份表，各卡各写一份迟早会出现同一个平台两种叫法。
+ * 优先用后端 `providers`——顺序即显示顺序；拿不到（`undefined`/空）时才退回
+ * 本地兜底清单。此前这里与规则表单各写一份手写数组，后端多一个平台时两处都
+ * 不会有任何编译提示，只会静默少一条端点、少一个选项。
+ */
+export function providerIds(providers?: AiProviderSummary[]): readonly AiProviderId[] {
+  return providers && providers.length > 0
+    ? providers.map((item) => item.id)
+    : EXTERNAL_PROVIDERS;
+}
+
+/**
+ * 平台编号 → 显示名的**本地兜底表**。
+ *
+ * 真源是后端 `ai:list-providers` 的 label（见 `providerLabel`），这一份只在拿不到
+ * 平台列表时兜底；值必须与后端逐字一致，否则同一个平台会出现两种叫法。
+ * 修过的一次漂移：claude 写作 `"Claude"`，而后端是 `"Claude Code"`。
+ *
+ * 形制是 `Record<AiProviderId, …>`：新增平台时漏写是编译错误。
  */
 export const PROVIDER_LABELS: Record<AiProviderId, string> = {
   codex: "Codex",
-  claude: "Claude",
+  claude: "Claude Code",
   gemini: "Gemini",
   qoder: "Qoder"
 };
@@ -48,9 +75,9 @@ export const PROVIDER_LABELS: Record<AiProviderId, string> = {
 /**
  * 平台显示名。
  *
- * 优先用后端 `providers` 的 label（侧栏、标签栏、供应商面板都是它），本地那份
- * `PROVIDER_LABELS` 只在拿不到平台列表时兜底——两处各叫各的时，同一个平台会出现
- * 「Claude」与「Claude Code」两种写法，用户会以为是两家。
+ * 优先用后端 `providers` 的 label（侧栏、标签栏、供应商面板、规则表、端点清单
+ * 都是它），本地那份 `PROVIDER_LABELS` 只在拿不到平台列表时兜底——两处各叫各的时，
+ * 同一个平台会在同一屏上出现「Claude」与「Claude Code」两种写法，用户会以为是两家。
  */
 export function providerLabel(
   providers: AiProviderSummary[] | undefined,
@@ -92,27 +119,32 @@ export type ExternalEndpoint = {
 };
 
 /**
- * 生成四个平台的接入端点。
+ * 生成外部接入端点。
+ *
+ * 平台清单与显示名都从后端 `providers` 派生（顺序即显示顺序；名字与规则表共用
+ * `providerLabel`，同屏不会一个叫「Claude」一个叫「Claude Code」）；拿不到平台
+ * 列表时才退回本地兜底清单。
  *
  * 没在监听（`baseUrl` 为空）时返回空数组：没有地址可抄，编一个 `:0` 的地址只会误导。
  */
 export function buildExternalEndpoints(
   baseUrl: string,
-  providers: readonly AiProviderId[] = EXTERNAL_PROVIDERS
+  providers?: AiProviderSummary[]
 ): ExternalEndpoint[] {
   // host 去尾斜杠：`build_route_url` 就是 `host.trim_end_matches('/') + 前缀`。
   const host = baseUrl.trim().replace(/\/+$/, "");
   if (host === "") return [];
-  return providers.map((provider) => ({
-    provider,
-    label: PROVIDER_LABELS[provider],
-    url: `${host}/gateway/${provider}/${ROUTE_ID_PLACEHOLDER}`,
-    auth: PROVIDER_AUTH[provider]
+  return providerIds(providers).map((id) => ({
+    provider: id,
+    label: providerLabel(providers, id),
+    url: `${host}/gateway/${id}/${ROUTE_ID_PLACEHOLDER}`,
+    auth: PROVIDER_AUTH[id]
   }));
 }
 
 export function GatewayExternalCard({
   baseUrl,
+  providers,
   status,
   statusError,
   onRetry,
@@ -122,6 +154,13 @@ export function GatewayExternalCard({
 }: {
   /** 当前监听地址（取自网关状态）；空串表示网关没在监听。 */
   baseUrl: string;
+  /**
+   * 全部平台（后端 `ai:list-providers`）。
+   *
+   * 端点清单与平台名都从它派生——本地那份兜底表只在这份数据拿不到时使用。
+   * 可选是为了让测试与旧调用点少传一个参数时仍能退回兜底清单。
+   */
+  providers?: AiProviderSummary[];
   status: ExternalApiStatus;
   /**
    * 状态读取失败的原因（`null`/省略 = 读到了）。
@@ -193,7 +232,9 @@ export function GatewayExternalCard({
     }
   };
 
-  const endpoints = buildExternalEndpoints(baseUrl);
+  // 清单与显示名都从 `providers` 派生（见 `buildExternalEndpoints`）：
+  // 这一行的平台名与规则表的作用域列因此必然同源。
+  const endpoints = buildExternalEndpoints(baseUrl, providers);
 
   return (
     <Card

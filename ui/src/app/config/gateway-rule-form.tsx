@@ -1,6 +1,6 @@
 import { Button, Field, Select, TextInput, Toolbar, ToolbarSpacer } from "../../components";
 import type { AiProviderId, AiProviderSummary, ApiVendor, FailoverRuleScope } from "../../types";
-import { providerLabel } from "./gateway-external-card";
+import { providerIds, providerLabel } from "./gateway-external-card";
 import type { RuleDraft } from "./gateway-rule-model";
 
 /**
@@ -12,9 +12,6 @@ import type { RuleDraft } from "./gateway-rule-model";
  * 这样「试」和「存」用的必然是同一份草稿，不存在两份状态分叉的可能。
  * 草稿模型、四条校验与载荷拼装在 `gateway-rule-model.ts`。
  */
-
-/** 作用域里可选的平台（与后端 `ProviderId` 的四个取值一致）。名称见 `providerLabel`。 */
-const PROVIDER_IDS: readonly AiProviderId[] = ["codex", "claude", "gemini", "qoder"];
 
 export function RuleForm({
   draft,
@@ -30,7 +27,10 @@ export function RuleForm({
   draft: RuleDraft;
   /** 全部供应商：作用域选到「按供应商」时用来出选项。 */
   vendors: ApiVendor[];
-  /** 全部平台：平台名要用后端的 label（与侧栏逐字一致），本地表只兜底。 */
+  /**
+   * 全部平台：清单与平台名都从它派生（与端点清单同一份推导）。拿不到时退回
+   * 本地穷举兜底表——名称见 `providerLabel`。
+   */
   providers?: AiProviderSummary[];
   testing: boolean;
   testResult: { matched: boolean; matchedBy: "status" | "pattern" | "none" } | null;
@@ -97,7 +97,11 @@ export function RuleForm({
               }
             >
               <option value="">请选择平台</option>
-              {PROVIDER_IDS.map((id) => (
+              {/*
+                清单从 `providers` 派生（见 `providerIds`）：后端多一个平台，
+                这里自动多一个选项——此前是一份手写数组，漏一个平台不会有任何提示。
+              */}
+              {providerIds(providers).map((id) => (
                 <option key={id} value={id}>
                   {providerLabel(providers, id)}
                 </option>

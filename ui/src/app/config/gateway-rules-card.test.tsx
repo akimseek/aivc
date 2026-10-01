@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { GatewayExternalCard } from "./gateway-external-card";
 import { GatewayRulesCard } from "./gateway-rules-card";
 import type { AiProviderSummary, FailoverRule } from "../../types";
 
@@ -102,9 +103,14 @@ describe("GatewayRulesCard：作用域列的平台名", () => {
     createdAt: "2026-09-30T00:00:00Z",
     updatedAt: "2026-09-30T00:00:00Z"
   };
+  /** 后端 `ai:list-providers` 的形制（顺序即它给的顺序）。 */
   const PROVIDERS: AiProviderSummary[] = [
-    { id: "claude", label: "Claude Code", capabilities: {} }
+    { id: "codex", label: "Codex", capabilities: {} },
+    { id: "gemini", label: "Gemini", capabilities: {} },
+    { id: "claude", label: "Claude Code", capabilities: {} },
+    { id: "qoder", label: "Qoder", capabilities: {} }
   ];
+  const THREE_PROVIDERS = PROVIDERS.filter((item) => item.id !== "gemini");
 
   it("用后端 `providers` 的 label（本地那份表只兜底）", async () => {
     fakeRuntime([RULE]);
@@ -114,16 +120,16 @@ describe("GatewayRulesCard：作用域列的平台名", () => {
     expect(view.container.querySelector("tbody tr td")!.textContent).toBe("按平台 · Claude Code");
   });
 
-  it("拿不到平台列表时退回本地表（`Claude`），而不是留空", async () => {
+  it("拿不到平台列表时退回本地兜底表（claude 已与后端同名，不再漂移），而不是留空", async () => {
     fakeRuntime([RULE]);
     const view = render(<GatewayRulesCard onError={vi.fn()} />);
     await waitFor(() => expect(view.container.querySelector("tbody tr")).toBeTruthy());
-    expect(view.container.querySelector("tbody tr td")!.textContent).toBe("按平台 · Claude");
+    expect(view.container.querySelector("tbody tr td")!.textContent).toBe("按平台 · Claude Code");
   });
 
-  it("表单里「目标平台」的选项同样用后端 label", async () => {
+  it("表单的平台下拉 = `providers` 的清单与名字（给三个平台就只有三个选项）", async () => {
     fakeRuntime([]);
-    const view = render(<GatewayRulesCard providers={PROVIDERS} onError={vi.fn()} />);
+    const view = render(<GatewayRulesCard providers={THREE_PROVIDERS} onError={vi.fn()} />);
     await act(async () => {
       findButton(view.container, "新增规则")!.click();
     });
@@ -134,7 +140,32 @@ describe("GatewayRulesCard：作用域列的平台名", () => {
     const options = [
       ...view.container.querySelectorAll<HTMLOptionElement>('select[aria-label="目标平台"] option')
     ].map((item) => item.textContent);
-    expect(options).toContain("Claude Code");
-    expect(options).not.toContain("Claude");
+    // 逐个相等：清单与名字（含顺序）都照 `providers` —— 本地那份写死的「四个平台」里
+    // 有 Gemini、且 claude 曾叫「Claude」，两者都会在这里露馅。
+    expect(options).toEqual(["请选择平台", "Codex", "Claude Code", "Qoder"]);
+  });
+
+  it("同屏两个平台名同源：同一份 `providers` 下规则表与外卡逐字同名", async () => {
+    fakeRuntime([RULE]);
+    const view = render(
+      <>
+        <GatewayExternalCard
+          baseUrl="http://127.0.0.1:8787"
+          providers={PROVIDERS}
+          status={{ enabled: true, hasToken: true }}
+          onStatusChange={vi.fn()}
+          onError={vi.fn()}
+        />
+        <GatewayRulesCard providers={PROVIDERS} onError={vi.fn()} />
+      </>
+    );
+    await waitFor(() => expect(view.container.querySelector("tbody tr")).toBeTruthy());
+    // 外卡：端点行的平台名逐格等于后端 label（旧实现这里是本地表的「Claude」）。
+    const endpointNames = [
+      ...view.container.querySelectorAll<HTMLElement>(".gateway-endpoint-platform")
+    ].map((item) => item.textContent);
+    expect(endpointNames).toEqual(["Codex", "Gemini", "Claude Code", "Qoder"]);
+    // 规则表：同一屏上同一平台的写法与上面逐字一致。
+    expect(view.container.querySelector("tbody tr td")!.textContent).toBe("按平台 · Claude Code");
   });
 });

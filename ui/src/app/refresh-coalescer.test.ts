@@ -30,6 +30,21 @@ describe("createRefreshCoalescer", () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
+  it("窗口结束的那一刻一定执行：末条事件紧贴窗口尾部也不会把它推后", () => {
+    // 「首事件排一次、窗口结束必执行」。末条事件在窗口内到达（间隔 < 窗口）
+    // 只会被丢弃，既不能弄丢那次刷新，也不能把它重新计时——旧去抖实现
+    // （clearTimeout + setTimeout 重置）正是错在后半句上。
+    const run = vi.fn();
+    const coalescer = createRefreshCoalescer(100, run);
+
+    coalescer.schedule();
+    vi.advanceTimersByTime(99);
+    coalescer.schedule();
+    vi.advanceTimersByTime(1);
+
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it("窗口过去之后还能再刷新", () => {
     // 合并不能变成「只刷一次」。
     const run = vi.fn();

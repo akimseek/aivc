@@ -40,8 +40,9 @@ import { getRateLimitWindows, type RouteChange } from "./workbench-cards";
  *
  * 旧平台的注释写得很明确：「工作台不为获取限额额外请求 CLI 或 Gateway」。
  * 速率限制只读会话摘要里已有的字段（`getRateLimitWindows`）；用量与异常则在
- * 「后端推送 `gateway:request-recorded` 时」刷新——那条事件的合并（300ms）
- * 与计数器都在 `app.tsx`，这里只接收 `refreshToken`。
+ * 「后端推送 `gateway:request-recorded` 时」刷新——那条事件的合并窗口
+ * （`REQUEST_REFRESH_WINDOW_MS`，见 `app/refresh-coalescer.ts`）与计数器都在
+ * `app.tsx`，这里只接收 `refreshToken`。
  */
 export function WorkbenchSidebar({
   provider,

@@ -23,21 +23,7 @@ import {
   rangeBounds,
   type UsageRangeKey
 } from "./gateway-range";
-import { createRefreshCoalescer } from "./refresh-coalescer";
-
-/**
- * 请求事件的合并窗口，同时也是**自动刷新的最小间隔**。
- *
- * 后端每转发一个请求就推一条，而刷新一次要拉三个接口（健康、用量、日志）。
- * 1s 才刷一次，面板上的数字不会因此变旧，但一个重试循环里的几十条事件
- * 只会换来一次取数——合并窗口从 200ms 提到 1000ms 正是为此。
- *
- * 这里按 `refresh-coalescer.ts` 的**既有语义**（窗口内重复直接丢弃）实现限流：
- * 执行本身就排在窗口之后，且窗口执行完才会开出下一个，因此相邻两次刷新
- * 至少隔一个窗口；连续事件也不会把刷新无限推迟（丢的是新来的，不是重排）。
- * 手动刷新（按钮 / 换区间 / 重置）不走合并器，仍然即时。
- */
-const REQUEST_REFRESH_WINDOW_MS = 1000;
+import { REQUEST_REFRESH_WINDOW_MS, createRefreshCoalescer } from "./refresh-coalescer";
 
 /**
  * 「最近请求」一次取多少条。
@@ -126,8 +112,8 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
    * **后端每转发一个请求都会推一条事件，面板不该只在打开时取一次。**
    *
    * 刷新**必须合并且限流**：一个终端在重试循环里一秒能发好几条，而每次刷新要拉
-   * 三个接口。合并器把自动刷新的频率压到 ≤1Hz（见 `REQUEST_REFRESH_WINDOW_MS`）；
-   * 手动刷新不走这里，不受该窗口影响。
+   * 三个接口。合并器把自动刷新的频率压到 ≤1Hz（窗口常量 `REQUEST_REFRESH_WINDOW_MS`
+   * 与工作台共用，见 `refresh-coalescer.ts`）；手动刷新不走这里，不受该窗口影响。
    */
   useEffect(() => {
     const coalescer = createRefreshCoalescer(REQUEST_REFRESH_WINDOW_MS, () => {

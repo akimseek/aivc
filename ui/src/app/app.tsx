@@ -12,6 +12,7 @@ import { TitleBar } from "../shell/title-bar";
 import type { AiSession, AiTarget, ApiVendor } from "../types";
 import { AppOverlays } from "./overlay-layer";
 import { supportsBranch, supportsCustomCwd, supportsDuplicate, supportsSessionSettings } from "./provider-capabilities";
+import { REQUEST_REFRESH_WINDOW_MS, createRefreshCoalescer } from "./refresh-coalescer";
 import { planResume } from "./resume-session";
 import { SessionWorkspace, canStartCodex } from "./session-workspace";
 import { displayTitle } from "./session-display";
@@ -351,21 +352,22 @@ export function App() {
    * 工作台的刷新计数器。
    *
    * 后端每转发一个请求就推一条事件；工作台据此重新取用量与异常。
-   * **合并刷新**：一个终端重试时一秒能推好几条，而每次刷新要拉两个接口。
+   * **合并刷新**走 `createRefreshCoalescer`（窗口内重复直接丢弃，窗口结束必执行）：
+   * 一个终端重试时一秒能推好几条，而每次刷新要拉两个接口。
+   *
+   * **不能用 `clearTimeout` 重置的纯 trailing 去抖**：事件间隔小于窗口时计时器
+   * 每次都被重置，持续流量下刷新**永远排不上**——工作台的数字停在旧值，且没有
+   * 任何报错。窗口常量与语义见 `refresh-coalescer.ts`（与网关面板共用一处）。
    */
   const [workbenchToken, setWorkbenchToken] = useState(0);
   useEffect(() => {
-    let timer: number | undefined;
     let cancelled = false;
     let unlisten: (() => void) | undefined;
+    const coalescer = createRefreshCoalescer(REQUEST_REFRESH_WINDOW_MS, () => {
+      setWorkbenchToken((value) => value + 1);
+    });
     void api
-      .listen(api.CHANNEL_GATEWAY_REQUEST_RECORDED, () => {
-        if (timer !== undefined) window.clearTimeout(timer);
-        timer = window.setTimeout(() => {
-          timer = undefined;
-          setWorkbenchToken((value) => value + 1);
-        }, 300);
-      })
+      .listen(api.CHANNEL_GATEWAY_REQUEST_RECORDED, () => coalescer.schedule())
       .then((fn) => {
         if (cancelled) fn();
         else unlisten = fn;
@@ -373,7 +375,7 @@ export function App() {
     return () => {
       cancelled = true;
       unlisten?.();
-      if (timer !== undefined) window.clearTimeout(timer);
+      coalescer.cancel();
     };
   }, []);
 

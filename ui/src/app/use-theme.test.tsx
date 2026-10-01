@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { THEME_STORAGE_KEY } from "./theme";
 import { useTheme } from "./use-theme";
@@ -59,6 +59,23 @@ describe("useTheme", () => {
 
     expect(result.current.preference).toBe("system");
     expect(result.current.resolved).toBe("dark");
+  });
+
+  it("localStorage 读取抛错（存储被禁用）时回退 system，不炸首帧", () => {
+    stubMatchMedia(true);
+    // jsdom 的存储默认可用，stub 成抛错来模拟隐私模式/策略禁用——真实用户碰得到。
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("存储被禁用");
+    });
+    try {
+      const { result } = renderHook(() => useTheme());
+
+      expect(result.current.preference).toBe("system");
+      // 回退后跟随系统偏好，而不是停在某个硬编码主题上。
+      expect(result.current.resolved).toBe("dark");
+    } finally {
+      getItem.mockRestore();
+    }
   });
 
   it("setPreference 同时落地到 dataset 与 localStorage，下次启动直接读得到", () => {

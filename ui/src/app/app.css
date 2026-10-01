@@ -16,6 +16,12 @@ body {
   background: var(--ui-bg);
 }
 
+/* 根容器撑满窗口。平时里面是 `height: 100vh` 的 `.app-shell`，多这一条无感；
+   而入口兜底（`.error-boundary`）按 `height: 100%` 居中——父级没有高度它就无处可居。 */
+#root {
+  height: 100vh;
+}
+
 button,
 input,
 select {
@@ -83,6 +89,18 @@ select {
   z-index: var(--ui-z-toast);
   max-width: min(560px, calc(100vw - 48px));
   box-shadow: var(--ui-shadow);
+}
+
+/* ── 崩溃兜底 ────────────────────────────────────────── */
+
+/* 渲染错误的兜底外壳：填满它顶替的那块区域并居中。
+   兜底出现时原来的布局已经不可信（崩的可能正是布局本身），高度由这里自己定；
+   底色留给区域原有的背景（入口是 `--ui-bg`、终端段是 `--term-bg`），
+   文字与留白都在 `.empty-state` 既有的一套里，不在这里重写。 */
+.error-boundary {
+  display: grid;
+  place-items: center;
+  height: 100%;
 }
 
 /* ── 外壳（标题栏 /〔活动栏 + 侧栏 + 主区〕/ 状态栏）─────────

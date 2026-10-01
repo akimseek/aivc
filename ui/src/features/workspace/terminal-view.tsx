@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 
 import type { AiSession, AiTarget, ApiVendor, GatewayPortStatus } from "../../types";
+import { ErrorBoundary } from "../../app/error-boundary";
 import { displayTitle } from "../../app/session-display";
 import type { TerminalUiState, TerminalSession } from "../../app/use-terminals";
 
@@ -120,44 +121,51 @@ export function TerminalView({
       </div>
 
       <div className="terminal-stack">
-        <Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}>
-          {terminals.map((item) => {
-            const ui = uiStates[item.id];
-            return (
-              <TerminalPane
-                key={item.id}
-                terminalId={item.id}
-                active={item.id === activeTerminalId}
-                running={item.running}
-                /*
-                  编号还没被登记时（启动中）按「自管输入、先藏着」显示：
-                  藏着的输入框不会挡住终端正在回放的内容，等 `noteOutput`
-                  按 `initialComposerVisible` 的规则把它放出来。
-                */
-                composerVisible={ui?.composerVisible ?? false}
-                /*
-                  「把焦点交给终端」的消费式信号（状态栏胶囊切到「终端原生输入」时发）。
-                  缺席按 0 算：编号还没登记的那一路不会有焦点请求。
-                */
-                focusRequest={ui?.focusRequest ?? 0}
-                onOutput={() => onOutput(item.id)}
-                registerSink={registerSink}
-                unregisterSink={unregisterSink}
-                onError={onError}
-                resolvedTheme={resolvedTheme}
-                findSignal={findSignal}
-                /*
-                  模型选择的来源判据要用这三个：平台、当前供应商、目标。
-                  目标取自**这一路终端**记住的那个，不是当前选中的那个——两者在
-                  多标签时可能不同（见 `use-terminals` 的 `TerminalSession.targetId`）。
-                */
-                providerId={item.providerId}
-                vendorId={item.vendorId}
-                targetId={item.targetId}
-              />
-            );
-          })}
-        </Suspense>
+        {/*
+          边界**只包终端这一段**：懒加载的 xterm chunk 取不到、或某一路终端渲染崩了，
+          换掉的只是终端区——信息条与整个界面保持可用。把整页包进来等于用
+          「终端坏了」赔上「标签栏、侧栏一起没了」，正是这条边界要避免的事。
+        */}
+        <ErrorBoundary label="终端加载失败">
+          <Suspense fallback={<div className="terminal-loading">正在加载终端…</div>}>
+            {terminals.map((item) => {
+              const ui = uiStates[item.id];
+              return (
+                <TerminalPane
+                  key={item.id}
+                  terminalId={item.id}
+                  active={item.id === activeTerminalId}
+                  running={item.running}
+                  /*
+                    编号还没被登记时（启动中）按「自管输入、先藏着」显示：
+                    藏着的输入框不会挡住终端正在回放的内容，等 `noteOutput`
+                    按 `initialComposerVisible` 的规则把它放出来。
+                  */
+                  composerVisible={ui?.composerVisible ?? false}
+                  /*
+                    「把焦点交给终端」的消费式信号（状态栏胶囊切到「终端原生输入」时发）。
+                    缺席按 0 算：编号还没登记的那一路不会有焦点请求。
+                  */
+                  focusRequest={ui?.focusRequest ?? 0}
+                  onOutput={() => onOutput(item.id)}
+                  registerSink={registerSink}
+                  unregisterSink={unregisterSink}
+                  onError={onError}
+                  resolvedTheme={resolvedTheme}
+                  findSignal={findSignal}
+                  /*
+                    模型选择的来源判据要用这三个：平台、当前供应商、目标。
+                    目标取自**这一路终端**记住的那个，不是当前选中的那个——两者在
+                    多标签时可能不同（见 `use-terminals` 的 `TerminalSession.targetId`）。
+                  */
+                  providerId={item.providerId}
+                  vendorId={item.vendorId}
+                  targetId={item.targetId}
+                />
+              );
+            })}
+          </Suspense>
+        </ErrorBoundary>
       </div>
     </div>
   );

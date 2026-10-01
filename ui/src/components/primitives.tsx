@@ -176,7 +176,7 @@ export function SearchInput({
   );
 }
 
-/* ── 工具栏与状态 ────────────────────────────────────── */
+/* ── 工具栏 ──────────────────────────────────────────── */
 
 export function Toolbar({ children }: { children: ReactNode }) {
   return <div className="toolbar">{children}</div>;

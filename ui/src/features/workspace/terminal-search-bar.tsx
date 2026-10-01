@@ -65,7 +65,8 @@ export function TerminalSearchBar({
   const matches = useMemo(() => {
     if (!open) return [];
     return findMatches(readLines(), query, options);
-    // `revision` 只用于强制重算——它本身不参与计算。
+    // `revision` 只用于强制重算——它本身不参与计算；`readLines` 由调用方的
+    // 空依赖 `useCallback` 提供（terminal-pane 里的 xterm 缓冲区读取），身份恒稳定，故不进依赖。
   }, [open, query, options, revision]);
 
   /** 查询或选项变了，把当前匹配重置到第一处并跳过去。 */

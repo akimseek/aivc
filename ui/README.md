@@ -20,5 +20,5 @@ Tauri 在**编译期**把 `ui/dist` 嵌进 `aivc-app` 二进制。只跑 `vite b
 本工程**不装 ESLint**（本轮整改的硬约束是前端零新增依赖；eslint + typescript-eslint + react-hooks 三个 devDependency 与随之而来的全仓豁免面都超出约束范围）。因此：
 
 - `useEffect` / `useCallback` / `useMemo` 的依赖数组没有静态规则兜底，正确性由 **code review** 保证；
-- 「有意省略 / 有意多加」依赖的地方——`terminal-pane.tsx` 的两条信号 effect（不认 `active`）、`terminal-search-bar.tsx` 的 `useMemo[revision]`（强制重算）与跳转 effect（不认 `onReveal`）、`workbench-sidebar.tsx` 的 `loadKey`（取数键而非用到的值）——都在注释里写明了**为什么**，评审时逐条对照代码即可；
+- 「有意省略 / 有意多加」依赖的地方——`terminal-pane.tsx` 的两条信号 effect（不认 `active`）、`terminal-search-bar.tsx` 的 `useMemo`（`revision` 强制重算；`readLines` 由调用方空依赖 `useCallback` 恒稳定）与跳转 effect（不认 `onReveal`）、`workbench-sidebar.tsx` 的 `loadKey`（取数键而非用到的值）——理由都写在紧邻注释里，评审时逐条对照代码即可；
 - 将来若引入 ESLint，请先开 `react-hooks/exhaustive-deps` 跑一遍，再把上面这些注释与规则输出逐条对齐，而不是机械地按规则改代码。

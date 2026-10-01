@@ -28,6 +28,21 @@ import { scopeTargets } from "./search-scope";
 /** 一次取多少条消息。会话通常很长，所以先给结尾，再按需往前翻。 */
 const MESSAGE_PAGE_SIZE = 80;
 
+/**
+ * 历史视图窗口的**累计上限**。
+ *
+ * # 为什么封顶而不是无限往前翻
+ *
+ * 每翻一页都会往窗口前面插一段，DOM 与内存随翻页无界增长——几万条的老会话
+ * 翻到深处会明显卡顿。封顶后**不再提供**「加载更早」，改指路「消息与分支」
+ * 弹框（那边有完整分页）；而不是「继续加载、再丢掉最早一页」：在「向上翻
+ * 找旧消息」的交互里，丢最早一页丢掉的正是用户刚装进来的内容——要么按钮
+ * 空转，要么内容闪没。
+ *
+ * 取页大小的整数倍，窗口永远不会因为最后一次加载而过冲。
+ */
+export const HISTORY_MESSAGE_LIMIT = MESSAGE_PAGE_SIZE * 5;
+
 /** 搜索防抖：每次按键都去读文件太贵（后端第二段会**扫全文**）。 */
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -404,7 +419,16 @@ export function useConsole(options: { notify?: Notify } = {}) {
   }, [targetId, selectedId]);
 
   const loadEarlierMessages = useCallback(async () => {
-    if (!targetId || !selectedId || messageStart <= 0 || loadingMore) return;
+    if (
+      !targetId ||
+      !selectedId ||
+      messageStart <= 0 ||
+      loadingMore ||
+      // 到累计上限就不再取更早的页（判据的取舍见 `HISTORY_MESSAGE_LIMIT`）。
+      messages.length >= HISTORY_MESSAGE_LIMIT
+    ) {
+      return;
+    }
     setLoadingMore(true);
     try {
       const offset = Math.max(0, messageStart - MESSAGE_PAGE_SIZE);
@@ -418,7 +442,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
     } finally {
       setLoadingMore(false);
     }
-  }, [targetId, selectedId, messageStart, loadingMore]);
+  }, [targetId, selectedId, messageStart, loadingMore, messages.length]);
 
   /*
     **这里曾经有一段「选择变化就记下来，供下次启动还原」的 effect，已删除。**

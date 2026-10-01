@@ -1846,22 +1846,6 @@ select {
   font-size: var(--ui-text-sm);
 }
 
-/* 长文卡的「展开全文 / 收起」。 */
-.messages-expand {
-  margin-top: var(--ui-space-2);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ui-accent-strong);
-  font-size: var(--ui-text-xs);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.messages-expand:hover {
-  text-decoration: underline;
-}
-
 .messages-foot {
   display: flex;
   align-items: center;

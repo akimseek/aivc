@@ -1,6 +1,7 @@
-import { Button, EmptyState } from "../../components";
+import { Button, EmptyState, FoldableText } from "../../components";
 import type { AiMessage, AiSession } from "../../types";
 import { BranchPanel } from "./branch-panel";
+import { HISTORY_MESSAGE_LIMIT } from "../../app/use-console";
 import { displayTitle, formatTokens, messageCountLabel, roleLabel } from "../../app/session-display";
 
 /**
@@ -106,11 +107,20 @@ export function HistoryView({
 
       <div className="history-scroll">
         {/* 往前翻的入口放在**顶部**：更早的消息在视觉上就在上面。 */}
-        {hasEarlier && (
+        {hasEarlier && messages.length < HISTORY_MESSAGE_LIMIT && (
           <div className="load-earlier">
             <Button small disabled={loadingMore} onClick={onLoadEarlier}>
               {loadingMore ? "加载中…" : "加载更早的消息"}
             </Button>
+          </div>
+        )}
+        {/* 到累计上限后**不再给加载入口**：继续加载只会把刚装进来的旧消息又丢掉
+            （或让按钮空转）。完整记录在「消息与分支」弹框里，那边有完整分页。 */}
+        {hasEarlier && messages.length >= HISTORY_MESSAGE_LIMIT && (
+          <div className="load-earlier">
+            <span className="row-meta">
+              历史视图最多保留最近 {HISTORY_MESSAGE_LIMIT} 条；更早的完整记录请在「消息与分支」中查看。
+            </span>
           </div>
         )}
 
@@ -157,7 +167,7 @@ export function HistoryMessage({
           </button>
         )}
       </div>
-      <div className="history-text">{message.text}</div>
+      <FoldableText text={message.text} className="history-text" />
     </div>
   );
 }

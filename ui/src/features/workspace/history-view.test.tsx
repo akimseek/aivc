@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AiMessage, AiSession } from "../../types";
+import { HISTORY_MESSAGE_LIMIT } from "../../app/use-console";
 import { HistoryView } from "./history-view";
 
 /**
@@ -121,6 +122,23 @@ describe("HistoryView", () => {
       item.textContent?.includes("加载中")
     ) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+  });
+
+  it("到累计上限后不给加载入口，改为指路「消息与分支」（P1-J）", () => {
+    // 窗口封顶后继续提供按钮只有两种结局：点不动，或把刚加载的旧消息又丢掉。
+    // 所以到顶就换成一句说明——完整记录在弹框里（那边有完整分页）。
+    const atLimit = Array.from({ length: HISTORY_MESSAGE_LIMIT }, (_, index) =>
+      message({ text: `第 ${index} 条` })
+    );
+    const capped = setup({ messages: atLimit, hasEarlier: true });
+    expect(capped.view.container.textContent).not.toContain("加载更早的消息");
+    expect(capped.view.container.textContent).toContain("消息与分支");
+    cleanup();
+
+    // 没到顶时仍然是按钮，提示不出现。
+    const below = setup({ hasEarlier: true });
+    expect(below.view.container.textContent).toContain("加载更早的消息");
+    expect(below.view.container.textContent).not.toContain("最多保留");
   });
 
   it("没有消息 / 没有会话时各给一句说明", () => {

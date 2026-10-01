@@ -402,6 +402,22 @@
   padding: 1px 6px;
 }
 
+/* 长文折叠的「展开全文 / 收起」：消息弹框与历史正文共用。 */
+.fold-toggle {
+  margin-top: var(--ui-space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-accent-strong);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fold-toggle:hover {
+  text-decoration: underline;
+}
+
 .badge-neutral {
   background: var(--ui-bg-badge);
   color: var(--ui-muted);

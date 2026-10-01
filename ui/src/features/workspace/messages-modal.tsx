@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Badge, Button, EmptyState, Field, Icon, IconButton, LoadingBlock, Pager, Popover, Select, hasLayerAbove } from "../../components";
+import { Badge, Button, EmptyState, Field, FoldableText, Icon, IconButton, LoadingBlock, Pager, Popover, Select, hasLayerAbove } from "../../components";
 import type { AiMessage, AiSession, AiTarget, ExportFormat } from "../../types";
 import { BranchPanel, shortId, type BranchPanelProps } from "./branch-panel";
 import { displayTitle, formatWhen, roleLabel } from "../../app/session-display";
@@ -30,13 +30,6 @@ import { useSessionDetail } from "../../app/use-session-detail";
  * （读会话用的，560px 一行放不下几句中文）。硬套 `Dialog` 会把通用弹层撑成
  * 「什么都能装」的上帝组件。遮罩、层级、圆角仍与 `Dialog`、设置中心用同一批 token。
  */
-
-/**
- * 一条消息超过这个字数就折叠。
- *
- * 几万字的日志糊满弹框会让这一页没法读；但**丢掉也不行**，所以保留「展开全文」。
- */
-export const MESSAGE_FOLD_CHARS = 4000;
 
 export function MessagesModal({
   session,
@@ -312,24 +305,11 @@ function MessageCard({ message, onBranch }: { message: AiMessage; onBranch?: () 
   );
 }
 
-/** 正文卡。长文折叠到 `MESSAGE_FOLD_CHARS`，但**一个字都不丢**：可展开看全文。 */
+/** 正文卡。长文折叠（共用 `FoldableText`），**一个字都不丢**：可展开看全文。 */
 function MessageText({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const folded = text.length > MESSAGE_FOLD_CHARS;
   return (
     <div className="messages-card">
-      <div className="messages-text">
-        {folded && !expanded ? `${text.slice(0, MESSAGE_FOLD_CHARS)}…` : text}
-      </div>
-      {folded && (
-        <button
-          type="button"
-          className="messages-expand"
-          onClick={() => setExpanded((open) => !open)}
-        >
-          {expanded ? "收起" : `展开全文（共 ${text.length} 字）`}
-        </button>
-      )}
+      <FoldableText text={text} className="messages-text" />
     </div>
   );
 }

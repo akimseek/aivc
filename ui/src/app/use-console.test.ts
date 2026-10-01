@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { pickTarget, planTargetSwitch, shouldLoadSessionList, toRefs, useConsole } from "./use-console";
+import { HISTORY_MESSAGE_LIMIT, pickTarget, planTargetSwitch, shouldLoadSessionList, toRefs, useConsole } from "./use-console";
 import type { AiSession, AiTarget, SessionQuickAccess } from "../types";
 
 const target = (id: string, available: boolean): AiTarget => ({
@@ -235,6 +235,17 @@ describe("quickAccess 的取数时机", () => {
  */
 function recordingRuntime(answers: Record<string, () => unknown> = {}) {
   const calls: { command: string; args: Record<string, unknown> }[] = [];
+  // 页查询必须回**页对象**（`{messages, offset, messageCount}`），不能像其它命令
+  // 那样兜底成 `[]`——上一个版本这里返回裸数组，`page.messages` 是 `undefined`，
+  // 只是当时没有代码读它才没露馅（假运行时按契约给形状，见 P0-C 的教训）。
+  const defaults: Record<string, () => unknown> = {
+    "codex:get-session-messages-page": () => ({
+      messages: [],
+      offset: 0,
+      messageCount: 0,
+      hasMore: false
+    })
+  };
   window.__TAURI__ = {
     core: {
       invoke: async (_command: string, payload?: unknown) => {
@@ -243,7 +254,7 @@ function recordingRuntime(answers: Record<string, () => unknown> = {}) {
           args?: Record<string, unknown>;
         };
         calls.push({ command, args });
-        return answers[command]?.() ?? [];
+        return answers[command]?.() ?? defaults[command]?.() ?? [];
       }
     }
   };
@@ -328,5 +339,79 @@ describe("branchFromMessage 分给哪条会话", () => {
       sessionId: "selected-1",
       messageLine: 7
     });
+  });
+});
+
+describe("历史消息累计上限（P1-J）", () => {
+  /**
+   * 分页假运行时：`total` 条消息、页大小 80（与 `MESSAGE_PAGE_SIZE` 一致），
+   * 记下每次 `get-session-messages-page` 的 offset/limit。
+   */
+  function pagedRuntime(total: number) {
+    const calls: { offset: number; limit: number }[] = [];
+    const all = Array.from({ length: total }, (_, index) => ({
+      role: "assistant",
+      text: `m${index}`
+    }));
+    window.__TAURI__ = {
+      core: {
+        invoke: async (_command: string, payload?: unknown) => {
+          const { command = "", args = {} } = (payload ?? {}) as {
+            command?: string;
+            args?: Record<string, unknown>;
+          };
+          switch (command) {
+            case "codex:get-session-messages-page": {
+              const offset = Number(args.offset ?? 0);
+              const limit = Number(args.limit ?? 0);
+              calls.push({ offset, limit });
+              const start = offset < 0 ? Math.max(0, total - limit) : offset;
+              return {
+                messages: all.slice(start, start + limit),
+                offset: start,
+                messageCount: total,
+                hasMore: start > 0
+              };
+            }
+            case "codex:list-targets":
+              return [target("codex:local", true)];
+            case "codex:list-sessions":
+              return [session("s1")];
+            case "codex:list-session-quick-access":
+              return { favorites: [], recent: [] };
+            default:
+              return [];
+          }
+        }
+      }
+    };
+    return calls;
+  }
+
+  it("翻到上限后不再发请求——累计不再增长", async () => {
+    // 不封顶的话，几万条的老会话一路往前翻会把 DOM 与内存推到无界（P1-J）。
+    const pageCalls = pagedRuntime(1000);
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1));
+    act(() => result.current.openAt(target("codex:local", true), session("s1")));
+    await waitFor(() => expect(result.current.messages).toHaveLength(80));
+
+    // 上限 400 = 80 × 5：还差 4 页到顶。
+    for (let index = 0; index < 4; index += 1) {
+      await act(async () => {
+        await result.current.loadEarlierMessages();
+      });
+    }
+    expect(result.current.messages).toHaveLength(HISTORY_MESSAGE_LIMIT);
+    // 到顶不代表「没有更早的消息」——数据还在，只是不再往窗口里装。
+    expect(result.current.hasEarlier).toBe(true);
+
+    const requests = pageCalls.length;
+    await act(async () => {
+      await result.current.loadEarlierMessages();
+    });
+    expect(pageCalls.length).toBe(requests);
+    expect(result.current.messages).toHaveLength(HISTORY_MESSAGE_LIMIT);
   });
 });

@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 
 import {
+  Badge,
   Button,
   Card,
   EmptyState,
@@ -20,6 +21,7 @@ import {
   formatDuration,
   formatLogTime,
   outcomeLabel,
+  outcomeTone,
   rangeBounds,
   type UsageRangeKey
 } from "../../../app/gateway-range";
@@ -217,9 +219,9 @@ export function GatewayFailurePanel({
                   <td>{item.providerId}</td>
                   <td>{item.vendorId}</td>
                   <td>
-                    <span className={`tag ${item.outcome === "error" ? "off" : ""}`}>
+                    <Badge small tone={outcomeTone(item.outcome)}>
                       {outcomeLabel(item.outcome)}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="ui-num">{item.upstreamStatus ?? "-"}</td>
                   <td className="ui-num">{item.retryCount}</td>

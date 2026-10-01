@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer } from "../../../components";
+import { Badge, Button, Card, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer } from "../../../components";
 import * as api from "../../../ipc/commands";
 import { PanelHeader } from "../panel-header";
 import type { SkillEntry } from "../../../types";
@@ -192,11 +192,11 @@ export function SkillsPanel({
                 </div>
                 {mode === "installed" ? (
                   <>
-                    <span className={`tag ${skill.enabled ? "ok" : "off"}`}>
+                    <Badge tone={skill.enabled ? "accent" : "neutral"}>
                       {/* 用词与旧平台一致：**禁用**，不是「停用」。按钮、标签、
                           结果提示三处必须是同一个词，否则同一件事在界面上有三个名字。 */}
                       {skill.enabled ? "已启用" : "已禁用"}
-                    </span>
+                    </Badge>
                     <Button
                       small
                       onClick={() =>

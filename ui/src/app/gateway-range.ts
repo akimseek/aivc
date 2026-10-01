@@ -168,3 +168,13 @@ export function outcomeLabel(outcome: string): string {
       return outcome;
   }
 }
+
+/**
+ * 日志结果的语义色。只有 `ok` 是成功色，其余（含未知）一律中性色。
+ *
+ * 三张网关表的结果列共用这一个判据：请求日志、最近请求、异常诊断此前各写各的
+ * 映射，异常诊断那份甚至把 timeout 显示成裸文本——同一个值在两张表里长得不一样。
+ */
+export function outcomeTone(outcome: string): "accent" | "neutral" {
+  return outcome === "ok" ? "accent" : "neutral";
+}

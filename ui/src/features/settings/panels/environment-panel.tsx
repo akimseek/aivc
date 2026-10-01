@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, EmptyState, Field, Notice, Select } from "../../../components";
+import { Badge, Button, Card, EmptyState, Field, Notice, Select } from "../../../components";
 import { PanelHeader } from "../panel-header";
 import * as api from "../../../ipc/commands";
 import type { AiProviderId, AiTarget, CliEnvironmentStatus } from "../../../types";
@@ -247,7 +247,9 @@ export function EnvironmentPanel({
                 <td>{row.label}</td>
                 <td>
                   {/* 版本号成列出现：`ui-num` 让数位对齐。 */}
-                  <span className={`tag ui-num ${row.ok ? "ok" : "off"}`}>{row.value}</span>
+                  <Badge small mono tone={row.ok ? "accent" : "neutral"}>
+                    {row.value}
+                  </Badge>
                 </td>
               </tr>
             ))}

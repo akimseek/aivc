@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, Icon, Toolbar } from "../../../components";
+import { Badge, Button, Card, Icon, Toolbar } from "../../../components";
 // 平台名与供应商名解析各只有一处实现：这里再抄一份，迟早会出现
 // 「同一个平台在两张表上叫两个名字」。平台名优先用后端 label（见 `providerLabel`）。
 import { vendorName } from "../../workbench/workbench-cards";
@@ -217,9 +217,9 @@ export function GatewayRulesCard({
                       : `${rule.customResponseStatus}${rule.customResponseBody ? " · JSON" : ""}`}
                   </td>
                   <td>
-                    <span className={`tag ${rule.enabled ? "ok" : "off"}`}>
+                    <Badge small tone={rule.enabled ? "accent" : "neutral"}>
                       {rule.enabled ? "已启用" : "已停用"}
-                    </span>
+                    </Badge>
                   </td>
                   <td>
                     <div className="gateway-rule-actions">

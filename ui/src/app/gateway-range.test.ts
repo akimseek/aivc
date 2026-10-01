@@ -10,6 +10,7 @@ import {
   formatLogTime,
   formatTokenCount,
   outcomeLabel,
+  outcomeTone,
   rangeBounds
 } from "./gateway-range";
 
@@ -161,5 +162,17 @@ describe("outcomeLabel", () => {
   it("未知结果原样返回，而不是硬套一个「失败」", () => {
     // 后端将来加了新结果时，界面显示原文比显示错误的中文好。
     expect(outcomeLabel("weird")).toBe("weird");
+  });
+});
+
+describe("outcomeTone", () => {
+  it("只有 ok 是成功色，其余全部收进中性色", () => {
+    // 三张网关表（请求日志、最近请求、异常诊断）的结果列此前各写各的映射，
+    // 异常诊断甚至把 timeout 显示成裸文本。这个函数是那三处的**唯一**判据。
+    expect(outcomeTone("ok")).toBe("accent");
+    expect(outcomeTone("error")).toBe("neutral");
+    expect(outcomeTone("timeout")).toBe("neutral");
+    expect(outcomeTone("client-aborted")).toBe("neutral");
+    expect(outcomeTone("weird")).toBe("neutral");
   });
 });

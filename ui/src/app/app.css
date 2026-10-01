@@ -1394,16 +1394,6 @@ select {
   color: var(--ui-text);
 }
 
-.tag.ok {
-  background: var(--ui-accent-soft);
-  color: var(--ui-accent-strong);
-}
-
-.tag.off {
-  background: var(--ui-bg-activity);
-  color: var(--ui-muted);
-}
-
 .message-list {
   margin: 0;
   padding-left: 16px;
@@ -2044,12 +2034,6 @@ select {
   gap: 6px;
   font-size: 12.5px;
   color: var(--ui-text);
-}
-
-/* 表格单元格里的状态标记。与 `.tag` 配套但更紧凑，用在密集的表格行里。 */
-.data-table .tag {
-  padding: 1px 6px;
-  font-size: 11px;
 }
 
 /* ── 终端 ────────────────────────────────────────────── */
@@ -3001,7 +2985,7 @@ select {
   padding-top: 8px;
   border-top: 1px dashed var(--ui-border, #30363d);
 }
-.rule-test .tag {
+.rule-test .badge {
   margin-left: 8px;
 }
 

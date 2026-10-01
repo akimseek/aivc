@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 
 import {
+  Badge,
   Button,
   Card,
   EmptyState,
@@ -20,6 +21,7 @@ import {
   customBounds,
   formatLogTime,
   outcomeLabel,
+  outcomeTone,
   rangeBounds,
   type UsageRangeKey
 } from "../../../app/gateway-range";
@@ -310,9 +312,9 @@ export function GatewayLogPanel({
                   <td>{entry.providerId}</td>
                   <td>{entry.vendorId}</td>
                   <td>
-                    <span className={`tag ${entry.outcome === "ok" ? "ok" : "off"}`}>
+                    <Badge small tone={outcomeTone(entry.outcome)}>
                       {outcomeLabel(entry.outcome)}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="ui-num">{entry.upstreamStatus ?? "-"}</td>
                   <td className="mono" title={entry.requestId}>

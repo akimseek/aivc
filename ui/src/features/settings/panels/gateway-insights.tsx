@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  Badge,
   Button,
   Card,
   ChipGroup,
@@ -20,6 +21,7 @@ import {
   formatLogTime,
   formatTokenCount,
   outcomeLabel,
+  outcomeTone,
   rangeBounds,
   type UsageRangeKey
 } from "../../../app/gateway-range";
@@ -220,9 +222,9 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
                   <td>{item.vendorId}</td>
                   <td>{item.providerId}</td>
                   <td>
-                    <span className={`tag ${item.status === "healthy" ? "ok" : "off"}`}>
+                    <Badge small tone={item.status === "healthy" ? "accent" : "neutral"}>
                       {item.status}
-                    </span>
+                    </Badge>
                   </td>
                   <td>
                     {item.successCount} / {item.failureCount}
@@ -290,9 +292,9 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
                   <td>{entry.vendorId}</td>
                   <td>{entry.providerId}</td>
                   <td>
-                    <span className={`tag ${entry.outcome === "ok" ? "ok" : "off"}`}>
+                    <Badge small tone={outcomeTone(entry.outcome)}>
                       {outcomeLabel(entry.outcome)}
-                    </span>
+                    </Badge>
                   </td>
                   <td>{entry.upstreamStatus ?? "-"}</td>
                   {/* 这一列非有不可：「路由不存在 / 鉴权失败」记的是 `ok`（那不是供应商的错），

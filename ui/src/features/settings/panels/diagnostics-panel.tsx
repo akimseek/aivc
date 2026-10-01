@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, EmptyState } from "../../../components";
+import { Badge, Button, Card, EmptyState } from "../../../components";
 import { PanelHeader } from "../panel-header";
 import * as api from "../../../ipc/commands";
 import type { AiProviderId, AiProviderSummary, AiTarget } from "../../../types";
@@ -127,14 +127,18 @@ export function DiagnosticsPanel({
               <tr key={item.id}>
                 <td>
                   {item.label}
-                  {item.id === selectedTargetId && <span className="tag ok">当前</span>}
+                  {item.id === selectedTargetId && (
+                    <Badge small tone="accent">
+                      当前
+                    </Badge>
+                  )}
                 </td>
                 <td>{item.kind === "wsl" ? `WSL · ${item.distro ?? "-"}` : "本机"}</td>
                 <td>
                   {/* 旧平台这一格写的是「可用 / 未找到命令」，与 `available` 同义。 */}
-                  <span className={`tag ${item.available ? "ok" : "off"}`}>
+                  <Badge small tone={item.available ? "accent" : "neutral"}>
                     {item.available ? "可用" : "未找到命令"}
-                  </span>
+                  </Badge>
                 </td>
                 {/* `detail` 是后端给出的四态说明，**原样显示**——它已经是最好的解释。 */}
                 <td className="mono ui-num">{item.detail ?? "-"}</td>
@@ -175,9 +179,9 @@ export function DiagnosticsPanel({
                 <td className="mono ui-num">{configPath}</td>
                 <td>
                   {target.kind === "local" ? (
-                    <span className={`tag ${pathState(configPath) === "present" ? "ok" : "off"}`}>
+                    <Badge small tone={pathState(configPath) === "present" ? "accent" : "neutral"}>
                       {pathLabel(pathState(configPath))}
-                    </span>
+                    </Badge>
                   ) : (
                     // WSL 目标的路径在本机看来毫无意义，**不猜**。
                     <span className="row-meta">WSL 目标，不做本机探测</span>
@@ -204,9 +208,9 @@ export function DiagnosticsPanel({
                 <tr key={row.label}>
                   <td>{row.label}</td>
                   <td>
-                    <span className={`tag ${row.enabled ? "ok" : "off"}`}>
+                    <Badge small tone={row.enabled ? "accent" : "neutral"}>
                       {row.enabled ? "支持" : "不支持"}
-                    </span>
+                    </Badge>
                   </td>
                 </tr>
               ))}

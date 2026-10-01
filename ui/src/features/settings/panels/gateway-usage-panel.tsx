@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 
 import {
+  Badge,
   Button,
   Card,
   DescriptionList,
@@ -268,9 +269,9 @@ function DimensionTable({
                 <td>{row.providerId}</td>
                 <td className="ui-num">{row.requestCount}</td>
                 <td>
-                  <span className={`tag ui-num ${row.failureCount > 0 ? "off" : "ok"}`}>
+                  <Badge small mono tone={row.failureCount > 0 ? "neutral" : "accent"}>
                     {row.failureCount}
-                  </span>
+                  </Badge>
                 </td>
                 <td className="ui-num">{row.switchedCount}</td>
                 <td className="ui-num">{formatDuration(row.averageDurationMs)}</td>

@@ -1,4 +1,4 @@
-import { Button, Field, Select, TextInput, Toolbar, ToolbarSpacer } from "../../../components";
+import { Badge, Button, Field, Select, TextInput, Toolbar, ToolbarSpacer } from "../../../components";
 import type { AiProviderId, AiProviderSummary, ApiVendor, FailoverRuleScope } from "../../../types";
 import { providerIds, providerLabel } from "./gateway-external-card";
 import type { RuleDraft } from "./gateway-rule-model";
@@ -226,13 +226,13 @@ export function RuleForm({
           {testResult && (
             // **说清是被哪一项命中的**：只说「命中」时用户不知道是哪一条生效了，
             // 而两条都写错时会以为都对。
-            <span className={testResult.matched ? "tag ok" : "tag off"}>
+            <Badge tone={testResult.matched ? "accent" : "neutral"}>
               {testResult.matchedBy === "status"
                 ? "会命中：状态码匹配"
                 : testResult.matchedBy === "pattern"
                   ? "会命中：错误文本包含"
                   : "不会命中"}
-            </span>
+            </Badge>
           )}
         </Toolbar>
       </div>

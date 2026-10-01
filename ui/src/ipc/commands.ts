@@ -462,10 +462,12 @@ export const getFailureDiagnostics = (request: {
  *
  * # 分页可选，且参数决定返回形状
  *
- * - **不带** `page`/`pageSize`：后端返回裸数组（全量）——与加参数之前完全一致，
- *   「最近请求」（`GatewayInsights`）那条旧调用不受影响；
+ * - **不带** `page`/`pageSize`：后端返回裸数组（全量）——保留为兼容路径，
+ *   但本仓界面已无人走它：「最近请求」也从它改走了分页（全量裸数组在有流量时
+ *   payload 无界，每刷新都要整段解析）；
  * - **带上**（必须两个一起给）：后端返回 `{ items, total, page, pageSize }`
- *   （与先例 `gateway:get-failure-diagnostics` 逐字同形）。
+ *   （与先例 `gateway:get-failure-diagnostics` 逐字同形）。日志页 20/页；
+ *   「最近请求」（`GatewayInsights`）固定首页 50 条——它是概览不是审计。
  *
  * 两种形状用重载分开声明，调用方不必自己 `Array.isArray` 收窄；
  * 只给一个参数在**编译期**就通不过（后端也会报「参数无效」——静默忽略参数

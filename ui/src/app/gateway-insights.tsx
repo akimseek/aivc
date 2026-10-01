@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   Button,
@@ -26,12 +26,27 @@ import {
 import { createRefreshCoalescer } from "./refresh-coalescer";
 
 /**
- * 请求事件的合并窗口。
+ * 请求事件的合并窗口，同时也是**自动刷新的最小间隔**。
  *
  * 后端每转发一个请求就推一条，而刷新一次要拉三个接口（健康、用量、日志）。
- * 200ms 足够让人看不出延迟，又能把一次重试循环里的好几条并成一次。
+ * 1s 才刷一次，面板上的数字不会因此变旧，但一个重试循环里的几十条事件
+ * 只会换来一次取数——合并窗口从 200ms 提到 1000ms 正是为此。
+ *
+ * 这里按 `refresh-coalescer.ts` 的**既有语义**（窗口内重复直接丢弃）实现限流：
+ * 执行本身就排在窗口之后，且窗口执行完才会开出下一个，因此相邻两次刷新
+ * 至少隔一个窗口；连续事件也不会把刷新无限推迟（丢的是新来的，不是重排）。
+ * 手动刷新（按钮 / 换区间 / 重置）不走合并器，仍然即时。
  */
-const REQUEST_REFRESH_WINDOW_MS = 200;
+const REQUEST_REFRESH_WINDOW_MS = 1000;
+
+/**
+ * 「最近请求」一次取多少条。
+ *
+ * 固定 50（后端仓储钳制的上限）：它是**概览**不是审计——一眼能扫完的量，
+ * 一次请求画出整张表，不必为此引入翻页控件；审计要看更多时去日志页
+ * （那里本来就有分页）。payload 因此有界：区间里有多少请求都只解析这一页。
+ */
+const RECENT_REQUESTS_PAGE_SIZE = 50;
 
 /**
  * 网关的健康 / 用量 / 最近请求。
@@ -51,7 +66,18 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
   const [logs, setLogs] = useState<GatewayLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * 在途请求的自增序号。
+   *
+   * 换区间时上一笔可能才回来：不做判定，旧区间的日志会把新区间的结果整表盖掉
+   * （连点或刷新期间换区间都会）。与 `useAsyncData` / `use-session-detail` 是
+   * **同一手法**；这里没套 `useAsyncData`，是因为三块数据各自容错、错误也各自
+   * 展示，它「一份数据一个错误」的骨架套不上。
+   */
+  const seqRef = useRef(0);
+
   const load = useCallback(async () => {
+    const seq = ++seqRef.current;
     const { start, end } = rangeBounds(range);
     // 三块**各自容错**：日志表为空或统计还没数据都是正常状态，
     // 不该让整块面板变成一句错误。
@@ -67,8 +93,20 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
           error: problem instanceof Error ? problem.message : String(problem)
         })),
       // 最近请求只看最近一段，因此也带上区间——不然「最近请求」可能全是上个月的。
-      api.queryGatewayLogs({ periodStart: start, periodEnd: end }).catch(() => [] as GatewayLogEntry[])
+      // 取首页 50 条：概览要的是「最近发生了什么」，不是全部历史（见页长常量）。
+      api
+        .queryGatewayLogs({
+          page: 1,
+          pageSize: RECENT_REQUESTS_PAGE_SIZE,
+          periodStart: start,
+          periodEnd: end
+        })
+        .then((page) => page.items)
+        .catch(() => [] as GatewayLogEntry[])
     ]);
+    // 旧响应一律丢弃（**连收尾都不做**）：这一刻的状态属于更新的那次请求，
+    // 失败与成功同理——旧请求的失败也不该报错、更不该清掉新结果。
+    if (seq !== seqRef.current) return;
     setHealth(healthResult);
     setUsage(usageResult.value);
     setUsageError(usageResult.error);
@@ -87,7 +125,9 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
   /**
    * **后端每转发一个请求都会推一条事件，面板不该只在打开时取一次。**
    *
-   * 刷新**必须合并**：一个终端在重试循环里一秒能发好几条，而每次刷新要拉三个接口。
+   * 刷新**必须合并且限流**：一个终端在重试循环里一秒能发好几条，而每次刷新要拉
+   * 三个接口。合并器把自动刷新的频率压到 ≤1Hz（见 `REQUEST_REFRESH_WINDOW_MS`）；
+   * 手动刷新不走这里，不受该窗口影响。
    */
   useEffect(() => {
     const coalescer = createRefreshCoalescer(REQUEST_REFRESH_WINDOW_MS, () => {

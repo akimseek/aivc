@@ -13,6 +13,10 @@ import { GatewayInsights } from "./gateway-insights";
  * 而这三件事此前**全都缺失或全都没被验证过**——
  * 「后端每转发一个请求就推一条事件，面板实时更新」这个承诺，
  * 在界面上从来没有成立过。留在一个 1380 行的大文件里就只能靠肉眼看界面。
+ *
+ * 限流（自动刷新不高于 1Hz）与「只取首页 50 条」是后加的两条硬约束：
+ * 前者防止有流量时 5 次/秒地拉三个接口，后者让每次刷新的 payload 有界——
+ * 两条都不会在界面上肉眼可见，只能在这里钉住。
  */
 
 type Handler = (event: { payload: unknown }) => void;
@@ -21,11 +25,19 @@ type Handler = (event: { payload: unknown }) => void;
 function fakeRuntime(overrides: {
   health?: unknown[];
   usage?: unknown;
-  logs?: unknown[];
+  /**
+   * 日志响应。数组按**后端真实契约**返回：不带分页参数是裸数组，带上则是
+   * `{ items, ... }` 外壳。函数形式用来控制时序（每次调用的 Promise 由测试兑现），
+   * 「旧响应晚到」那条测试靠它制造乱序。
+   */
+  logs?: unknown[] | (() => Promise<unknown>);
 } = {}) {
   const calls: string[] = [];
-  /** 带参数的调用。断言「区间真的传下去了」要靠它。 */
-  const callsWithArgs: { command: string; args: unknown }[] = [];
+  /**
+   * 带参数的调用。断言「区间真的传下去了」要靠它；`at` 记下调用时的时钟，
+   * 断言自动刷新的**最小间隔**要靠它（配合假定时器，Date 一并前进）。
+   */
+  const callsWithArgs: { command: string; args: unknown; at: number }[] = [];
   const listeners = new Map<string, Handler>();
 
   window.__TAURI__ = {
@@ -34,10 +46,16 @@ function fakeRuntime(overrides: {
         const payload = args as { command?: string; args?: Record<string, unknown> } | undefined;
         const name = payload?.command ?? "";
         calls.push(name);
-        callsWithArgs.push({ command: name, args: payload?.args ?? {} });
+        callsWithArgs.push({ command: name, args: payload?.args ?? {}, at: Date.now() });
         if (name === "gateway:get-vendor-health") return overrides.health ?? [];
         if (name === "gateway:get-usage-summary") return overrides.usage ?? null;
-        if (name === "gateway:query-logs") return overrides.logs ?? [];
+        if (name === "gateway:query-logs") {
+          if (typeof overrides.logs === "function") return overrides.logs();
+          const items = overrides.logs ?? [];
+          // 与后端一致：参数决定返回形状（两个参数总是一起给）。
+          const paged = "page" in (payload?.args ?? {});
+          return paged ? { items, total: items.length, page: 1, pageSize: 50 } : items;
+        }
         if (name === "gateway:reset-vendor-health") return 1;
         return {};
       }
@@ -109,9 +127,9 @@ describe("GatewayInsights", () => {
 
     const before = runtime.calls.filter((name) => name === "gateway:get-usage-summary").length;
     await runtime.emit("gateway:request-recorded");
-    // 刷新是**合并**的，要等窗口过去。
+    // 刷新是**合并**的，且窗口就是自动刷新的最小间隔（1s），要等窗口过去。
     await act(async () => {
-      vi.advanceTimersByTime(500);
+      vi.advanceTimersByTime(1500);
     });
 
     await waitFor(() => {
@@ -131,13 +149,72 @@ describe("GatewayInsights", () => {
       await runtime.emit("gateway:request-recorded");
     }
     await act(async () => {
-      vi.advanceTimersByTime(500);
+      vi.advanceTimersByTime(1500);
     });
 
     await waitFor(() => {
       const after = runtime.calls.filter((name) => name === "gateway:get-usage-summary").length;
       expect(after - before).toBe(1);
     });
+  });
+
+  it("自动刷新不高于 1Hz：连续流量下相邻两次取数至少隔 1 秒", async () => {
+    // 钉住**频率上限**：旧实现每次事件过 200ms 就刷一次（有流量时 5 次/秒 ×
+    // 三个接口），本断言在旧实现下会红。上限之外还要保证不饿死：
+    // 持续流量下面板仍要按秒级更新，只是不再对每条事件都响应。
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const runtime = fakeRuntime();
+    await renderInsights(runtime);
+
+    const usageTimes = () =>
+      runtime.callsWithArgs
+        .filter((item) => item.command === "gateway:get-usage-summary")
+        .map((item) => item.at);
+
+    // 2.5 秒的连续流量：每 100ms 推一条事件（远密于窗口）。
+    for (let index = 0; index < 25; index += 1) {
+      await runtime.emit("gateway:request-recorded");
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+      });
+    }
+    // 末次事件排的刷新还欠一个窗口，等它落地。
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    const times = usageTimes();
+    // 不饿死：持续流量下刷了不止一次……
+    expect(times.length).toBeGreaterThanOrEqual(3);
+    // ……也不超频：相邻两次取数至少隔一个窗口。
+    for (let index = 1; index < times.length; index += 1) {
+      expect(times[index] - times[index - 1]).toBeGreaterThanOrEqual(1000);
+    }
+  });
+
+  it("手动刷新不受 1s 窗口限制：点一下立刻取数", async () => {
+    // 限流只针对**事件驱动**的自动刷新。人手动点「刷新」时界面必须立刻响应，
+    // 等一个窗口才取数是不能接受的；这条测试在「把按钮也接进合并器」时会红。
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const runtime = fakeRuntime();
+    const { view } = await renderInsights(runtime);
+
+    const button = [...view.container.querySelectorAll("button")].find(
+      (item) => item.textContent?.trim() === "刷新"
+    );
+    expect(button).toBeTruthy();
+
+    const before = runtime.calls.filter((name) => name === "gateway:query-logs").length;
+    await act(async () => {
+      button!.click();
+    });
+    // 只给微任务机会，**不推进定时器**：手动刷新不该等窗口。
+    for (let index = 0; index < 10; index += 1) {
+      await act(async () => {});
+    }
+
+    const after = runtime.calls.filter((name) => name === "gateway:query-logs").length;
+    expect(after).toBe(before + 1);
   });
 
   it("健康表为空时说明原因，而不是显示一张空表", async () => {
@@ -203,20 +280,79 @@ describe("GatewayInsights", () => {
     expect(args.periodStart).not.toBe("");
   });
 
-  it("日志查询也带上区间，而不是传会改变返回形状的 page/pageSize", async () => {
-    // 后端 `query_logs` 的 `page` / `pageSize` 现在真的生效（可选分页）：带上就不再
-    // 返回裸数组，而是 `{ items, total, page, pageSize }`。「最近请求」要的是一瞥的
-    // 全量数组，因此这条调用**不能**带分页参数——带错了形状不是「列表静默变空」：
-    // `logs.length` 是 `undefined`，走到 `logs.map(...)` 会当场 TypeError，渲染直接炸掉。
+  it("最近请求只取首页，且 pageSize 固定为 50", async () => {
+    // 「最近请求」是**概览**不是审计：固定首页 50 条（后端仓储的钳制上限），
+    // 一次请求画完整张表，不需要翻页控件；审计要看全量时去日志页（那里本就有分页）。
+    // 参数也决定返回形状：不带宽度的裸数组是全量，payload 没有上界。
     const runtime = fakeRuntime();
     await renderInsights(runtime);
 
     const call = runtime.callsWithArgs.find((item) => item.command === "gateway:query-logs");
     expect(call).toBeTruthy();
     const args = call!.args as Record<string, unknown>;
-    expect(args).not.toHaveProperty("page");
-    expect(args).not.toHaveProperty("pageSize");
+    expect(args.page).toBe(1);
+    expect(args.pageSize).toBe(50);
     expect(typeof args.periodStart).toBe("string");
+    expect(typeof args.periodEnd).toBe("string");
+  });
+
+  it("旧响应晚到不覆盖新结果：刷新按请求序号丢弃过期响应", async () => {
+    // 连点或换区间时，先发的请求可能后回。没有序号判定，旧区间的响应会把
+    // 新结果整表盖掉——界面显示的是用户已经离开的那段数据。
+    const deferred: Array<(payload: unknown) => void> = [];
+    const runtime = fakeRuntime({
+      logs: () => new Promise((resolve) => deferred.push(resolve))
+    });
+    const onError = vi.fn();
+    const view = render(<GatewayInsights onError={onError} />);
+
+    // 初始那次取数挂着不兑现，先等它已经发出。
+    await waitFor(() => {
+      expect(runtime.calls).toContain("gateway:query-logs");
+    });
+
+    // 换一个区间：这是**新**的一次取数（第二次）。
+    const all = [...view.container.querySelectorAll("button")].find(
+      (item) => item.textContent?.trim() === "全部时间"
+    );
+    expect(all).toBeTruthy();
+    await act(async () => {
+      all!.click();
+    });
+    await waitFor(() => {
+      expect(deferred).toHaveLength(2);
+    });
+
+    const page = (code: string) => ({
+      items: [
+        {
+          requestId: code,
+          createdAt: new Date().toISOString(),
+          vendorId: "v1",
+          providerId: "codex",
+          outcome: "ok",
+          errorCode: code
+        }
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 50
+    });
+
+    // 新请求先回：界面显示新结果。
+    await act(async () => {
+      deferred[1](page("code-new"));
+    });
+    await waitFor(() => {
+      expect(view.container.textContent).toContain("code-new");
+    });
+
+    // 旧请求后回：必须被丢弃，不能把新结果盖掉。
+    await act(async () => {
+      deferred[0](page("code-old"));
+    });
+    expect(view.container.textContent).toContain("code-new");
+    expect(view.container.textContent).not.toContain("code-old");
   });
 
   it("换时间区间会重新取数，且新区间与旧区间不同", async () => {

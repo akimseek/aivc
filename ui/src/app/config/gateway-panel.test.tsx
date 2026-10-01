@@ -43,7 +43,11 @@ function fakeRuntime(answers: Record<string, (args: Record<string, unknown>) => 
         // 下面这些都是页面里那两张只读卡的取数：本组测的是门禁，给它们空数据，
         // 免得无关的读失败混进这一组断言。
         if (name === "gateway:get-vendor-health") return [];
-        if (name === "gateway:query-logs") return [];
+        // 与后端一致：带分页参数时返回 `{ items, ... }` 外壳（「最近请求」走这条路）。
+        if (name === "gateway:query-logs") {
+          const paged = "page" in (payload?.args ?? {});
+          return paged ? { items: [], total: 0, page: 1, pageSize: 50 } : [];
+        }
         if (name === "gateway:list-failover-rules") return [];
         if (name === "vendor:list") return [];
         return null;

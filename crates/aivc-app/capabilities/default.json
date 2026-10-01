@@ -1,16 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口的默认能力：命令调用、事件订阅，以及剪贴板、对话框、通知三个平台插件。",
+  "description": "主窗口默认能力：core:default（已含 core:event:default，事件订阅在内）。剪贴板/原生对话框/系统通知三条链路都从 aivc_invoke 进后端 Rust 侧插件 API，webview 不需要插件 ACL——收窄前曾列着六条从未被调用的插件权限。",
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "core:event:default",
-    "clipboard-manager:allow-read-text",
-    "clipboard-manager:allow-write-text",
-    "dialog:allow-open",
-    "notification:allow-notify",
-    "notification:allow-is-permission-granted",
-    "notification:allow-request-permission"
-  ]
+  "permissions": ["core:default"]
 }

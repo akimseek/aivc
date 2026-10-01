@@ -4,10 +4,10 @@ import { SettingsCenter, type SettingsTab } from "../features/settings/settings-
 import * as api from "../ipc/commands";
 import type { AiProviderId, AiProviderSummary, AiSession, AiTarget, ExportFormat } from "../types";
 import { ExitConfirm } from "./exit-confirm";
-import { NewSessionDialog } from "./new-session-dialog";
-import { SessionContextMenu } from "./session-context-menu";
-import { SessionDuplicateDialog, SessionRenameDialog } from "./session-title-dialogs";
-import { SessionSettingsDialog } from "./session-settings-dialog";
+import { NewSessionDialog } from "../features/sessions/new-session-dialog";
+import { SessionContextMenu } from "../features/sessions/session-context-menu";
+import { SessionDuplicateDialog, SessionRenameDialog } from "../features/sessions/session-title-dialogs";
+import { SessionSettingsDialog } from "../features/sessions/session-settings-dialog";
 import { TabContextMenu } from "./tab-context-menu";
 
 /** 新会话对话框的草稿。 */

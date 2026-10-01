@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
-import { Button, Dialog, hasLayerAbove } from "../components";
-import { useViewportMenuPosition } from "./viewport-menu";
+import { Button, Dialog, hasLayerAbove } from "../../components";
+import { useViewportMenuPosition } from "../../app/viewport-menu";
 
 /**
  * 终端里的文本右键菜单。

@@ -38,7 +38,7 @@ import { App } from "./app";
  * jsdom 没有；`matchMedia` 同样不存在，补一个。
  */
 
-vi.mock("./terminal-pane", () => ({ TerminalPane: () => null }));
+vi.mock("../features/workspace/terminal-pane", () => ({ TerminalPane: () => null }));
 
 const PROVIDERS: AiProviderSummary[] = [
   {

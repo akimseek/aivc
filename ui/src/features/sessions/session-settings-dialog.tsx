@@ -1,4 +1,4 @@
-import { Button, Dialog, Field, TextInput } from "../components";
+import { Button, Dialog, Field, TextInput } from "../../components";
 
 /**
  * 「设置会话」对话框：**手动指定 WSL 里的 Codex 会话目录**。

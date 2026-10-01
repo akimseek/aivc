@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 
-import { displayTitle, formatWhen } from "./session-display";
-import type { AiSession } from "../types";
+import { displayTitle, formatWhen } from "../../app/session-display";
+import type { AiSession } from "../../types";
 
 /**
  * 血缘条：一条会话**从哪来、分出去了哪些**，横向铺开成 `根 → 当前 → 子`。

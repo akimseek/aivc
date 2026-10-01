@@ -1,4 +1,4 @@
-import { Button, Dialog, Field } from "../components";
+import { Button, Dialog, Field } from "../../components";
 
 /**
  * 新会话 / 恢复历史会话的对话框。

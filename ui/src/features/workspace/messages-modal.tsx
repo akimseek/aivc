@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Badge, Button, EmptyState, Field, Icon, LoadingBlock, Popover, Select, hasLayerAbove } from "../../components";
 import type { AiMessage, AiSession, AiTarget, ExportFormat } from "../../types";
-import { BranchPanel, shortId, type BranchPanelProps } from "../../app/branch-panel";
+import { BranchPanel, shortId, type BranchPanelProps } from "./branch-panel";
 import { displayTitle, formatWhen, roleLabel } from "../../app/session-display";
 import { useSessionDetail } from "../../app/use-session-detail";
 

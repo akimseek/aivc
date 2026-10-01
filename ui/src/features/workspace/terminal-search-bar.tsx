@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button, TextInput } from "../components";
+import { Button, TextInput } from "../../components";
 import {
   findMatches,
   matchLabel,
   nextMatch,
   type SearchMatch,
   type SearchOptions
-} from "./terminal-search";
+} from "../../app/terminal-search";
 
 /**
  * 终端内的查找栏。

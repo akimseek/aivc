@@ -3,7 +3,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VendorRoutePicker } from "./vendor-route-picker";
-import type { TerminalSession } from "./use-terminals";
+import type { TerminalSession } from "../../app/use-terminals";
 
 /**
  * 状态栏供应商选择器（浮层）的测试。

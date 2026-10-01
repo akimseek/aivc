@@ -3,12 +3,12 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
-import * as api from "../ipc/commands";
-import { ComposerInput } from "../features/workspace/composer/composer-input";
+import * as api from "../../ipc/commands";
+import { ComposerInput } from "./composer/composer-input";
 import { TerminalSearchBar } from "./terminal-search-bar";
-import { terminalThemeFor } from "./terminal-theme";
+import { terminalThemeFor } from "../../app/terminal-theme";
 import { TerminalPasteDialog, TerminalTextContextMenu } from "./terminal-text-menu";
-import type { TerminalSink } from "./terminal-output";
+import type { TerminalSink } from "../../app/terminal-output";
 
 /**
  * 一路终端的宿主。

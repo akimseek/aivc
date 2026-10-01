@@ -3,7 +3,7 @@ import { act, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionContextMenu } from "./session-context-menu";
-import type { AiSession } from "../types";
+import type { AiSession } from "../../types";
 
 /**
  * 会话右键菜单。

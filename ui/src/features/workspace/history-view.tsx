@@ -1,6 +1,6 @@
 import { Button, EmptyState } from "../../components";
 import type { AiMessage, AiSession } from "../../types";
-import { BranchPanel } from "../../app/branch-panel";
+import { BranchPanel } from "./branch-panel";
 import { displayTitle, formatTokens, messageCountLabel, roleLabel } from "../../app/session-display";
 
 /**

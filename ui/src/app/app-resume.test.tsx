@@ -41,7 +41,7 @@ import { App } from "./app";
  * `matchMedia` 同样不存在，按 `use-theme.test.tsx` 的写法补一个。
  */
 
-vi.mock("./terminal-pane", () => ({ TerminalPane: () => null }));
+vi.mock("../features/workspace/terminal-pane", () => ({ TerminalPane: () => null }));
 
 const PROVIDERS: AiProviderSummary[] = [
   {

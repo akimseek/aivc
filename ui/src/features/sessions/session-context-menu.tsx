@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 
-import { hasLayerAbove } from "../components";
-import { useViewportMenuPosition } from "./viewport-menu";
+import { hasLayerAbove } from "../../components";
+import { useViewportMenuPosition } from "../../app/viewport-menu";
 
-import type { AiSession } from "../types";
+import type { AiSession } from "../../types";
 
 /**
  * 会话右键菜单。

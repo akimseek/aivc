@@ -1,6 +1,6 @@
-import { ListRow, MetaItem } from "../components";
-import type { AiSession, AiTarget, SessionQuickAccessItem } from "../types";
-import { displayTitle, formatWhen } from "./session-display";
+import { ListRow, MetaItem } from "../../components";
+import type { AiSession, AiTarget, SessionQuickAccessItem } from "../../types";
+import { displayTitle, formatWhen } from "../../app/session-display";
 
 /**
  * 会话的**参考形态**行：收藏、最近打开、全局搜索结果三处共用。

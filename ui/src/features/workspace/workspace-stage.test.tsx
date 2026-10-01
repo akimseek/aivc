@@ -14,7 +14,7 @@ import { WorkspaceStage } from "./workspace-stage";
  * 终端在历史阶段**仍然挂载**这件事由 `workspace-stage.tsx` 的结构保证
  * （`TerminalView` 永远渲染、只是 `hidden`），它的另一半在终端区截图里。
  */
-vi.mock("../../app/terminal-pane", () => ({ TerminalPane: () => null }));
+vi.mock("./terminal-pane", () => ({ TerminalPane: () => null }));
 
 const session: AiSession = {
   id: "abcdef12-3456-7890-abcd-ef1234567890",

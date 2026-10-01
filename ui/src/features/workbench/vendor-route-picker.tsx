@@ -28,10 +28,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Badge, Icon, Popover, StatusDot, type StatusDotTone } from "../components";
-import * as api from "../ipc/commands";
-import type { AiProviderId, ApiVendor, GatewayVendorHealth } from "../types";
-import type { TerminalSession, VendorRouteMode } from "./use-terminals";
+import { Badge, Icon, Popover, StatusDot, type StatusDotTone } from "../../components";
+import * as api from "../../ipc/commands";
+import type { AiProviderId, ApiVendor, GatewayVendorHealth } from "../../types";
+import type { TerminalSession, VendorRouteMode } from "../../app/use-terminals";
 
 /** 健康快照里的状态 → 界面文案。`healthy` 与未知值都不标注（见 `healthBadge`）。 */
 function healthBadge(status: string): { label: string; tone: StatusDotTone } | null {

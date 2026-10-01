@@ -12,7 +12,7 @@ import type { TerminalUiState, TerminalSession } from "../../app/use-terminals";
  * 在首屏就为它付出代价——实测把主包从 235 KB 顶到 573 KB。
  */
 const TerminalPane = lazy(() =>
-  import("../../app/terminal-pane").then((module) => ({ default: module.TerminalPane }))
+  import("./terminal-pane").then((module) => ({ default: module.TerminalPane }))
 );
 
 /**

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-import { Button, Dialog, Field, TextInput } from "../components";
-import type { AiSession } from "../types";
+import { Button, Dialog, Field, TextInput } from "../../components";
+import type { AiSession } from "../../types";
 
 /**
  * 重命名 / 复制会话的两个对话框。

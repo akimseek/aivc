@@ -2,7 +2,7 @@
 import { render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AiSession } from "../types";
+import type { AiSession } from "../../types";
 import { BranchPanel, type BranchPanelProps } from "./branch-panel";
 
 /**

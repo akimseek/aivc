@@ -1,7 +1,7 @@
 import { gatewayPortLabel } from "../app/gateway-address";
 import { formatWhen } from "../app/session-display";
 import { terminalInputButtonTitle, type TerminalInputMode } from "../features/workspace/composer/composer-text";
-import { VendorRoutePicker } from "../app/vendor-route-picker";
+import { VendorRoutePicker } from "../features/workbench/vendor-route-picker";
 import type { useTerminals } from "../app/use-terminals";
 import { Icon, ToolbarSpacer } from "../components";
 import * as api from "../ipc/commands";

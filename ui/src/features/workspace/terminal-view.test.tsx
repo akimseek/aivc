@@ -23,7 +23,7 @@ import { TerminalView } from "./terminal-view";
 
 /** 空组件替身：一渲染就把 props 记下来（上面第一条用例）。 */
 const mounted = vi.hoisted(() => [] as Array<{ id: string; active: boolean }>);
-vi.mock("../../app/terminal-pane", () => ({
+vi.mock("./terminal-pane", () => ({
   TerminalPane: (props: { terminalId: string; active: boolean }) => {
     mounted.push({ id: props.terminalId, active: props.active });
     return null;

@@ -6,6 +6,7 @@ import {
   EmptyState,
   HintBar,
   LoadingBlock,
+  Pager,
   Select,
   Toolbar,
   ToolbarSpacer,
@@ -263,18 +264,8 @@ export function GatewayLogPanel({
         actions={
           pageCount > 1 && (
             <Toolbar>
-              <Button small disabled={page <= 1} onClick={() => gotoPage(1)}>
-                第一页
-              </Button>
-              <Button small disabled={page <= 1} onClick={() => gotoPage(page - 1)}>
-                上一页
-              </Button>
-              <span className="row-meta">
-                第 {page} / {pageCount} 页
-              </span>
-              <Button small disabled={page >= pageCount} onClick={() => gotoPage(page + 1)}>
-                下一页
-              </Button>
+              {/* 翻页与边界禁用都在 `Pager` 里（与异常诊断、消息弹框同一份实现）。 */}
+              <Pager page={page} pageCount={pageCount} onPage={gotoPage} />
               <ToolbarSpacer />
             </Toolbar>
           )

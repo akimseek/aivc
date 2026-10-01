@@ -5,6 +5,7 @@ import {
   Card,
   EmptyState,
   LoadingBlock,
+  Pager,
   Select,
   Toolbar,
   ToolbarSpacer,
@@ -177,22 +178,8 @@ export function GatewayFailurePanel({
         actions={
           pageCount > 1 && (
             <Toolbar>
-              <Button small disabled={page <= 1} onClick={() => setPage(1)}>
-                第一页
-              </Button>
-              <Button small disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
-                上一页
-              </Button>
-              <span className="row-meta">
-                第 {page} / {pageCount} 页
-              </span>
-              <Button
-                small
-                disabled={page >= pageCount}
-                onClick={() => setPage((current) => current + 1)}
-              >
-                下一页
-              </Button>
+              {/* 翻页与边界禁用都在 `Pager` 里（与请求日志、消息弹框同一份实现）。 */}
+              <Pager page={page} pageCount={pageCount} onPage={setPage} />
               <ToolbarSpacer />
             </Toolbar>
           )

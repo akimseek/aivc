@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Badge, Button, EmptyState, Field, Icon, LoadingBlock, Popover, Select, hasLayerAbove } from "../../components";
+import { Badge, Button, EmptyState, Field, Icon, LoadingBlock, Pager, Popover, Select, hasLayerAbove } from "../../components";
 import type { AiMessage, AiSession, AiTarget, ExportFormat } from "../../types";
 import { BranchPanel, shortId, type BranchPanelProps } from "./branch-panel";
 import { displayTitle, formatWhen, roleLabel } from "../../app/session-display";
@@ -155,53 +155,40 @@ export function MessagesModal({
         )}
 
         {/* 分页控件。**每页数量**是一等公民：详情是给「研究一条会话」用的，
-            有人想看 20 条一屏，有人想一次铺 200 条。 */}
+            有人想看 20 条一屏，有人想一次铺 200 条。
+            翻页按钮与边界禁用走共用的 `Pager`（与请求日志、异常诊断同一份实现）；
+            它的差异点（每页数量、加载中额外禁用、最后一页、页码文字的字号与
+            播报）全部由 props 表达。 */}
         <div className="messages-pagination" role="group" aria-label="会话消息分页">
-          <Field label="每页数量">
-            <Select
-              value={String(pageSize)}
-              onChange={(event) => onPageSizeChange(Number.parseInt(event.target.value, 10))}
-            >
-              {[20, 50, 100, 200].map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <Pager
+            page={page}
+            pageCount={pageCount}
+            onPage={onPageChange}
+            disabled={loading}
+            extra={
+              <>
+                <Field label="每页数量">
+                  <Select
+                    value={String(pageSize)}
+                    onChange={(event) =>
+                      onPageSizeChange(Number.parseInt(event.target.value, 10))
+                    }
+                  >
+                    {[20, 50, 100, 200].map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
 
-          <span className="spacer" />
-
-          <Button small disabled={page <= 1 || loading} onClick={() => onPageChange(1)} title="第一页">
-            第一页
-          </Button>
-          <Button
-            small
-            disabled={page <= 1 || loading}
-            onClick={() => onPageChange(page - 1)}
-            title="上一页"
-          >
-            上一页
-          </Button>
-          <span className="messages-range" aria-live="polite">
-            第 {page} / {pageCount} 页
-          </span>
-          <Button
-            small
-            disabled={page >= pageCount || loading}
-            onClick={() => onPageChange(page + 1)}
-            title="下一页"
-          >
-            下一页
-          </Button>
-          <Button
-            small
-            disabled={page >= pageCount || loading}
-            onClick={() => onPageChange(pageCount)}
-            title="最后一页"
-          >
-            最后一页
-          </Button>
+                <span className="spacer" />
+              </>
+            }
+            withLast
+            labelClassName="messages-range"
+            ariaLive
+          />
         </div>
 
         <div className="messages-scroll" aria-label="会话时间线">

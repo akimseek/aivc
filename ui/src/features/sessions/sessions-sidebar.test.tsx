@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import * as sessionDisplay from "../../app/session-display";
 
 import type {
   AiProviderSummary,
@@ -467,5 +469,53 @@ describe("折叠", () => {
     expect(button.querySelector("svg")).not.toBeNull();
     act(() => button.click());
     expect(handlers.onToggleCollapsed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("列表重渲面（P1-I）", () => {
+  /**
+   * 钉的是**侧栏这一层必须给卡片喂稳定回调**：`SessionCard` 有 `memo`，
+   * 而 memo 只在 props 引用全等时才拦得住渲染。此前 `map` 里每张卡现造一组
+   * 内联箭头，父层任何一次无关重渲都会把整列拖下水——这条用例就是那个回归的防线。
+   *
+   * 渲染次数用 `displayTitle` 的调用次数数（卡片渲染体必经的纯函数）。
+   */
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("父层因无关状态重渲（console 换新对象、其余引用不变）时整列卡片不重渲", () => {
+    const displaySpy = vi.spyOn(sessionDisplay, "displayTitle");
+    const state = consoleState({
+      sessions: [session(), session({ id: "s2", title: "第二条会话" })]
+    });
+    const handlers = {
+      onOpen: vi.fn(),
+      onResume: vi.fn(),
+      onMenu: vi.fn(),
+      onNewSession: vi.fn(),
+      onDetail: vi.fn(),
+      onOpenGateway: vi.fn(),
+      onToggleCollapsed: vi.fn()
+    };
+    const renderSidebar = (consoleValue: SessionsSidebarConsole) => (
+      <SessionsSidebar
+        console={consoleValue}
+        selectedTarget={TARGET}
+        providers={PROVIDERS}
+        gateway={GATEWAY}
+        {...handlers}
+      />
+    );
+
+    const view = render(renderSidebar(state));
+    expect(view.container.querySelectorAll(".session-card")).toHaveLength(2);
+    const baseline = displaySpy.mock.calls.length;
+    expect(baseline).toBeGreaterThanOrEqual(2);
+
+    // 模拟「App 因无关 state 重渲」：`console` 是**新对象**（字段与函数仍是同一批
+    // 引用）、其余 props 全等。老写法下这里每张卡都会重渲；memo + 稳定回调下应为 0。
+    view.rerender(renderSidebar({ ...state }));
+    expect(displaySpy.mock.calls.length).toBe(baseline);
   });
 });

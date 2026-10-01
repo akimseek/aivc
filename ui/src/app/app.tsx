@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useToast } from "../components";
 import { SessionsSidebar } from "../features/sessions/sessions-sidebar";
@@ -408,7 +408,19 @@ export function App() {
         console.setError(error instanceof Error ? error.message : String(error));
       }
     },
-    [terminals, selectedTarget, console, workspace]
+    /*
+      依赖只列**用到的成员**，不列 `terminals`/`console`/`workspace` 整对象：
+      三者的 hook 每次渲染都返回新对象，列整对象会让这个回调——连同下游的
+      `resumeById`/`openSessionById` 与侧栏卡片回调——每次 App 重渲都换引用，
+      `SessionCard` 的 memo（P1-I）随之失效。
+    */
+    [
+      terminals.openTerminal,
+      selectedTarget,
+      console.selectedSession,
+      console.setError,
+      workspace.attachTerminalTab
+    ]
   );
 
   /**
@@ -490,8 +502,25 @@ export function App() {
         title: displayTitle(session)
       });
     },
-    [console, openTerminal, workspace.selectSession]
+    // 只列用到的成员（`console.openAt`），不列整个 `console`——它每次渲染都换身份
+    // （use-console 的返回对象），列整对象会让 `resumeById` 及侧栏卡片回调随之换
+    // 引用，`SessionCard` 的 memo（P1-I）在真实树上失效。
+    [console.openAt, openTerminal, workspace.selectSession]
   );
+
+  /**
+   * 「最新选中会话」的旁路引用。
+   *
+   * `console.selectedSession` 是 `find` 派生值——**点一条卡就会换引用**，直接进
+   * `sessionForAction` 的依赖会让它（连同下游 `openSessionById`/`resumeById`
+   * 与侧栏卡片回调）每次选中变化都换引用，整列卡片白白重渲（P1-I 要治的就是
+   * 这个规模）。放进 ref 后回调始终读到最新值，引用本身不变。
+   */
+  const selectedSessionRef = useRef(console.selectedSession);
+  useEffect(() => {
+    // 在 effect 里写而不是渲染期写：被丢弃的渲染不该留下副作用。
+    selectedSessionRef.current = console.selectedSession;
+  });
 
   /**
    * 两点共用：按编号还原出完整会话（侧栏只回传编号，它不持有会话内容）。
@@ -501,7 +530,7 @@ export function App() {
    */
   const sessionForAction = useCallback(
     (sessionId: string): AiSession | null => {
-      const session = sessionById(sessionId) ?? console.selectedSession;
+      const session = sessionById(sessionId) ?? selectedSessionRef.current;
       if (!session || session.id !== sessionId) {
         // 会话可能刚被别处删掉。给一句明确的说明，而不是静默无反应。
         toast.show("该会话已不在当前列表里，请刷新后重试。");
@@ -509,7 +538,9 @@ export function App() {
       }
       return session;
     },
-    [sessionById, console.selectedSession, toast]
+    // 列 `toast.show` 而不是整个 `toast`（useToast 每次渲染返回新对象）；
+    // 选中会话经 ref 读（见上）。
+    [sessionById, toast.show]
   );
 
   /** 继续会话动作用的入口（标签栏的「继续会话」）。 */

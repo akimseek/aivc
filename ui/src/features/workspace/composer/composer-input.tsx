@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button, Icon, Popover } from "../../../components";
 import * as api from "../../../ipc/commands";
@@ -252,17 +252,24 @@ export function ComposerInput({
     [blocks.length, text, addPaths, pasteImage]
   );
 
+  /**
+   * 当前草稿的提交载荷（`null` = 没有可提交的内容）。
+   *
+   * 每次渲染只算一次：此前「发送」按钮的禁用态与 `send()` 各算一遍，而
+   * `composeSubmission` 的入参里含 `attachments.map(...)`——打字、拖拽悬停
+   * 这类与内容无关的渲染都会白造一个数组。
+   */
+  const submission = useMemo(
+    () => composeSubmission(text, blocks, attachments.map((item) => item.path)),
+    [text, blocks, attachments]
+  );
+
   /** 提交。`null` 表示没有可提交的内容——那时**什么都不做**。 */
   const send = useCallback(async () => {
-    const payload = composeSubmission(
-      text,
-      blocks,
-      attachments.map((item) => item.path)
-    );
-    if (!payload) return;
+    if (!submission) return;
     setSending(true);
     try {
-      await api.writeTerminal(terminalId, payload);
+      await api.writeTerminal(terminalId, submission);
       setText("");
       setAttachments([]);
       setBlocks([]);
@@ -272,7 +279,7 @@ export function ComposerInput({
     } finally {
       setSending(false);
     }
-  }, [text, blocks, attachments, terminalId, onSent, onError]);
+  }, [submission, terminalId, onSent, onError, text]);
 
   /**
    * Enter 提交、Shift+Enter 换行。
@@ -463,14 +470,7 @@ export function ComposerInput({
           <Button
             small
             variant="primary"
-            disabled={
-              sending ||
-              composeSubmission(
-                text,
-                blocks,
-                attachments.map((item) => item.path)
-              ) === null
-            }
+            disabled={sending || submission === null}
             onClick={() => void send()}
             title="发送 (Enter)"
           >

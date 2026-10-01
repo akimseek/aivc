@@ -1,4 +1,4 @@
-import type { AiProviderId, FailoverRule, FailoverRuleScope } from "../../types";
+import type { AiProviderId, FailoverRule, FailoverRuleScope } from "../../../types";
 
 /**
  * 故障规则的草稿模型、校验与提交形状（卡 3 的「纯逻辑」那一半）。

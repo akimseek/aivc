@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, EmptyState } from "../../components";
-import { PanelHeader } from "../../features/settings/panel-header";
-import * as api from "../../ipc/commands";
-import type { AiProviderSummary, ExternalApiStatus, GatewayPortStatus } from "../../types";
-import { GatewayInsights } from "../gateway-insights";
+import { Button, EmptyState } from "../../../components";
+import { PanelHeader } from "../panel-header";
+import * as api from "../../../ipc/commands";
+import type { AiProviderSummary, ExternalApiStatus, GatewayPortStatus } from "../../../types";
+import { GatewayInsights } from "./gateway-insights";
 import { GatewayExternalCard } from "./gateway-external-card";
 import { GatewayPortCard } from "./gateway-port-card";
 import { GatewayRulesCard } from "./gateway-rules-card";

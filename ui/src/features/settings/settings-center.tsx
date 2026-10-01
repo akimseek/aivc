@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 
-import { DiagnosticsPanel } from "../../app/config/diagnostics-panel";
-import { EnvironmentPanel } from "../../app/config/environment-panel";
-import { GatewayPanel } from "../../app/config/gateway-panel";
-import { PresetsPanel } from "../../app/config/presets-panel";
-import { SkillsPanel } from "../../app/config/skills-panel";
-import { VendorsPanel } from "../../app/config/vendors-panel";
-import { GatewayFailurePanel } from "../../app/gateway-failure-panel";
-import { GatewayLogPanel } from "../../app/gateway-log-panel";
-import { GatewayUsagePanel } from "../../app/gateway-usage-panel";
+import { DiagnosticsPanel } from "./panels/diagnostics-panel";
+import { EnvironmentPanel } from "./panels/environment-panel";
+import { GatewayPanel } from "./panels/gateway-panel";
+import { PresetsPanel } from "./panels/presets-panel";
+import { SkillsPanel } from "./panels/skills-panel";
+import { VendorsPanel } from "./panels/vendors-panel";
+import { GatewayFailurePanel } from "./panels/gateway-failure-panel";
+import { GatewayLogPanel } from "./panels/gateway-log-panel";
+import { GatewayUsagePanel } from "./panels/gateway-usage-panel";
 import { supportsSessionSettings } from "../../app/provider-capabilities";
 import { Icon, hasLayerAbove } from "../../components";
 import type { AiProviderId, AiProviderSummary, AiTarget } from "../../types";

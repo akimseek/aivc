@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor, type RenderResult } from "@testing-lib
 import { describe, expect, it } from "vitest";
 
 import { GatewayUsagePanel } from "./gateway-usage-panel";
-import { rangeBounds } from "./gateway-range";
+import { rangeBounds } from "../../../app/gateway-range";
 
 /**
  * 用量页的三张汇总卡（请求数 / 累计 Tokens / 预估费用）。

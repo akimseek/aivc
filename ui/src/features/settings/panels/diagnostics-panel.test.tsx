@@ -3,7 +3,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { DiagnosticsPanel, capabilityRows } from "./diagnostics-panel";
-import type { AiProviderSummary, AiTarget } from "../../types";
+import type { AiProviderSummary, AiTarget } from "../../../types";
 
 /**
  * 诊断页。

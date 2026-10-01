@@ -10,9 +10,9 @@ import {
   LoadingBlock,
   Toolbar,
   ToolbarSpacer
-} from "../components";
-import * as api from "../ipc/commands";
-import type { GatewayLogEntry, GatewayVendorHealth, UsageSummary } from "../types";
+} from "../../../components";
+import * as api from "../../../ipc/commands";
+import type { GatewayLogEntry, GatewayVendorHealth, UsageSummary } from "../../../types";
 import {
   USAGE_RANGES,
   formatCost,
@@ -22,8 +22,8 @@ import {
   outcomeLabel,
   rangeBounds,
   type UsageRangeKey
-} from "./gateway-range";
-import { REQUEST_REFRESH_WINDOW_MS, createRefreshCoalescer } from "./refresh-coalescer";
+} from "../../../app/gateway-range";
+import { REQUEST_REFRESH_WINDOW_MS, createRefreshCoalescer } from "../../../app/refresh-coalescer";
 
 /**
  * 「最近请求」一次取多少条。

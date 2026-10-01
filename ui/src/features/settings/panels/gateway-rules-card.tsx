@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, Icon, Toolbar } from "../../components";
+import { Button, Card, Icon, Toolbar } from "../../../components";
 // 平台名与供应商名解析各只有一处实现：这里再抄一份，迟早会出现
 // 「同一个平台在两张表上叫两个名字」。平台名优先用后端 label（见 `providerLabel`）。
-import { vendorName } from "../../features/workbench/workbench-cards";
-import * as api from "../../ipc/commands";
-import type { AiProviderId, AiProviderSummary, ApiVendor, FailoverRule } from "../../types";
+import { vendorName } from "../../workbench/workbench-cards";
+import * as api from "../../../ipc/commands";
+import type { AiProviderId, AiProviderSummary, ApiVendor, FailoverRule } from "../../../types";
 import { providerLabel } from "./gateway-external-card";
 import {
   draftFromRule,

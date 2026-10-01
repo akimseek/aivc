@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, Field, TextInput } from "../../components";
-import * as api from "../../ipc/commands";
-import type { GatewayPortStatus } from "../../types";
+import { Button, Card, Field, TextInput } from "../../../components";
+import * as api from "../../../ipc/commands";
+import type { GatewayPortStatus } from "../../../types";
 
 /**
  * 卡 1：网关端口与熔断韧性参数（demo 第 1024-1075 行）。

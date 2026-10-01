@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 
-import { Badge, Button, Card, Notice } from "../../components";
-import * as api from "../../ipc/commands";
-import type { AiProviderId, AiProviderSummary, ExternalApiStatus } from "../../types";
+import { Badge, Button, Card, Notice } from "../../../components";
+import * as api from "../../../ipc/commands";
+import type { AiProviderId, AiProviderSummary, ExternalApiStatus } from "../../../types";
 import { SwitchPill } from "./gateway-switch-pill";
 
 /**

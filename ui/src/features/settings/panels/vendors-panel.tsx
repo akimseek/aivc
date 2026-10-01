@@ -13,18 +13,18 @@ import {
   Toolbar,
   ToolbarSpacer,
   useToast
-} from "../../components";
-import { PanelHeader } from "../../features/settings/panel-header";
-import * as api from "../../ipc/commands";
+} from "../../../components";
+import { PanelHeader } from "../panel-header";
+import * as api from "../../../ipc/commands";
 import type {
   AiProviderId,
   AiProviderSummary,
   ApiVendor,
   GatewayVendorHealth,
   VendorBalance
-} from "../../types";
-import { formatWhen } from "../session-display";
-import { VendorConfigReader, VendorModelProbe, balanceText } from "../vendor-probe-panel";
+} from "../../../types";
+import { formatWhen } from "../../../app/session-display";
+import { VendorConfigReader, VendorModelProbe, balanceText } from "./vendor-probe-panel";
 
 /**
  * 供应商管理。

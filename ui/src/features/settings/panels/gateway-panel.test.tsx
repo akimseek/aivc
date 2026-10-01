@@ -3,7 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GatewayPanel } from "./gateway-panel";
-import type { GatewayPortStatus } from "../../types";
+import type { GatewayPortStatus } from "../../../types";
 
 /**
  * 网关页的**整页门禁**。

@@ -3,7 +3,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { EnvironmentPanel } from "./environment-panel";
-import type { AiTarget, CliEnvironmentStatus } from "../../types";
+import type { AiTarget, CliEnvironmentStatus } from "../../../types";
 
 /**
  * CLI 环境面板。

@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 
-import { Button, Card, EmptyState, LoadingBlock, Select, Toolbar, ToolbarSpacer } from "../components";
-import * as api from "../ipc/commands";
-import type { ApiVendor, VendorBalance, VendorConfigFile, VendorModel } from "../types";
+import { Button, Card, EmptyState, LoadingBlock, Select, Toolbar, ToolbarSpacer } from "../../../components";
+import * as api from "../../../ipc/commands";
+import type { ApiVendor, VendorBalance, VendorConfigFile, VendorModel } from "../../../types";
 
 /**
  * 供应商的「探活」两件事：**测连接 / 读配置**。

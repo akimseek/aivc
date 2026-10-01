@@ -3,7 +3,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { GatewayExternalCard, buildExternalEndpoints } from "./gateway-external-card";
-import type { AiProviderSummary, ExternalApiStatus } from "../../types";
+import type { AiProviderSummary, ExternalApiStatus } from "../../../types";
 
 /**
  * 外部网关卡：端点清单必须是**后端真实路由**，不是 demo 里的字符串。

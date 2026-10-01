@@ -1,5 +1,5 @@
-import { Button, Field, Select, TextInput, Toolbar, ToolbarSpacer } from "../../components";
-import type { AiProviderId, AiProviderSummary, ApiVendor, FailoverRuleScope } from "../../types";
+import { Button, Field, Select, TextInput, Toolbar, ToolbarSpacer } from "../../../components";
+import type { AiProviderId, AiProviderSummary, ApiVendor, FailoverRuleScope } from "../../../types";
 import { providerIds, providerLabel } from "./gateway-external-card";
 import type { RuleDraft } from "./gateway-rule-model";
 

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, EmptyState } from "../../components";
-import { PanelHeader } from "../../features/settings/panel-header";
-import * as api from "../../ipc/commands";
-import type { AiProviderId, AiProviderSummary, AiTarget } from "../../types";
+import { Button, Card, EmptyState } from "../../../components";
+import { PanelHeader } from "../panel-header";
+import * as api from "../../../ipc/commands";
+import type { AiProviderId, AiProviderSummary, AiTarget } from "../../../types";
 
 /**
  * 诊断：把「每一道门的结果」集中到一处。

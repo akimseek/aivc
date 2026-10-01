@@ -1,4 +1,4 @@
-import { StatusDot } from "../../components";
+import { StatusDot } from "../../../components";
 
 /**
  * 网关页的「总开关胶囊」。

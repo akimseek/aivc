@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer } from "../../components";
-import * as api from "../../ipc/commands";
-import { PanelHeader } from "../../features/settings/panel-header";
-import type { SkillEntry } from "../../types";
+import { Button, Card, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer } from "../../../components";
+import * as api from "../../../ipc/commands";
+import { PanelHeader } from "../panel-header";
+import type { SkillEntry } from "../../../types";
 
 export function SkillsPanel({
   targetId,

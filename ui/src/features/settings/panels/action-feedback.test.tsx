@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SkillsPanel } from "./skills-panel";
 import { VendorsPanel } from "./vendors-panel";
 import { EnvironmentPanel } from "./environment-panel";
-import type { CliEnvironmentStatus } from "../../types";
+import type { CliEnvironmentStatus } from "../../../types";
 
 /**
  * **操作结果反馈**。

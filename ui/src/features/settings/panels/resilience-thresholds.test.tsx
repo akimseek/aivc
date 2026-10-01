@@ -4,7 +4,7 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { GatewayPortCard } from "./gateway-port-card";
-import type { GatewayPortStatus } from "../../types";
+import type { GatewayPortStatus } from "../../../types";
 
 /**
  * 网关端口与三条韧性阈值（原 A6 一组，批次二随「三卡重排」搬到端口卡上）。

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, EmptyState, Field, TextInput, Toolbar } from "../../components";
-import { PanelHeader } from "../../features/settings/panel-header";
-import * as api from "../../ipc/commands";
-import type { WorkspacePreset } from "../../types";
+import { Button, Card, EmptyState, Field, TextInput, Toolbar } from "../../../components";
+import { PanelHeader } from "../panel-header";
+import * as api from "../../../ipc/commands";
+import type { WorkspacePreset } from "../../../types";
 
 /**
  * 工作区预设：把「用哪个目录、带什么提示词、附加什么 CLI 参数」存下来复用。

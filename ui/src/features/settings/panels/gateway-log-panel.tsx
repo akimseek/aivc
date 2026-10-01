@@ -11,17 +11,17 @@ import {
   ToolbarSpacer,
   useAsyncData,
   useToast
-} from "../components";
-import * as api from "../ipc/commands";
-import { PanelHeader } from "../features/settings/panel-header";
-import type { GatewayLogEntry, GatewayLogsPage } from "../types";
+} from "../../../components";
+import * as api from "../../../ipc/commands";
+import { PanelHeader } from "../panel-header";
+import type { GatewayLogEntry, GatewayLogsPage } from "../../../types";
 import {
   customBounds,
   formatLogTime,
   outcomeLabel,
   rangeBounds,
   type UsageRangeKey
-} from "./gateway-range";
+} from "../../../app/gateway-range";
 import { GatewayRangePicker } from "./gateway-range-picker";
 
 /** 每页条数。后端会把它钳制在上限内，因此这里给的是一个「意愿」（与异常页同一个数字）。 */

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GatewayExternalCard } from "./gateway-external-card";
 import { GatewayRulesCard } from "./gateway-rules-card";
-import type { AiProviderSummary, FailoverRule } from "../../types";
+import type { AiProviderSummary, FailoverRule } from "../../../types";
 
 /**
  * 规则卡里两件「说出去的话必须与做出去的事一致」的事：

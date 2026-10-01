@@ -9,7 +9,7 @@ import {
   parsePrice,
   priceText
 } from "./vendors-panel";
-import type { AiProviderId } from "../../types";
+import type { AiProviderId } from "../../../types";
 
 /**
  * 供应商管理。

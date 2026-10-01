@@ -7,13 +7,13 @@ import {
   EmptyState,
   LoadingBlock,
   useAsyncData
-} from "../components";
-import * as api from "../ipc/commands";
-import { PanelHeader } from "../features/settings/panel-header";
+} from "../../../components";
+import * as api from "../../../ipc/commands";
+import { PanelHeader } from "../panel-header";
 // 成功率只有一处实现：工作台的「今日用量」与本页读的是同一个比值，
 // 各写一遍迟早会出现「一处 `0.0%`、一处 `-`」。
-import { successRateText } from "../features/workbench/workbench-cards";
-import type { UsageDimension, UsageSummary } from "../types";
+import { successRateText } from "../../workbench/workbench-cards";
+import type { UsageDimension, UsageSummary } from "../../../types";
 import {
   customBounds,
   formatCost,
@@ -21,7 +21,7 @@ import {
   formatTokenCount,
   rangeBounds,
   type UsageRangeKey
-} from "./gateway-range";
+} from "../../../app/gateway-range";
 import { GatewayRangePicker } from "./gateway-range-picker";
 
 /**

@@ -1,10 +1,10 @@
-import { Field, Select, TextInput } from "../components";
+import { Field, Select, TextInput } from "../../../components";
 import {
   CUSTOM_BOUNDS_MESSAGES,
   customBounds,
   USAGE_RANGES,
   type UsageRangeKey
-} from "./gateway-range";
+} from "../../../app/gateway-range";
 
 /**
  * 「时间范围」一栏：预设 + 自定义起止日期。

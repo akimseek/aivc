@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import { Badge, Button, Icon, ToolbarSpacer } from "../../components";
+import { Badge, Button, Icon, IconButton, ToolbarSpacer } from "../../components";
 import * as api from "../../ipc/commands";
 import type { AiProviderSummary, AiSession, AiTarget, ApiVendor, GatewayPortStatus } from "../../types";
 import { rangeBounds } from "../../app/gateway-range";
@@ -112,15 +112,9 @@ export function WorkbenchSidebar({
           <Icon name="chart" size={16} />
           <h1 className="workbench-title">运行概览与工作台</h1>
           <ToolbarSpacer />
-          <button
-            type="button"
-            className="icon-btn"
-            title="关闭工作台，回到会话"
-            aria-label="关闭工作台"
-            onClick={onClose}
-          >
+          <IconButton label="关闭工作台" title="关闭工作台，回到会话" onClick={onClose}>
             <Icon name="close" size={16} />
-          </button>
+          </IconButton>
         </div>
         {/* 第二行：这一块的性质（跟着事件刷新）与手动刷新。挤在第一行会让标题
             那一行读起来像工具栏（会话侧栏的头部也是这个分法）。 */}

@@ -10,7 +10,7 @@ import { GatewayFailurePanel } from "./panels/gateway-failure-panel";
 import { GatewayLogPanel } from "./panels/gateway-log-panel";
 import { GatewayUsagePanel } from "./panels/gateway-usage-panel";
 import { supportsSessionSettings } from "../../app/provider-capabilities";
-import { Icon, hasLayerAbove } from "../../components";
+import { Icon, IconButton, hasLayerAbove } from "../../components";
 import type { AiProviderId, AiProviderSummary, AiTarget } from "../../types";
 import { AboutPanel } from "./panels/about-panel";
 import { SETTINGS_GROUPS, type SettingsTab } from "./settings-nav";
@@ -122,9 +122,9 @@ export function SettingsCenter({
             <h2>系统配置与服务中心</h2>
             <p>统一管理供应商、网关路由、观测审计、运行时扩展及系统信息</p>
           </div>
-          <button type="button" className="icon-btn" title="关闭" aria-label="关闭" onClick={onClose}>
+          <IconButton label="关闭" onClick={onClose}>
             <Icon name="close" size={16} />
-          </button>
+          </IconButton>
         </header>
 
         <div className="settings-body">

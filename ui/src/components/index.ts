@@ -30,6 +30,7 @@ export { List, ListRow, MetaItem } from "./list";
 export type { ListRowProps } from "./list";
 export { Pager } from "./pager";
 export { ContextMenu, ContextMenuItem } from "./context-menu";
+export { IconButton } from "./icon-button";
 export { useAsyncData, useToast } from "./use-async-data";
 
 /* 设计系统构件：图标、徽章、状态点、进度条、开关、浮层。 */

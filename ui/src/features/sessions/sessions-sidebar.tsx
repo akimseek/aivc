@@ -3,6 +3,7 @@ import {
   ChipGroup,
   EmptyState,
   Icon,
+  IconButton,
   List,
   Notice,
   SearchInput,
@@ -286,15 +287,9 @@ export function SessionsSidebar({
             <Icon name="plus" size={13} />
             新建会话
           </Button>
-          <button
-            type="button"
-            className="icon-btn"
-            title="折叠侧栏"
-            aria-label="折叠侧栏"
-            onClick={onToggleCollapsed}
-          >
+          <IconButton label="折叠侧栏" onClick={onToggleCollapsed}>
             <Icon name="panel-left" size={16} />
-          </button>
+          </IconButton>
         </div>
         {/* 网关胶囊：网关有没有在跑、在哪个端口，是这一屏最常被问的一件事。
             点它去**设置中心的网关页**——改端口、重启网关、看它为什么没起来都在那里。 */}
@@ -453,10 +448,9 @@ export function SessionsSidebar({
           }}
         />
         <ToolbarSpacer />
-        <button
-          type="button"
-          className={`icon-btn${trash ? " on" : ""}`}
-          aria-label="回收站"
+        <IconButton
+          label="回收站"
+          active={trash}
           aria-pressed={trash}
           // 平台不支持回收站时**禁用并说明原因**，而不是给一个点了会报错的按钮。
           disabled={!canUseTrash}
@@ -467,7 +461,7 @@ export function SessionsSidebar({
           }}
         >
           <Icon name="trash" size={15} />
-        </button>
+        </IconButton>
       </div>
 
       {/*
@@ -657,15 +651,9 @@ export function SessionsSidebar({
           {provider?.label ?? "未选择平台"} · 共 {visibleCount} 条会话
         </span>
         <ToolbarSpacer />
-        <button
-          type="button"
-          className="icon-btn"
-          title="刷新列表"
-          aria-label="刷新列表"
-          onClick={() => void state.reloadSessions()}
-        >
+        <IconButton label="刷新列表" onClick={() => void state.reloadSessions()}>
           <Icon name="refresh" size={14} />
-        </button>
+        </IconButton>
       </div>
     </aside>
   );

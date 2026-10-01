@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Badge, Button, EmptyState, Field, Icon, LoadingBlock, Pager, Popover, Select, hasLayerAbove } from "../../components";
+import { Badge, Button, EmptyState, Field, Icon, IconButton, LoadingBlock, Pager, Popover, Select, hasLayerAbove } from "../../components";
 import type { AiMessage, AiSession, AiTarget, ExportFormat } from "../../types";
 import { BranchPanel, shortId, type BranchPanelProps } from "./branch-panel";
 import { displayTitle, formatWhen, roleLabel } from "../../app/session-display";
@@ -128,15 +128,9 @@ export function MessagesModal({
             </p>
           </div>
           <Badge mono>ID: {shortId(session.id)}</Badge>
-          <button
-            type="button"
-            className="icon-btn"
-            title="关闭"
-            aria-label="关闭"
-            onClick={onClose}
-          >
+          <IconButton label="关闭" onClick={onClose}>
             <Icon name="close" size={16} />
-          </button>
+          </IconButton>
         </header>
 
         {/* 血缘：根 → 当前 → 子。没有分支时它整块不渲染。 */}

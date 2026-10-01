@@ -65,6 +65,31 @@ else {
     Write-Host "通过" -ForegroundColor Green
 }
 
+# 命令名守卫：前端 `invoke` 出的「域:动作」必须登记在后端 `COMMANDS` 表里。
+#
+# 与上一条同一个病：命令名写错不会自己报错——两边都编译得过，点下去才收到「未知命令」
+# （B1 就是这么炸的：前端写 `codex:open-session-folder`，后端注册的却是 `shell:`）。
+# 先跑 `--self-test` 证明「改坏一个名字真的会红」，再跑真实比对（失败级：前端有后端无；
+# 后端多出来的名字只提示）。规则与排除项写在 `scripts/check-command-names.cjs` 的文件头。
+Write-Host "=== IPC 命令名 (check-command-names) ===" -ForegroundColor Cyan
+$commandNamesOk = $true
+node (Join-Path $PSScriptRoot "check-command-names.cjs") --self-test
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "失败（exit $LASTEXITCODE）：守卫自检未通过（注入的坏名字没有被报出来）" -ForegroundColor Red
+    $commandNamesOk = $false
+}
+node (Join-Path $PSScriptRoot "check-command-names.cjs")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "失败（exit $LASTEXITCODE）：前端 invoke 了后端 COMMANDS 表里没有的命令名" -ForegroundColor Red
+    $commandNamesOk = $false
+}
+if ($commandNamesOk) {
+    Write-Host "通过" -ForegroundColor Green
+}
+else {
+    $failures += 'command-names'
+}
+
 function Invoke-Step {
     param(
         [string]$Name,

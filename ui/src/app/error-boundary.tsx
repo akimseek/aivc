@@ -17,7 +17,23 @@ type ErrorBoundaryProps = {
 type ErrorBoundaryState = {
   /** 子树抛过错了；为真时渲染兜底，重置为假即「重试」。 */
   failed: boolean;
+  /** 捕获到的抛错原因。`retry` 按它分流：chunk 类失败重置 state 必再抛，只能整页重载。 */
+  reason: unknown;
 };
+
+/**
+ * 「界面资源取不回来」类错误的判据。
+ *
+ * 运行环境只有 WebView2（Chromium），失败文案收得很窄：动态 import 取不到就是
+ * `Failed to fetch dynamically imported module`；后两个备胎留给打包器/Safari 的
+ * 文案差异，宁可备而不用，也不要放过真错误。
+ */
+const CHUNK_LOAD_ERROR =
+  /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk/;
+
+function isChunkLoadError(reason: unknown): boolean {
+  return CHUNK_LOAD_ERROR.test(reason instanceof Error ? reason.message : String(reason ?? ""));
+}
 
 /**
  * 渲染错误的地基：子树抛错时换成一块**有出口**的兜底，而不是让整棵树被卸载成白屏。
@@ -34,11 +50,11 @@ type ErrorBoundaryState = {
  * 不该把标签栏、侧栏、信息条一起换掉。
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  override state: ErrorBoundaryState = { failed: false };
+  override state: ErrorBoundaryState = { failed: false, reason: null };
 
   /** 抛错后**同一帧**就切到兜底：出错的那次渲染不会提交，坏输出不会露出来。 */
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { failed: true };
+  static getDerivedStateFromError(error: unknown): Partial<ErrorBoundaryState> {
+    return { failed: true, reason: error };
   }
 
   override componentDidCatch(error: Error): void {
@@ -57,11 +73,20 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   override render(): ReactNode {
     if (!this.state.failed) return this.props.children;
+    /*
+      说明文案跟着「重试」的真实行为走：chunk 类失败点「重试」是整页重载，此刻还说
+      「再试一次」会让人以为只重挂这一块、白等一次眨眼不到的整页刷新。
+    */
+    const chunkLost = isChunkLoadError(this.state.reason);
     return (
       <div className="error-boundary" role="alert">
         <EmptyState
           message={this.props.label}
-          hint="这一块没能正常显示，点「重试」再试一次。"
+          hint={
+            chunkLost
+              ? "界面资源没能取回来，点「重试」会重新加载界面。"
+              : "这一块没能正常显示，点「重试」再试一次。"
+          }
           action={
             <Button variant="primary" onClick={this.retry}>
               重试
@@ -72,8 +97,20 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     );
   }
 
-  /** 「重试」= 重置边界 state：子树整棵重挂——渲染期的偶发错误（数据竞态等）值得再试一次。 */
+  /**
+   * 「重试」按抛错来源分流：
+   *
+   * - **界面资源取不回来**（`isChunkLoadError`）：只能整页 reload。`lazy()` 的 rejection
+   *   被 React 缓存在组件上（`lazyInitializer` 对已 rejection 的 payload **同步**重抛），
+   *   浏览器 module map 也缓存失败的动态 import——重置 state = 同一帧再抛回去，兜底
+   *   原地不动，按钮就成了「什么都没发生」。reload 让脚本重新取一次才有自愈机会。
+   * - **其余错误**（渲染期的偶发竞态等）：重置边界 state，子树整棵重挂，值得再试一次。
+   */
   private retry = () => {
+    if (isChunkLoadError(this.state.reason)) {
+      window.location.reload();
+      return;
+    }
     this.setState({ failed: false });
   };
 }

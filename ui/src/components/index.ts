@@ -11,7 +11,6 @@ export {
   Field,
   SearchInput,
   Select,
-  StatusPill,
   TextInput,
   Toolbar,
   ToolbarSpacer
@@ -24,7 +23,8 @@ export { EmptyState, HintBar, Notice } from "./feedback";
  * 之前每一处各抄一遍骨架，是走样的来源。 */
 export { Dialog } from "./dialog";
 export { hasLayerAbove } from "./overlay-stack";
-export { LoadingBlock, Spinner } from "./loading";
+/* 只出 `LoadingBlock`：行内转圈（`Spinner`）是它的内部构件，没有外部调用方。 */
+export { LoadingBlock } from "./loading";
 export { Card, DescriptionList } from "./card";
 export { List, ListRow, MetaItem } from "./list";
 export type { ListRowProps } from "./list";
@@ -33,10 +33,9 @@ export { ContextMenu, ContextMenuItem } from "./context-menu";
 export { IconButton } from "./icon-button";
 export { useAsyncData, useToast } from "./use-async-data";
 
-/* 设计系统构件：图标、徽章、状态点、进度条、开关、浮层。 */
+/* 设计系统构件：图标、徽章、状态点、进度条、浮层。 */
 export * from "./icon";
 export * from "./badge";
 export * from "./status-dot";
 export * from "./progress";
-export * from "./toggle";
 export * from "./popover";

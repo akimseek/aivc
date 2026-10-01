@@ -99,7 +99,6 @@ export function WorkbenchSidebar({
     ]);
     return { usage, failures };
     // `loadKey` 只用来让这个回调在键变化时换一个身份——它本身不参与取数。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadKey]);
 
   const data = useAsyncData(load, { errorMessage: "工作台读取失败" });

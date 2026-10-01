@@ -335,7 +335,6 @@ export function TerminalPane({
     consumedFindSignal.current = findSignal;
     if (active) setSearchOpen(true);
     // 只在计数变化时触发；`active` 不放依赖里——切前台不该顺手弹出查找栏。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [findSignal]);
 
   // 切回前台时重新量一次：隐藏期间容器的尺寸可能已经变了，而 xterm 不会自己知道。
@@ -447,7 +446,6 @@ export function TerminalPane({
       /* 终端还没挂到 DOM 上，忽略。 */
     }
     // 只在请求变化时触发；`active` 不放依赖里——切前台是上面那条 effect 的事。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest]);
 
   const closeSearch = useCallback(() => {

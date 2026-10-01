@@ -186,8 +186,3 @@ export function Toolbar({ children }: { children: ReactNode }) {
 export function ToolbarSpacer() {
   return <span className="spacer" />;
 }
-
-/** 状态胶囊：可用 / 警告。整套界面只有这两种语义色。 */
-export function StatusPill({ tone, children }: { tone: "ok" | "warn"; children: ReactNode }) {
-  return <span className={`pill pill-${tone}`}>{children}</span>;
-}

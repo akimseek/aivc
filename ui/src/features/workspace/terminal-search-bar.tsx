@@ -66,7 +66,6 @@ export function TerminalSearchBar({
     if (!open) return [];
     return findMatches(readLines(), query, options);
     // `revision` 只用于强制重算——它本身不参与计算。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, query, options, revision]);
 
   /** 查询或选项变了，把当前匹配重置到第一处并跳过去。 */
@@ -74,7 +73,6 @@ export function TerminalSearchBar({
     setCurrent(matches.length > 0 ? 0 : -1);
     if (matches.length > 0) onReveal(matches[0]!);
     // 只在「匹配集合变了」时跳——把 `onReveal` 放进依赖会让每次父组件重渲染都跳一次。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matches]);
 
   /** 打开时聚焦输入框：用户按了 Ctrl+F，下一步一定是打字。 */

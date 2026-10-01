@@ -15,7 +15,7 @@ import { ErrorBoundary } from "./error-boundary";
  * ② 「重试」必须**真的重新渲染子树**，而不是把同一份坏输出再画一遍；
  * ③ 「重试」按错误来源分流：chunk 取不到类错误（`lazy()` 的 rejection 被 React
  *    缓存在组件上，重置 state 必**同一帧**再抛回去）改为整页 `location.reload()`——
- *    死按钮是本工程反复钉过的缺陷类，见「懒加载 chunk 取不到」这条用例；
+ *    死按钮是本工程反复钉过的缺陷类，见「chunk 取不到 / CSS 预载失败」两条用例；
  * ④ 埋点（`performance:log`）失败**不能**让错误处理路径再炸一次。
  *
  * # 为什么把 `logPerformance` 换成假实现
@@ -152,6 +152,40 @@ describe("ErrorBoundary", () => {
     expect(view.container.textContent).toContain("终端加载失败");
     // 点重试不再多写一条 `ui.error-boundary`：同一次崩溃不许被反复上报。
     expect(api.logPerformance).toHaveBeenCalledTimes(1);
+  });
+
+  it("懒加载 chunk 的 CSS 预载失败：同样走整页 reload（Vite helper 先于 import() 抛错）", async () => {
+    const reload = vi.fn();
+    vi.stubGlobal("location", { reload });
+    /*
+      复刻另一支真实失败形态：构建产物里 chunk 的预载依赖数组含 CSS
+      （`__vite__mapDeps([0,1])` = terminal-pane 的 js + css），Vite 的 preload helper
+      在 CSS 预载 rejected 时**先于**真正的 `import()` 抛出这条消息。判据漏掉它，
+      点「重试」就重回「重置 state ⇒ 复读 lazy 缓存的 rejection ⇒ 死按钮」的老路。
+    */
+    const BrokenCss = lazy(() =>
+      Promise.reject(new Error("Unable to preload CSS for /assets/terminal-pane-xxx.css"))
+    );
+    const view = render(
+      <ErrorBoundary label="终端加载失败">
+        <Suspense fallback={<div>正在加载终端…</div>}>
+          <BrokenCss />
+        </Suspense>
+      </ErrorBoundary>
+    );
+    // `lazy()` 的 rejection 在微任务里落地，React 重试渲染才把错误抛进边界。
+    await act(async () => {});
+
+    const text = view.container.textContent ?? "";
+    expect(text).toContain("终端加载失败");
+    // hint 与「重试」的真实行为同支：CSS 预载失败也是「重试 = 重新加载界面」。
+    expect(text).toContain("会重新加载界面");
+
+    act(() => {
+      getRetryButton(view.container).click();
+    });
+
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("重试后仍抛错：兜底再次出现，错误不会漏到边界之外", () => {

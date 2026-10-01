@@ -24,12 +24,18 @@ type ErrorBoundaryState = {
 /**
  * 「界面资源取不回来」类错误的判据。
  *
- * 运行环境只有 WebView2（Chromium），失败文案收得很窄：动态 import 取不到就是
- * `Failed to fetch dynamically imported module`；后两个备胎留给打包器/Safari 的
- * 文案差异，宁可备而不用，也不要放过真错误。
+ * 运行环境不只有 WebView2（Chromium）：按 `harden.rs` 的受信来源，应用实际覆盖三种
+ * 形态——Windows 的 `http://tauri.localhost`（WebView2，Chromium 系）、macOS/Linux 的
+ * `tauri://localhost`（WebKit 系）、`file://` 本地打包页。失败文案随引擎与环节分岔：
+ * 动态 import 取不到，Chromium 是 `Failed to fetch dynamically imported module`，
+ * WebKit 是 `Importing a module script failed`；Vite 的 preload helper 在 chunk 的 CSS
+ * 预载依赖失败时**先于**真正的 `import()` 抛 `Unable to preload CSS for`（本应用懒加载
+ * chunk 的预载依赖数组含 CSS，CSS 单独损坏/被拦/瞬断会先撞上它）；`Loading chunk` 是
+ * webpack 系文案，本工程打不出来，留作备胎。取舍：判据收得窄、只认确切文案——宁可
+ * 备而不用，也不要放过真错误。
  */
 const CHUNK_LOAD_ERROR =
-  /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk/;
+  /Failed to fetch dynamically imported module|Unable to preload CSS for|Importing a module script failed|Loading chunk/;
 
 function isChunkLoadError(reason: unknown): boolean {
   return CHUNK_LOAD_ERROR.test(reason instanceof Error ? reason.message : String(reason ?? ""));

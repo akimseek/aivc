@@ -119,11 +119,21 @@ export async function onDragHover(
     const { x, y } = position as { x?: unknown; y?: unknown };
     return typeof x === "number" && typeof y === "number" ? { x, y } : null;
   };
-  const stops = await Promise.all([
-    event.listen("tauri://drag-enter", (message) => handler(readPosition(message.payload))),
-    event.listen("tauri://drag-over", (message) => handler(readPosition(message.payload))),
-    event.listen("tauri://drag-leave", () => handler(null))
-  ]);
+  // 顺序注册而不是 `Promise.all`：任一条失败时，已注册的那些要能立刻退掉再抛，
+  // 否则「必须调用退订」的承诺会在部分失败路径上落空（留下窗口级监听）。
+  const stops: (() => void)[] = [];
+  try {
+    stops.push(
+      await event.listen("tauri://drag-enter", (message) => handler(readPosition(message.payload)))
+    );
+    stops.push(
+      await event.listen("tauri://drag-over", (message) => handler(readPosition(message.payload)))
+    );
+    stops.push(await event.listen("tauri://drag-leave", () => handler(null)));
+  } catch (error) {
+    for (const stop of stops) stop();
+    throw error;
+  }
   return () => {
     for (const stop of stops) stop();
   };

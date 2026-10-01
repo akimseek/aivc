@@ -36,7 +36,12 @@ function fakeRuntime() {
         const current = listeners.get(channel) ?? [];
         current.push(handler);
         listeners.set(channel, current);
-        return () => undefined;
+        return () => {
+          listeners.set(
+            channel,
+            (listeners.get(channel) ?? []).filter((item) => item !== handler)
+          );
+        };
       }
     }
   };
@@ -248,7 +253,7 @@ describe("ComposerInput", () => {
       const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
       await waitFor(() => expect(runtime.listenerCount("tauri://drag-enter")).toBe(1));
       const actions = () => view.container.querySelector(".composer-actions")!;
-      return { runtime, actions };
+      return { runtime, view, actions };
     }
 
     it("拖进输入卡上方给出提示；移到卡外、拖出窗口后收回", async () => {
@@ -286,15 +291,15 @@ describe("ComposerInput", () => {
       vi.stubGlobal("devicePixelRatio", 2);
       const { runtime, actions } = await mountWithDragEvents();
 
-      // 物理 (400, 320) ÷ 2 = CSS (200, 160)，在卡内；不换算则误判为卡外。
+      // 物理 (400, 320) ÷ 2 = CSS (200, 160)，在卡内；不换算则 400 > 340 被误判为卡外。
       await act(async () => {
         runtime.emit("tauri://drag-enter", { paths: [], position: { x: 400, y: 320 } });
       });
       expect(actions().className).toContain("dragging");
 
-      // 物理 (720, 200) ÷ 2 = CSS (360, 100)，在右边界（340）外；不换算则误判为卡内。
+      // 物理 (150, 160) ÷ 2 = CSS (75, 80)，在左/上边界外；不换算则 150、160 都落在卡内被误判。
       await act(async () => {
-        runtime.emit("tauri://drag-over", { position: { x: 720, y: 200 } });
+        runtime.emit("tauri://drag-over", { position: { x: 150, y: 160 } });
       });
       expect(actions().className).not.toContain("dragging");
     });
@@ -314,6 +319,40 @@ describe("ComposerInput", () => {
         });
       });
       expect(actions().className).not.toContain("dragging");
+    });
+
+    it("载荷缺 position 时不崩，提示保持收回", async () => {
+      // 载荷形状异常（上游换代/自定义）不该让渲染器抛——守卫按「不在卡上」处理。
+      const { runtime, actions } = await mountWithDragEvents();
+      await act(async () => {
+        runtime.emit("tauri://drag-over", { paths: [] });
+      });
+      expect(actions().className).not.toContain("dragging");
+    });
+
+    it("卸载后监听全部退订，不留窗口级监听", async () => {
+      // 「退订必须被调用」是 client.ts 的明示契约（漏退订 = 关掉的终端/输入区还收事件）。
+      const { runtime, view } = await mountWithDragEvents();
+      expect(runtime.listenerCount("tauri://drag-drop")).toBe(1);
+
+      view.unmount();
+
+      for (const channel of [
+        "tauri://drag-enter",
+        "tauri://drag-over",
+        "tauri://drag-leave",
+        "tauri://drag-drop"
+      ]) {
+        expect(runtime.listenerCount(channel)).toBe(0);
+      }
+    });
+
+    it("没有 Tauri 运行时（纯浏览器打开）时挂载不报错", async () => {
+      delete window.__TAURI__;
+      stubCardRect();
+      const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
+      await act(async () => {});
+      expect(view.container.querySelector("textarea")).toBeTruthy();
     });
   });
 });

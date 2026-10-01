@@ -88,6 +88,47 @@ export async function onDragDrop(
   });
 }
 
+/** 拖拽悬停在窗口里的位置。**物理像素**——除以 `devicePixelRatio` 才是 CSS 坐标。 */
+export type DragPosition = { x: number; y: number };
+
+/**
+ * 订阅「拖拽悬停」的三相事件（`drag-enter` / `drag-over` / `drag-leave`）。
+ *
+ * # 为什么不能用 DOM 的 dragover
+ *
+ * Windows 上 wry 关掉了 webview 的外部拖放默认行为（`SetAllowExternalDrop(false)`），
+ * DOM 的 `dragover` / `dragleave` 根本不会触发——想靠它们做落点提示的代码在真机上是
+ * 不可见的。`tauri://drag-*` 才是可靠来源。
+ *
+ * # 为什么坐标要订阅方自己判定
+ *
+ * 这三个事件是**窗口级**的，载荷里只有位置、没有「目标元素」。命中哪块区域由订阅方
+ * 用 `getBoundingClientRect()` 自己算——这也是它和 [`onDragDrop`]（全局收文件路径）
+ * 分开成两个函数的原因：各订各的语义。
+ *
+ * `handler` 收到 `null` = 拖拽离开窗口或已结束。
+ */
+export async function onDragHover(
+  handler: (position: DragPosition | null) => void
+): Promise<() => void> {
+  const event = window.__TAURI__?.event;
+  if (typeof event?.listen !== "function") return () => undefined;
+  const readPosition = (payload: unknown): DragPosition | null => {
+    const position = (payload as { position?: unknown } | null)?.position;
+    if (position === null || typeof position !== "object") return null;
+    const { x, y } = position as { x?: unknown; y?: unknown };
+    return typeof x === "number" && typeof y === "number" ? { x, y } : null;
+  };
+  const stops = await Promise.all([
+    event.listen("tauri://drag-enter", (message) => handler(readPosition(message.payload))),
+    event.listen("tauri://drag-over", (message) => handler(readPosition(message.payload))),
+    event.listen("tauri://drag-leave", () => handler(null))
+  ]);
+  return () => {
+    for (const stop of stops) stop();
+  };
+}
+
 /** 后端返回的业务错误。 */
 export class IpcError extends Error {
   constructor(

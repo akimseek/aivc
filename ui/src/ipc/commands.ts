@@ -30,7 +30,7 @@ import type {
 
 // 事件订阅与命令调用同属 IPC 面，调用方从这一层统一取，
 // 不必知道「命令在 commands、事件在 client」这种内部分工。
-export { listen, onDragDrop, IpcError } from "./client";
+export { listen, onDragDrop, onDragHover, IpcError } from "./client";
 
 /**
  * 命令面（**只列已接线、且主流程要用的**）。

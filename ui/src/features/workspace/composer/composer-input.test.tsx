@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ComposerInput } from "./composer-input";
 
@@ -21,6 +21,7 @@ import { ComposerInput } from "./composer-input";
 
 function fakeRuntime() {
   const calls: { command: string; args: Record<string, unknown> }[] = [];
+  const listeners = new Map<string, ((event: { payload: unknown }) => void)[]>();
   window.__TAURI__ = {
     core: {
       invoke: async (_command: string, args?: unknown) => {
@@ -30,10 +31,45 @@ function fakeRuntime() {
         return null;
       }
     },
-    event: { listen: async () => () => undefined }
+    event: {
+      listen: async (channel: string, handler: (event: { payload: unknown }) => void) => {
+        const current = listeners.get(channel) ?? [];
+        current.push(handler);
+        listeners.set(channel, current);
+        return () => undefined;
+      }
+    }
   };
-  return { calls };
+  /** 模拟 Tauri 侧推事件（拖拽坐标是物理像素）。 */
+  const emit = (channel: string, payload?: unknown) => {
+    for (const handler of listeners.get(channel) ?? []) handler({ payload });
+  };
+  /** 某通道已注册的监听数——订阅是异步落地的，测试靠它等订阅就位。 */
+  const listenerCount = (channel: string) => (listeners.get(channel) ?? []).length;
+  return { calls, emit, listenerCount };
 }
+
+/** 输入卡的命中框（CSS 像素）。jsdom 没有布局，需要显式给一个。 */
+const CARD_RECT = { left: 100, top: 100, right: 340, bottom: 220 };
+
+function stubCardRect() {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    x: CARD_RECT.left,
+    y: CARD_RECT.top,
+    left: CARD_RECT.left,
+    top: CARD_RECT.top,
+    right: CARD_RECT.right,
+    bottom: CARD_RECT.bottom,
+    width: CARD_RECT.right - CARD_RECT.left,
+    height: CARD_RECT.bottom - CARD_RECT.top,
+    toJSON: () => ({})
+  } as unknown as DOMRect);
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 /** 往受控 textarea 里写值。React 需要走原生 setter 才会收到变更。 */
 function type(area: HTMLTextAreaElement, value: string) {
@@ -198,5 +234,86 @@ describe("ComposerInput", () => {
     fakeRuntime();
     const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
     expect(view.container.querySelector(".model-select")).toBeNull();
+  });
+
+  describe("拖拽落点提示", () => {
+    /**
+     * 提示的触发源是 **Tauri 的窗口级拖拽事件 + 自己做的命中判定**。
+     * 挂 DOM `dragover` 的老写法在 Windows 上从不触发（wry 关掉了 webview 的
+     * 外部拖放默认行为），这几条用例把它换掉之后的行为钉死。
+     */
+    async function mountWithDragEvents() {
+      const runtime = fakeRuntime();
+      stubCardRect();
+      const view = render(<ComposerInput terminalId="t1" providerId="codex" onError={vi.fn()} />);
+      await waitFor(() => expect(runtime.listenerCount("tauri://drag-enter")).toBe(1));
+      const actions = () => view.container.querySelector(".composer-actions")!;
+      return { runtime, actions };
+    }
+
+    it("拖进输入卡上方给出提示；移到卡外、拖出窗口后收回", async () => {
+      const { runtime, actions } = await mountWithDragEvents();
+      expect(actions().className).not.toContain("dragging");
+
+      await act(async () => {
+        runtime.emit("tauri://drag-enter", {
+          paths: ["C:\\shot.png"],
+          position: { x: 200, y: 160 }
+        });
+      });
+      expect(actions().className).toContain("dragging");
+      expect(actions().textContent).toContain("松手即添加");
+
+      // 悬停在窗口别处（卡外）：提示收回。
+      await act(async () => {
+        runtime.emit("tauri://drag-over", { position: { x: 600, y: 400 } });
+      });
+      expect(actions().className).not.toContain("dragging");
+
+      // 再回到卡内，然后彻底拖出窗口。
+      await act(async () => {
+        runtime.emit("tauri://drag-over", { position: { x: 200, y: 160 } });
+      });
+      expect(actions().className).toContain("dragging");
+      await act(async () => {
+        runtime.emit("tauri://drag-leave");
+      });
+      expect(actions().className).not.toContain("dragging");
+    });
+
+    it("坐标按 devicePixelRatio 换算后再命中（缩放屏上不偏移）", async () => {
+      // Tauri 给的是物理像素；不除 dpr 的话，125%/200% 缩放的屏上命中框整体偏移。
+      vi.stubGlobal("devicePixelRatio", 2);
+      const { runtime, actions } = await mountWithDragEvents();
+
+      // 物理 (400, 320) ÷ 2 = CSS (200, 160)，在卡内；不换算则误判为卡外。
+      await act(async () => {
+        runtime.emit("tauri://drag-enter", { paths: [], position: { x: 400, y: 320 } });
+      });
+      expect(actions().className).toContain("dragging");
+
+      // 物理 (720, 200) ÷ 2 = CSS (360, 100)，在右边界（340）外；不换算则误判为卡内。
+      await act(async () => {
+        runtime.emit("tauri://drag-over", { position: { x: 720, y: 200 } });
+      });
+      expect(actions().className).not.toContain("dragging");
+    });
+
+    it("松手（drop）后提示立即收回，不等 leave", async () => {
+      const { runtime, actions } = await mountWithDragEvents();
+
+      await act(async () => {
+        runtime.emit("tauri://drag-enter", { paths: [], position: { x: 200, y: 160 } });
+      });
+      expect(actions().className).toContain("dragging");
+
+      await act(async () => {
+        runtime.emit("tauri://drag-drop", {
+          paths: ["C:\\shot.png"],
+          position: { x: 200, y: 160 }
+        });
+      });
+      expect(actions().className).not.toContain("dragging");
+    });
   });
 });

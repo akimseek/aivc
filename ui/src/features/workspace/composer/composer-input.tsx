@@ -84,6 +84,8 @@ export function ComposerInput({
   /** 附件菜单是否展开。 */
   const [menuOpen, setMenuOpen] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 输入卡：拖拽悬停的命中判定靶心（拖到它上面才提示落点）。 */
+  const cardRef = useRef<HTMLDivElement | null>(null);
   /** 附件菜单的锚点：那个「📎 附件」按钮。`Popover` 靠它算位置、判点击内外。 */
   const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
   /** 附件编号的自增源，只用来做 key。 */
@@ -129,6 +131,45 @@ export function ComposerInput({
       unlisten?.();
     };
   }, [addPaths]);
+
+  /**
+   * 拖拽悬停的落点提示。
+   *
+   * # 为什么不能听 DOM 的 `dragover`
+   *
+   * Windows 上 wry 关掉了 webview 的外部拖放默认行为，DOM 的 `dragover`/`dragleave`
+   * 根本不会触发——此前挂在这两个事件上的提示在真机上是不可见的。Tauri 的
+   * `tauri://drag-enter|over|leave` 才可靠；但它们是**窗口级**的，没有「目标元素」，
+   * 因此命中判定要自己做：拿输入卡的 `getBoundingClientRect` 比坐标。
+   *
+   * 坐标是**物理像素**，先除以 `devicePixelRatio` 才是 CSS 坐标（缩放 125% 的屏上
+   * 不做这一步，命中框会整体偏移）。
+   */
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    void api
+      .onDragHover((position) => {
+        const rect = cardRef.current?.getBoundingClientRect();
+        if (position === null || !rect) {
+          setDragging(false);
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        const x = position.x / scale;
+        const y = position.y / scale;
+        setDragging(x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
+      })
+      .then((stop) => {
+        if (cancelled) stop();
+        else unsubscribe = stop;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   /** 换终端时把草稿清掉：草稿属于那一路终端，跟着走会写错地方。 */
   useEffect(() => {
@@ -342,7 +383,7 @@ export function ComposerInput({
       )}
 
       {/* 输入卡：底 / 边 / 焦点环都在 `.composer-card` 上，textarea 只是卡里的一块文本。 */}
-      <div className="composer-card">
+      <div className="composer-card" ref={cardRef}>
         <textarea
           ref={areaRef}
           className="composer-text"
@@ -352,13 +393,6 @@ export function ComposerInput({
           onChange={(event) => setText(event.target.value)}
           onPaste={onPaste}
           onKeyDown={onKeyDown}
-          // 拖到输入框上方时给一个可见的落点提示。用 `dragover` 而不是 Tauri 的
-          // 拖入事件：后者是窗口级的，写在这里会让整块面板一起高亮。
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
         />
 
         <div className={`composer-actions${dragging ? " dragging" : ""}`}>

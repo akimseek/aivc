@@ -132,6 +132,10 @@ describe("HistoryView", () => {
     );
     const capped = setup({ messages: atLimit, hasEarlier: true });
     expect(capped.view.container.textContent).not.toContain("加载更早的消息");
+    // 文案与常量绑在一条断言里：上限改成别的数，「400 条」这句话必须跟着改。
+    expect(capped.view.container.textContent).toContain(
+      `最多保留最近 ${HISTORY_MESSAGE_LIMIT} 条`
+    );
     expect(capped.view.container.textContent).toContain("消息与分支");
     cleanup();
 

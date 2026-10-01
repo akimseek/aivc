@@ -8,7 +8,7 @@ import { NewSessionDialog } from "../features/sessions/new-session-dialog";
 import { SessionContextMenu } from "../features/sessions/session-context-menu";
 import { SessionDuplicateDialog, SessionRenameDialog } from "../features/sessions/session-title-dialogs";
 import { SessionSettingsDialog } from "../features/sessions/session-settings-dialog";
-import { TabContextMenu } from "./tab-context-menu";
+import { TabContextMenu } from "../features/workspace/tab-context-menu";
 
 /** 新会话对话框的草稿。 */
 export type NewSessionDraft = {

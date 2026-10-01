@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { Button, Dialog, hasLayerAbove } from "../../components";
-import { useViewportMenuPosition } from "../../app/viewport-menu";
+import { Button, ContextMenu, ContextMenuItem, Dialog } from "../../components";
 
 /**
  * 终端里的文本右键菜单。
@@ -20,6 +19,13 @@ import { useViewportMenuPosition } from "../../app/viewport-menu";
  * 这里**不去读剪贴板**。`navigator.clipboard.readText()` 需要权限、
  * 而且是异步的——菜单要在同一个事件里立刻弹出来，不能等一个 Promise。
  * 所以可用性由调用方算好传进来（见 `terminal-pane.tsx`）。
+ *
+ * # 骨架不在这里
+ *
+ * 遮罩、视口内定位、右键 `preventDefault`、Escape 让位与「先做事再关菜单」
+ * 都在共用的 [`ContextMenu`](../../components/context-menu.tsx) 外壳里——
+ * 与会话、标签两个右键菜单同一份实现。本文件额外保留**终端特有**的两条
+ * 收菜单路径：指针按下与滚动（滚的是终端的回滚缓冲区）。
  */
 export function TerminalTextContextMenu({
   x,
@@ -40,61 +46,39 @@ export function TerminalTextContextMenu({
   onPaste: () => void;
   onDismiss: () => void;
 }) {
-  const { menuRef, position } = useViewportMenuPosition(x, y);
+  // 这两个监听器要挂在 `document` 上、且不随 `onDismiss` 的身份重挂，
+  // 所以用 ref 拿最新的回调。
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
 
   useEffect(() => {
-    // 点别处、按 Escape、滚动——三种都要收掉，否则菜单会浮在那里挡住终端。
+    // 点别处、滚动——两种都要收掉，否则菜单会浮在那里挡住终端。
+    // Escape 不在这里：它连同「有浮层压着时让位」的判定收进了共用的
+    // `ContextMenu` 外壳（三个右键菜单同一份）。
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Element | null;
       if (target?.closest(".context-menu")) return;
       dismissRef.current();
     };
-    const onKeyDown = (event: KeyboardEvent) => {
-      // 有模态/浮层压在上面时（退出确认框随时可能弹出来）让给那一次 Escape。
-      if (event.key === "Escape" && !hasLayerAbove("transient")) dismissRef.current();
-    };
     const onScroll = () => dismissRef.current();
 
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
     document.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("scroll", onScroll, true);
     };
   }, []);
 
-  const run = (action: () => void) => () => {
-    action();
-    dismissRef.current();
-  };
-
   return (
-    <div
-      className="menu-backdrop"
-      onClick={onDismiss}
-      onContextMenu={(event) => event.preventDefault()}
-      role="presentation"
-    >
-      <div
-        className="context-menu"
-        role="menu"
-        aria-label="终端文本操作"
-        style={{ left: position.x, top: position.y }}
-        ref={menuRef}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <button type="button" role="menuitem" disabled={!canCopy} onClick={run(onCopy)}>
-          复制
-        </button>
-        <button type="button" role="menuitem" disabled={!canPaste} onClick={run(onPaste)}>
-          粘贴
-        </button>
-      </div>
-    </div>
+    <ContextMenu x={x} y={y} ariaLabel="终端文本操作" onClose={onDismiss}>
+      <ContextMenuItem disabled={!canCopy} onClick={onCopy}>
+        复制
+      </ContextMenuItem>
+      <ContextMenuItem disabled={!canPaste} onClick={onPaste}>
+        粘贴
+      </ContextMenuItem>
+    </ContextMenu>
   );
 }
 

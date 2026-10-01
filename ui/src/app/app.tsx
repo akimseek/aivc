@@ -42,7 +42,7 @@ import { useWorkspaceTabs } from "./use-workspace-tabs";
  * | 状态栏 | [`StatusBar`](../shell/status-bar.tsx) |
  * | 侧栏（网关胶囊 / 筛选 chips / 会话卡片） | [`SessionsSidebar`](../features/sessions/sessions-sidebar.tsx) |
  * | 工作区（标签 + 终端栈 + 会话正文） | [`SessionWorkspace`](./session-workspace.tsx) |
- * | 右键菜单 | [`SessionContextMenu`](./session-context-menu.tsx) |
+ * | 右键菜单 | [`SessionContextMenu`](../features/sessions/session-context-menu.tsx)（外壳见 [`ContextMenu`](../components/context-menu.tsx)） |
  * | 标签的增删与竞态 | [`useWorkspaceTabs`](./use-workspace-tabs.ts) |
  *
  * 留在这里的只有三类东西：**状态**（选中的标签、打开的弹层）、

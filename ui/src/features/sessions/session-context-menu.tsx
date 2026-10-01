@@ -1,25 +1,22 @@
-import { useEffect } from "react";
-
-import { hasLayerAbove } from "../../components";
-import { useViewportMenuPosition } from "../../app/viewport-menu";
+import { ContextMenu, ContextMenuItem } from "../../components";
 
 import type { AiSession } from "../../types";
 
 /**
  * 会话右键菜单。
  *
- * # 从 `app.tsx` 里搬出来的两件事
+ * # 这里是**菜单项的列表**
  *
- * 1. **菜单项的列表**（打开目录 / 收藏 / 复制编号 / 复制路径 / 导出三种格式 /
- *    移入回收站或彻底删除）。它此前是 55 行内联 JSX，而每一项都是一个
- *    「调 API + 关菜单」的闭包；
- * 2. **视口内定位**。菜单是按鼠标位置开在 `position: fixed` 上的，靠近右/下边缘时
- *    会被切掉一半。旧平台的 `useViewportMenuPosition` 就是干这个的
- *    （`context-menus.tsx`），这里把同一件事实现一遍。
+ * 打开目录 / 重命名 / 复制 / 收藏 / 复制编号 / 复制路径 / 导出三种格式 /
+ * 移入回收站或彻底删除。它此前是 `app.tsx` 里 55 行内联 JSX，而每一项都是一个
+ * 「调 API + 关菜单」的闭包。
  *
- * # 「点别处关闭」用一层透明背景，不用全局 click 监听
+ * # 骨架不在这里
  *
- * 全局监听会把**点菜单自身**也当成「别处」，于是点任何一项之前菜单先关了。
+ * 遮罩（点别处关闭）、视口内定位、右键 `preventDefault`、Escape 让位与
+ * 「先做事再关菜单」都在共用的 [`ContextMenu`](../../components/context-menu.tsx)
+ * 外壳里——三个右键菜单（会话 / 标签 / 终端文本）同一份实现，Escape 的判定
+ * 因此只有一个地方需要维护。
  */
 
 export type SessionContextMenuProps = {
@@ -95,94 +92,40 @@ export function SessionContextMenu({
   onRemove,
   onRestore
 }: SessionContextMenuProps) {
-  const { menuRef, position } = useViewportMenuPosition(x, y);
-
-  // Escape 关闭。鼠标用户有「点别处」，键盘用户只有这一条路。
-  // 有模态/浮层压在上面时（退出确认框随时可能弹出来）让给它——两边都在 `document`
-  // 上监听，不判断的话一次按键会同时收掉菜单与那一层。
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !hasLayerAbove("transient")) onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  /** 每一项都是「做一件事然后关掉」；抽出来省得五行写五遍。 */
-  const run = (action: () => void) => () => {
-    action();
-    onClose();
-  };
-
   return (
-    <div
-      className="menu-backdrop"
-      onClick={onClose}
-      onContextMenu={(event) => event.preventDefault()}
-      role="presentation"
-    >
-      <div
-        className="context-menu"
-        role="menu"
-        aria-label="会话操作"
-        style={{ left: position.x, top: position.y }}
-        ref={menuRef}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <button type="button" role="menuitem" onClick={run(onOpenFolder)}>
-          打开所在目录
-        </button>
-        {/* 重命名与复制放在这里：会话头上虽然也有，但那要**先选中它**才点得到；
-            在列表里右键直接改名/复制才是用户手上的动作。 */}
-        <button type="button" role="menuitem" onClick={run(onRename)}>
-          重命名
-        </button>
-        {canDuplicate && (
-          <button type="button" role="menuitem" onClick={run(onDuplicate)}>
-            复制会话
-          </button>
-        )}
-        <button type="button" role="menuitem" onClick={run(onToggleFavorite)}>
-          {session.metadata?.favorite ? "取消收藏" : "收藏"}
-        </button>
-        {/* 复制**编号**而不是标题：编号是稳定的标识，粘到别处能用来定位；
-            标题可能重复，也常常很长。 */}
-        <button type="button" role="menuitem" onClick={run(onCopyId)}>
-          复制会话编号
-        </button>
-        <button type="button" role="menuitem" onClick={run(onCopyPath)}>
-          复制文件路径
-        </button>
-        {/* 导出分区。三种格式与菜单栏那份**逐字一致**（旧平台就是这样三项），
-            它们在这里是分开的三项，不再套一层子菜单——右键菜单里再展开一层，
-            手要移两次。 */}
-        {onExport && (
-          <>
-            <div className="context-menu-label">导出</div>
-            <button type="button" role="menuitem" onClick={run(() => onExport("markdown"))}>
-              导出 Markdown
-            </button>
-            <button type="button" role="menuitem" onClick={run(() => onExport("json"))}>
-              导出 JSON
-            </button>
-            <button type="button" role="menuitem" onClick={run(() => onExport("html"))}>
-              导出 HTML
-            </button>
-          </>
-        )}
-        {/* 在回收站里时，「恢复」必须排在「彻底删除」前面：它是这一步更常用的选择，
-            而销毁是不可撤销的。顺序本身就在防止误点。 */}
-        {supportsTrash && trash && (
-          <button type="button" role="menuitem" onClick={run(onRestore)}>
-            恢复
-          </button>
-        )}
-        {supportsTrash && (
-          <button type="button" role="menuitem" className="danger" onClick={run(onRemove)}>
-            {trash ? "彻底删除" : "移入回收站"}
-          </button>
-        )}
-      </div>
-    </div>
+    <ContextMenu x={x} y={y} ariaLabel="会话操作" onClose={onClose}>
+      <ContextMenuItem onClick={onOpenFolder}>打开所在目录</ContextMenuItem>
+      {/* 重命名与复制放在这里：会话头上虽然也有，但那要**先选中它**才点得到；
+          在列表里右键直接改名/复制才是用户手上的动作。 */}
+      <ContextMenuItem onClick={onRename}>重命名</ContextMenuItem>
+      {canDuplicate && <ContextMenuItem onClick={onDuplicate}>复制会话</ContextMenuItem>}
+      <ContextMenuItem onClick={onToggleFavorite}>
+        {session.metadata?.favorite ? "取消收藏" : "收藏"}
+      </ContextMenuItem>
+      {/* 复制**编号**而不是标题：编号是稳定的标识，粘到别处能用来定位；
+          标题可能重复，也常常很长。 */}
+      <ContextMenuItem onClick={onCopyId}>复制会话编号</ContextMenuItem>
+      <ContextMenuItem onClick={onCopyPath}>复制文件路径</ContextMenuItem>
+      {/* 导出分区。三种格式与菜单栏那份**逐字一致**（旧平台就是这样三项），
+          它们在这里是分开的三项，不再套一层子菜单——右键菜单里再展开一层，
+          手要移两次。分区标题不可点：它把这一组说出来，否则三项「导出 X」挤在
+          「复制文件路径」下面会被读成第四条复制项。 */}
+      {onExport && (
+        <>
+          <div className="context-menu-label">导出</div>
+          <ContextMenuItem onClick={() => onExport("markdown")}>导出 Markdown</ContextMenuItem>
+          <ContextMenuItem onClick={() => onExport("json")}>导出 JSON</ContextMenuItem>
+          <ContextMenuItem onClick={() => onExport("html")}>导出 HTML</ContextMenuItem>
+        </>
+      )}
+      {/* 在回收站里时，「恢复」必须排在「彻底删除」前面：它是这一步更常用的选择，
+          而销毁是不可撤销的。顺序本身就在防止误点。 */}
+      {supportsTrash && trash && <ContextMenuItem onClick={onRestore}>恢复</ContextMenuItem>}
+      {supportsTrash && (
+        <ContextMenuItem danger onClick={onRemove}>
+          {trash ? "彻底删除" : "移入回收站"}
+        </ContextMenuItem>
+      )}
+    </ContextMenu>
   );
 }

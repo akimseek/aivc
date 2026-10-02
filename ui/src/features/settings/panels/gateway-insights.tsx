@@ -10,7 +10,8 @@ import {
   Field,
   LoadingBlock,
   Toolbar,
-  ToolbarSpacer
+  ToolbarSpacer,
+  errorText
 } from "../../../components";
 import * as api from "../../../ipc/commands";
 import type { GatewayLogEntry, GatewayVendorHealth, UsageSummary } from "../../../types";
@@ -78,7 +79,7 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
         .then((value) => ({ value, error: "" }))
         .catch((problem: unknown) => ({
           value: null,
-          error: problem instanceof Error ? problem.message : String(problem)
+          error: errorText(problem)
         })),
       // 最近请求只看最近一段，因此也带上区间——不然「最近请求」可能全是上个月的。
       // 取首页 50 条：概览要的是「最近发生了什么」，不是全部历史（见页长常量）。
@@ -106,7 +107,7 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
 
   useEffect(() => {
     void load().catch((error: unknown) =>
-      onError(error instanceof Error ? error.message : String(error))
+      onError(errorText(error))
     );
   }, [load, onError]);
 
@@ -143,7 +144,7 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
         await api.resetVendorHealth(vendorId);
         await load();
       } catch (error: unknown) {
-        onError(error instanceof Error ? error.message : String(error));
+        onError(errorText(error));
       }
     },
     [load, onError]
@@ -257,7 +258,7 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
                   .clearGatewayLogs()
                   .then(load)
                   .catch((error: unknown) =>
-                    onError(error instanceof Error ? error.message : String(error))
+                    onError(errorText(error))
                   )
               }
             >

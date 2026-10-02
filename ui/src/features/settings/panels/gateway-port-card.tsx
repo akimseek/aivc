@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, Field, TextInput } from "../../../components";
+import { Button, Card, Field, TextInput, errorText } from "../../../components";
 import * as api from "../../../ipc/commands";
 import type { GatewayPortStatus } from "../../../types";
 
@@ -113,7 +113,7 @@ export function GatewayPortCard({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   }, [status.baseUrl, onError]);
 
@@ -161,7 +161,7 @@ export function GatewayPortCard({
       }
     } catch (error) {
       if (next) onStatusChange(next);
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     } finally {
       setSaving(false);
     }

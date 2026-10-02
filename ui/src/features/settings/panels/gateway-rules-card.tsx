@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Badge, Button, Card, Icon, Toolbar } from "../../../components";
+import { Badge, Button, Card, Icon, Toolbar, errorText } from "../../../components";
 // 平台名与供应商名解析各只有一处实现：这里再抄一份，迟早会出现
 // 「同一个平台在两张表上叫两个名字」。平台名优先用后端 label（见 `providerLabel`）。
 import { vendorName } from "../../workbench/workbench-cards";
@@ -63,7 +63,7 @@ export function GatewayRulesCard({
     try {
       setRules(await api.listFailoverRules());
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   }, [onError]);
 
@@ -105,7 +105,7 @@ export function GatewayRulesCard({
       await load();
       onNotify?.(editing ? "故障规则已保存。" : "已新增故障规则。");
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   };
 
@@ -133,7 +133,7 @@ export function GatewayRulesCard({
       });
       setTestResult(result);
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     } finally {
       setTesting(false);
     }
@@ -233,7 +233,7 @@ export function GatewayRulesCard({
                             .setFailoverRuleEnabled(rule.id, !rule.enabled)
                             .then(load)
                             .catch((error: unknown) =>
-                              onError(error instanceof Error ? error.message : String(error))
+                              onError(errorText(error))
                             )
                         }
                       >
@@ -247,7 +247,7 @@ export function GatewayRulesCard({
                             .deleteFailoverRule(rule.id)
                             .then(load)
                             .catch((error: unknown) =>
-                              onError(error instanceof Error ? error.message : String(error))
+                              onError(errorText(error))
                             )
                         }
                       >

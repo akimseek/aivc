@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import { Button, Card, EmptyState, LoadingBlock, Select, Toolbar, ToolbarSpacer } from "../../../components";
+import { Button, Card, EmptyState, LoadingBlock, Select, Toolbar, ToolbarSpacer, errorText } from "../../../components";
 import * as api from "../../../ipc/commands";
 import type { ApiVendor, VendorBalance, VendorConfigFile, VendorModel } from "../../../types";
 
@@ -83,7 +83,7 @@ export function VendorModelProbe({
     try {
       setModels(await api.listVendorModels(vendorId));
     } catch (problem) {
-      onError(problem instanceof Error ? problem.message : String(problem));
+      onError(errorText(problem));
     } finally {
       setBusy(false);
     }
@@ -155,7 +155,7 @@ export function VendorConfigReader() {
         const files = await api.readVendorConfigs([path]);
         setFile(files[0] ?? null);
       } catch (problem) {
-        setError(problem instanceof Error ? problem.message : String(problem));
+        setError(errorText(problem));
       }
     },
     []

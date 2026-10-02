@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, EmptyState, Field, TextInput, Toolbar } from "../../../components";
+import { Button, Card, EmptyState, Field, TextInput, Toolbar, errorText } from "../../../components";
 import { PanelHeader } from "../panel-header";
 import * as api from "../../../ipc/commands";
 import type { WorkspacePreset } from "../../../types";
@@ -19,7 +19,7 @@ export function PresetsPanel({ onError }: { onError: (message: string) => void }
     try {
       setPresets(await api.listPresets());
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   }, [onError]);
 
@@ -35,7 +35,7 @@ export function PresetsPanel({ onError }: { onError: (message: string) => void }
       setCwd("");
       await load();
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   };
 
@@ -91,7 +91,7 @@ export function PresetsPanel({ onError }: { onError: (message: string) => void }
                       .deletePreset(preset.id)
                       .then(load)
                       .catch((error: unknown) =>
-                        onError(error instanceof Error ? error.message : String(error))
+                        onError(errorText(error))
                       )
                   }
                 >

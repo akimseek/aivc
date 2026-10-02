@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Dialog } from "../components";
+import { Button, Dialog, errorText } from "../components";
 import * as api from "../ipc/commands";
 
 /**
@@ -57,7 +57,7 @@ export function ExitConfirm({ onError }: { onError: (message: string) => void })
         // 失败时**保持打开**，用户可以重试——收起会让这次询问看起来从未发生过。
         setOpen(false);
       } catch (error) {
-        onError(error instanceof Error ? error.message : String(error));
+        onError(errorText(error));
       } finally {
         setBusy(false);
       }

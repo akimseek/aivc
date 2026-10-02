@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { errorText } from "./error-text";
 
 /**
  * 一次异步操作的**加载 / 错误 / 重试**骨架。
@@ -82,7 +83,7 @@ export function useAsyncData<T>(
     } catch (problem) {
       if (!mountedRef.current || seq !== seqRef.current) return;
       setData(null);
-      setError(problem instanceof Error ? problem.message : String(problem));
+      setError(errorText(problem));
     } finally {
       if (mountedRef.current && seq === seqRef.current) setLoading(false);
     }

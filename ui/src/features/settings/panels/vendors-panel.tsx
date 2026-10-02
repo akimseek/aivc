@@ -12,6 +12,7 @@ import {
   TextInput,
   Toolbar,
   ToolbarSpacer,
+  errorText,
   useToast
 } from "../../../components";
 import { PanelHeader } from "../panel-header";
@@ -303,7 +304,7 @@ export function VendorsPanel({
       setVendors(list);
       setHealth(Array.isArray(healthList) ? healthList : []);
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     } finally {
       setLoading(false);
     }
@@ -333,7 +334,7 @@ export function VendorsPanel({
           : `已启用供应商：${vendor.name}，写入 ${result.written.length} 个配置文件，原文件已备份到 ${result.backupRoot}`
       );
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   };
 
@@ -354,7 +355,7 @@ export function VendorsPanel({
         onNotify?.(`供应商已删除：${vendor.name}`);
         await load();
       } catch (error) {
-        onError(error instanceof Error ? error.message : String(error));
+        onError(errorText(error));
       }
     },
     [load, onError, onNotify]
@@ -378,7 +379,7 @@ export function VendorsPanel({
           ...current,
           [vendor.id]: { status: "error", balance: current[vendor.id]?.balance }
         }));
-        onError(problem instanceof Error ? problem.message : String(problem));
+        onError(errorText(problem));
       }
     },
     [onError]
@@ -419,7 +420,7 @@ export function VendorsPanel({
           : `${ok} 家成功，${failed} 家未提供或查询失败。`
       );
     } catch (problem) {
-      onError(problem instanceof Error ? problem.message : String(problem));
+      onError(errorText(problem));
     } finally {
       setBusy(false);
     }
@@ -476,7 +477,7 @@ export function VendorsPanel({
       await load();
       onNotify?.(draft.id ? `供应商已保存：${draft.name.trim()}` : `已新增供应商：${draft.name.trim()}`);
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   };
 

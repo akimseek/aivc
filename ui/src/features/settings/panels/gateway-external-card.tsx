@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import { Badge, Button, Card, Notice } from "../../../components";
+import { Badge, Button, Card, Notice, errorText } from "../../../components";
 import * as api from "../../../ipc/commands";
 import type { AiProviderId, AiProviderSummary, ExternalApiStatus } from "../../../types";
 import { SwitchPill } from "./gateway-switch-pill";
@@ -191,7 +191,7 @@ export function GatewayExternalCard({
         setCopied(key);
         window.setTimeout(() => setCopied(""), 2000);
       } catch (error) {
-        onError(error instanceof Error ? error.message : String(error));
+        onError(errorText(error));
       }
     },
     [onError]
@@ -206,7 +206,7 @@ export function GatewayExternalCard({
       onStatusChange(next);
       onNotify?.(next.enabled ? "外部 API 已启用。" : "外部 API 已关闭。");
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     } finally {
       setToggling(false);
     }
@@ -226,7 +226,7 @@ export function GatewayExternalCard({
       // 旧令牌**立即失效**，这句不说用户不会知道别的客户端已经断了。
       onNotify?.("已生成新令牌；旧令牌立即失效。");
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     } finally {
       setRotating(false);
     }

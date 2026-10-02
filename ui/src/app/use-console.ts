@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { errorText } from "../components";
 import * as api from "../ipc/commands";
 import type {
   AiMessage,
@@ -58,10 +59,6 @@ const SEARCH_DEBOUNCE_MS = 250;
   
   于是启动时的四个「替你选好」全部去掉了：平台、目标、会话，以及这里的还原。
 */
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * 从候选里挑一个目标：**只认「当前值」，否则不选**。
@@ -261,7 +258,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         */
         setProviderId("");
       } catch (problem) {
-        if (!cancelled) setError(describe(problem));
+        if (!cancelled) setError(errorText(problem));
       }
     })();
     return () => {
@@ -308,7 +305,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setTargetId((current) => pickTarget(fresh, [current]));
         setError("");
       } catch (problem) {
-        setError(describe(problem));
+        setError(errorText(problem));
       } finally {
         setBusy(false);
       }
@@ -373,7 +370,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setSelectedIds([]);
         setError("");
       } catch (problem) {
-        if (seq === requestSeqRef.current) setError(describe(problem));
+        if (seq === requestSeqRef.current) setError(errorText(problem));
       } finally {
         if (seq === requestSeqRef.current) setSearching(false);
       }
@@ -410,7 +407,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         // 0 表示后端也拿不到总数——那时界面回退到列表的下界。
         setMessageTotal(page.messageCount > 0 ? page.messageCount : null);
       } catch (problem) {
-        if (!cancelled) setError(describe(problem));
+        if (!cancelled) setError(errorText(problem));
       }
     })();
     return () => {
@@ -438,7 +435,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
       setMessageStart(page.offset);
       setError("");
     } catch (problem) {
-      setError(describe(problem));
+      setError(errorText(problem));
     } finally {
       setLoadingMore(false);
     }
@@ -509,7 +506,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
       setQuickAccess(await api.listSessionQuickAccess());
       setError("");
     } catch (problem) {
-      setError(describe(problem));
+      setError(errorText(problem));
     }
   }, []);
 
@@ -537,7 +534,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         // 搜索结果里都长得不一样），说一句比让用户去找那颗星更确定。
         notify(next ? "已收藏会话。" : "已取消收藏会话。");
       } catch (problem) {
-        setError(describe(problem));
+        setError(errorText(problem));
         // 失败就退回去，别让界面显示一个并不存在的状态。
         setSessions((current) =>
           current.map((item) =>
@@ -576,7 +573,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         // 批量操作之后列表会变，但**用户可能记不清自己有没点成功**（选中状态被清掉了）。
         notify(`${label}完成：共 ${refs.length} 条。`);
       } catch (problem) {
-        setError(`${label}失败：${describe(problem)}`);
+        setError(`${label}失败：${errorText(problem)}`);
       } finally {
         setBusy(false);
       }
@@ -641,7 +638,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         // 恢复之后它**从回收站列表里消失了**——不说一句，看起来像被删掉了。
         notify("会话已恢复。");
       } catch (error) {
-        setError(error instanceof Error ? error.message : String(error));
+        setError(errorText(error));
       }
     },
     [targetId, view, query, loadSessions, notify]
@@ -668,7 +665,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setError("");
         notify("会话名称已保存。");
       } catch (problem) {
-        setError(`重命名失败：${describe(problem)}`);
+        setError(`重命名失败：${errorText(problem)}`);
       }
     },
     [targetId, selectedId, view, query, loadSessions, notify]
@@ -692,7 +689,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setError("");
         notify("会话已复制。");
       } catch (problem) {
-        setError(`复制失败：${describe(problem)}`);
+        setError(`复制失败：${errorText(problem)}`);
       }
     },
     [targetId, selectedId, view, query, loadSessions, notify]
@@ -716,7 +713,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setError("");
         return result;
       } catch (problem) {
-        setError(`导出失败：${describe(problem)}`);
+        setError(`导出失败：${errorText(problem)}`);
         return null;
       }
     },
@@ -744,7 +741,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setError("");
         notify("已创建新的分支会话。");
       } catch (problem) {
-        setError(`分支失败：${describe(problem)}`);
+        setError(`分支失败：${errorText(problem)}`);
       }
     },
     [targetId, selectedId, view, query, loadSessions, notify]
@@ -757,7 +754,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
       await api.openSessionFolder(targetId, selectedId);
       setError("");
     } catch (problem) {
-      setError(`打开目录失败：${describe(problem)}`);
+      setError(`打开目录失败：${errorText(problem)}`);
     }
   }, [targetId, selectedId]);
 
@@ -773,7 +770,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         // 两种结果**必须说清是哪一种**：彻底删除不可撤销。
         notify(permanent ? "会话已彻底删除。" : "会话已移入回收站。");
       } catch (problem) {
-        setError(`${permanent ? "彻底删除" : "移入回收站"}失败：${describe(problem)}`);
+        setError(`${permanent ? "彻底删除" : "移入回收站"}失败：${errorText(problem)}`);
       }
     },
     [targetId, view, query, loadSessions, notify]
@@ -793,7 +790,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setError("");
         notify("WSL Codex 目录已保存。");
       } catch (problem) {
-        setError(`指定目录失败：${describe(problem)}`);
+        setError(`指定目录失败：${errorText(problem)}`);
       }
     },
     [providerId, loadTargets, notify]
@@ -807,7 +804,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setError("");
         notify("已恢复自动探测会话目录。");
       } catch (problem) {
-        setError(`清除目录覆盖失败：${describe(problem)}`);
+        setError(`清除目录覆盖失败：${errorText(problem)}`);
       }
     },
     [providerId, loadTargets, notify]

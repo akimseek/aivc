@@ -11,6 +11,7 @@ import {
   Select,
   Toolbar,
   ToolbarSpacer,
+  errorText,
   useAsyncData,
   useToast
 } from "../../../components";
@@ -159,7 +160,7 @@ export function GatewayLogPanel({
       if (emptiedThePage && page > 1) setPage(page - 1);
       else await logs.reload();
     } catch (problem) {
-      onError(problem instanceof Error ? problem.message : String(problem));
+      onError(errorText(problem));
     }
   }, [selected, items.length, page, logs, toast, onError]);
 
@@ -180,7 +181,7 @@ export function GatewayLogPanel({
       if (page !== 1) setPage(1);
       else await logs.reload();
     } catch (problem) {
-      onError(problem instanceof Error ? problem.message : String(problem));
+      onError(errorText(problem));
     }
   }, [page, logs, onNotify, onError]);
 

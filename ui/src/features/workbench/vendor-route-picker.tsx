@@ -28,7 +28,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Badge, Icon, Popover, StatusDot, type StatusDotTone } from "../../components";
+import { Badge, Icon, Popover, StatusDot, errorText, type StatusDotTone } from "../../components";
 import * as api from "../../ipc/commands";
 import type { AiProviderId, ApiVendor, GatewayVendorHealth } from "../../types";
 import type { TerminalSession, VendorRouteMode } from "../../app/use-terminals";
@@ -124,7 +124,7 @@ export function VendorRoutePicker({
         // 成功才收起：失败时浮层要留在原地把事情说清楚。
         setOpen(false);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorText(cause));
       } finally {
         setBusy(false);
       }
@@ -139,7 +139,7 @@ export function VendorRoutePicker({
       try {
         await onSetMode(terminalId, mode);
       } catch (cause) {
-        setModeError(cause instanceof Error ? cause.message : String(cause));
+        setModeError(errorText(cause));
       }
     },
     [onSetMode, terminalId]

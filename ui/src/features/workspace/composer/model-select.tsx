@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { errorText } from "../../../components";
 import * as api from "../../../ipc/commands";
 import { resolveModelSource } from "./models";
 
@@ -160,7 +161,7 @@ export function ModelSelect({
           除非挑一个别的模型再挑回来。
         */
         setSelected("");
-        onError(problem instanceof Error ? problem.message : String(problem));
+        onError(errorText(problem));
       }
     },
     [terminalId, onSent, onError]

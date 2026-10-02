@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, EmptyState } from "../../../components";
+import { Button, EmptyState, errorText } from "../../../components";
 import { PanelHeader } from "../panel-header";
 import * as api from "../../../ipc/commands";
 import type { AiProviderSummary, ExternalApiStatus, GatewayPortStatus } from "../../../types";
@@ -79,8 +79,9 @@ export function GatewayPanel({
     // 可渲染，只能停在失败态并给出重试入口。假后端（外壳测试里那张按命令名给值的表）
     // 对没登记的命令回 `null`，那是「还没读到」而不是「读失败」，仍走等待态。
     if (port.status === "rejected") {
-      setPortError(describeFailure(port.reason));
-      onError(describeFailure(port.reason));
+      // `allSettled` 的拒因是 `unknown`——统一走 `errorText` 折成一句话。
+      setPortError(errorText(port.reason));
+      onError(errorText(port.reason));
       return;
     }
     if (!port.value) return;
@@ -100,7 +101,7 @@ export function GatewayPanel({
       return;
     }
     if (externalStatus.status === "rejected") {
-      const reason = describeFailure(externalStatus.reason);
+      const reason = errorText(externalStatus.reason);
       setExternalError(reason);
       onError(reason);
     } else {
@@ -129,7 +130,7 @@ export function GatewayPanel({
           : "已关闭本地网关。使用网关的终端路由将立即停止。"
       );
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     } finally {
       setToggling(false);
     }
@@ -215,12 +216,3 @@ export function GatewayPanel({
   );
 }
 
-/**
- * 取数失败的原因 → 一句话。
- *
- * `Promise.allSettled` 的拒因是 `unknown`，与别处的 `catch` 同一条规矩：
- * `Error` 取 `message`，其余原样字符串化（后端抛的往往是字符串）。
- */
-function describeFailure(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason);
-}

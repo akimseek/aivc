@@ -1,6 +1,6 @@
 import { Component, type ReactNode } from "react";
 
-import { Button, EmptyState } from "../components";
+import { Button, EmptyState, errorText } from "../components";
 import * as api from "../ipc/commands";
 
 type ErrorBoundaryProps = {
@@ -70,7 +70,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         这里是它的去处。`api.logPerformance` 已吞掉 IPC 失败，这层 try 再兜同步异常——
         **埋点失败绝不能让错误处理路径自己再炸一次**，那会把兜底也带走。
       */
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = errorText(error);
       void api.logPerformance("ui.error-boundary", 0, `${this.props.label}：${reason}`);
     } catch {
       // 静默：兜底已经画出来了，日志失败没有别的出口。

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as api from "../ipc/commands";
 import type { AiMessage, AiSession, AiTarget } from "../types";
+import { errorText } from "../components";
 
 /**
  * 会话详情的分页取数。
@@ -85,7 +86,7 @@ export function useSessionDetail(
       // 失败按同一规则丢弃：旧请求的失败不该报错，更不该清掉已落地的新结果。
       if (seq !== seqRef.current) return;
       setMessages([]);
-      setError(problem instanceof Error ? problem.message : String(problem));
+      setError(errorText(problem));
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }

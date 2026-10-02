@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useToast } from "../components";
+import { errorText, useToast } from "../components";
 import { SessionsSidebar } from "../features/sessions/sessions-sidebar";
 import type { SettingsTab } from "../features/settings/settings-center";
 import { WorkbenchSidebar } from "../features/workbench/workbench-sidebar";
@@ -249,7 +249,7 @@ export function App() {
   const runWindowAction = useCallback(
     (action: () => Promise<null>) => {
       void action().catch((error: unknown) =>
-        console.setError(error instanceof Error ? error.message : String(error))
+        console.setError(errorText(error))
       );
     },
     // 依赖 `console.setError` 而不是整个 `console`：`useConsole()` 每次渲染都返回**新对象**，
@@ -420,7 +420,7 @@ export function App() {
         );
         workspace.attachTerminalTab(id, options?.sessionId, options?.title ?? "新会话");
       } catch (error) {
-        console.setError(error instanceof Error ? error.message : String(error));
+        console.setError(errorText(error));
       }
     },
     /*
@@ -968,7 +968,7 @@ export function App() {
               .clearWslCodexHome(distro)
               .then(() => console.reloadSessions())
               .catch((error: unknown) =>
-                console.setError(error instanceof Error ? error.message : String(error))
+                console.setError(errorText(error))
               );
           },
           saveSessionSettings: (distro, path) => {
@@ -977,7 +977,7 @@ export function App() {
               .setWslCodexHome(distro, path)
               .then(() => console.reloadSessions())
               .catch((error: unknown) =>
-                console.setError(error instanceof Error ? error.message : String(error))
+                console.setError(errorText(error))
               );
           },
           changeNewSession: (patch) =>

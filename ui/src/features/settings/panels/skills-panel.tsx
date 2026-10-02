@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Badge, Button, Card, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer } from "../../../components";
+import { Badge, Button, Card, ChipGroup, EmptyState, Notice, Toolbar, ToolbarSpacer, errorText } from "../../../components";
 import * as api from "../../../ipc/commands";
 import { PanelHeader } from "../panel-header";
 import type { SkillEntry } from "../../../types";
@@ -31,7 +31,7 @@ export function SkillsPanel({
     try {
       setSkills(mode === "trash" ? await api.listTrashSkills(targetId) : await api.listSkills(targetId));
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     } finally {
       setLoading(false);
     }
@@ -56,7 +56,7 @@ export function SkillsPanel({
       await load();
       onNotify?.(label);
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   };
 
@@ -78,7 +78,7 @@ export function SkillsPanel({
       // 而不是一句无从下手的错误。
       setConflict(source);
       if (overwrite) {
-        onError(error instanceof Error ? error.message : String(error));
+        onError(errorText(error));
       }
     }
   };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Badge, Button, Card, EmptyState, Field, Notice, Select } from "../../../components";
+import { Badge, Button, Card, EmptyState, Field, Notice, Select, errorText } from "../../../components";
 import { PanelHeader } from "../panel-header";
 import * as api from "../../../ipc/commands";
 import type { AiProviderId, AiTarget, CliEnvironmentStatus } from "../../../types";
@@ -89,7 +89,7 @@ export function EnvironmentPanel({
       // 回来时既看不出装完没有、也看不出是不是点了没反应。文案照旧平台。
       onNotify?.("CLI 安装完成。");
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     } finally {
       setInstalling(false);
     }
@@ -104,7 +104,7 @@ export function EnvironmentPanel({
       // `targetId` 为空时后端检测本机环境。
       setStatus(await api.checkCliEnvironment(providerId, targetId || undefined));
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(errorText(error));
     }
   }, [providerId, targetId, onError]);
 

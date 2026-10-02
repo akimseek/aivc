@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Dialog } from "../../../components";
+import { Button, Dialog, errorText } from "../../../components";
 import * as api from "../../../ipc/commands";
 import { clampZoom, stepZoom, zoomLabel, type ComposerAttachment } from "./composer-attachments";
 
@@ -46,7 +46,7 @@ export function ComposerImagePreview({
       })
       .catch((problem: unknown) => {
         if (!cancelled) {
-          setFailed(problem instanceof Error ? problem.message : String(problem));
+          setFailed(errorText(problem));
         }
       });
     return () => {
@@ -62,7 +62,7 @@ export function ComposerImagePreview({
         window.setTimeout(() => setCopied(false), 2000);
       })
       .catch((problem: unknown) =>
-        onError(problem instanceof Error ? problem.message : String(problem))
+        onError(errorText(problem))
       );
   }, [attachment.path, onError]);
 

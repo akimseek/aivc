@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button, Icon, Popover } from "../../../components";
+import { Button, Icon, Popover, errorText } from "../../../components";
 import * as api from "../../../ipc/commands";
 import { appendAttachments, attachmentFromPath, type ComposerAttachment } from "./composer-attachments";
 import { ComposerImagePreview } from "./composer-image-preview";
@@ -195,7 +195,7 @@ export function ComposerInput({
         const saved = await api.saveImage(dataUrl);
         addPaths([saved.path]);
       } catch (problem) {
-        onError(problem instanceof Error ? problem.message : String(problem));
+        onError(errorText(problem));
       }
     },
     [addPaths, onError]
@@ -275,7 +275,7 @@ export function ComposerInput({
       setBlocks([]);
       onSent?.(text);
     } catch (problem) {
-      onError(problem instanceof Error ? problem.message : String(problem));
+      onError(errorText(problem));
     } finally {
       setSending(false);
     }
@@ -310,7 +310,7 @@ export function ComposerInput({
       .chooseFiles("添加图片（可多选）", "image")
       .then((picked) => addPaths(picked))
       .catch((problem: unknown) =>
-        onError(problem instanceof Error ? problem.message : String(problem))
+        onError(errorText(problem))
       );
   }, [addPaths, onError]);
 
@@ -320,7 +320,7 @@ export function ComposerInput({
       .chooseFiles("添加文件（可多选）", "any")
       .then((picked) => addPaths(picked))
       .catch((problem: unknown) =>
-        onError(problem instanceof Error ? problem.message : String(problem))
+        onError(errorText(problem))
       );
   }, [addPaths, onError]);
 

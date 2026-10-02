@@ -181,9 +181,12 @@ pub fn open_externally(target_url: &str) -> Result<(), String> {
         return Err(format!("拒绝用系统程序打开非 HTTP(S) 链接：{target_url}"));
     }
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd")
-        .args(["/c", "start", "", target_url])
-        .spawn();
+    let result = {
+        // `cmd /c start` 是辅助动作：不给它配控制台窗口（否则会闪一个黑框）。
+        let mut command = std::process::Command::new("cmd");
+        aivc_infra::process::hide_console_window(&mut command);
+        command.args(["/c", "start", "", target_url]).spawn()
+    };
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(target_url).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]

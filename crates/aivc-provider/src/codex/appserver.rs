@@ -131,6 +131,8 @@ impl AppServerLauncher {
                 codex_home,
             } => {
                 let mut command = tokio::process::Command::new(program);
+                // 辅助进程：不给它配控制台窗口（Win11 会弹 Windows Terminal 面板）。
+                aivc_infra::process::hide_console_window_tokio(&mut command);
                 command.args(args);
                 if let Some(home) = codex_home {
                     command.env("CODEX_HOME", home);

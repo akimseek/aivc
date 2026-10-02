@@ -9,6 +9,7 @@
 //! ```text
 //! logging  ← 无内部依赖（只被 lib.rs 的初始化函数使用）
 //! config   ← 无内部依赖
+//! process  ← 无内部依赖（子进程启动的 Windows 细节）
 //! fs       ← config（路径语义）
 //! wsl      ← config
 //! db       ← 无内部依赖
@@ -41,6 +42,7 @@ pub mod db;
 pub mod fs;
 pub mod http;
 pub mod logging;
+pub mod process;
 pub mod wsl;
 
 pub use config::{AppPaths, AppSettings, RawSettings, RuntimeRoot, RuntimeShape, SettingsStore};

@@ -407,6 +407,8 @@ pub struct SystemRunner;
 impl CommandRunner for SystemRunner {
     fn run(&self, program: &str, args: &[&str], timeout_ms: u64) -> CommandRun {
         let mut command = std::process::Command::new(program);
+        // 探测是**后台动作**：不给子进程配控制台窗口（Win11 会弹 Windows Terminal 面板）。
+        aivc_infra::process::hide_console_window(&mut command);
         command.args(args);
         // 不继承父进程的标准流：探测输出要走管道，而 `null` 避免子进程继承
         // 我们自己的终端句柄（那会让某些平台上的子进程挂住）。

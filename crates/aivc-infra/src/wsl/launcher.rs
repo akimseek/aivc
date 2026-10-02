@@ -103,7 +103,9 @@ fn spawn_wsl_bash(
     } else {
         super::script_transfer::wrap_script(script)
     };
-    Command::new(executable)
+    let mut command = Command::new(executable);
+    crate::process::hide_console_window_tokio(&mut command);
+    command
         .arg("-d")
         .arg(distro)
         .arg("--")
@@ -123,7 +125,9 @@ fn spawn_wsl_bash(
 
 /// 启动本机 bash 执行 `script`；`stdin` 由调用方决定（契约同上）。
 fn spawn_local_bash(executable: &PathBuf, script: &str, stdin: Stdio) -> Result<Child> {
-    Command::new(executable)
+    let mut command = Command::new(executable);
+    crate::process::hide_console_window_tokio(&mut command);
+    command
         .arg("-lc")
         .arg(script)
         .stdin(stdin)
@@ -218,7 +222,9 @@ impl WslLauncher for WslExeLauncher {
     }
 
     fn spawn_wsl_raw(&self, args: &[&str]) -> Result<Child> {
-        Command::new(&self.executable)
+        let mut command = Command::new(&self.executable);
+        crate::process::hide_console_window_tokio(&mut command);
+        command
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -232,7 +238,9 @@ impl WslLauncher for WslExeLauncher {
     }
 
     fn spawn_program(&self, distro: &str, program: &str, args: &[String]) -> Result<Child> {
-        Command::new(&self.executable)
+        let mut command = Command::new(&self.executable);
+        crate::process::hide_console_window_tokio(&mut command);
+        command
             .arg("-d")
             .arg(distro)
             .arg("--")
@@ -310,7 +318,9 @@ impl LocalBashLauncher {
     /// 而不是把环境限制误报成代码缺陷；CI（Linux）上原生 bash 没有这个问题。
     #[must_use]
     pub fn is_usable(&self) -> bool {
-        std::process::Command::new(&self.executable)
+        let mut command = std::process::Command::new(&self.executable);
+        crate::process::hide_console_window(&mut command);
+        command
             .arg("-c")
             .arg("exit 0")
             .stdin(Stdio::null())
@@ -343,7 +353,9 @@ impl WslLauncher for LocalBashLauncher {
 
     fn spawn_program(&self, _distro: &str, program: &str, args: &[String]) -> Result<Child> {
         // 测试路径：直接在本机执行，忽略发行版参数。
-        Command::new(program)
+        let mut command = Command::new(program);
+        crate::process::hide_console_window_tokio(&mut command);
+        command
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

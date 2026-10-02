@@ -88,10 +88,17 @@ impl fmt::Debug for VendorRoute {
 }
 
 impl VendorRoute {
-    /// 该路由在网关上的前缀：`/gateway/<平台>/<路由编号>`。
+    /// 该路由在网关上的前缀。
+    ///
+    /// 终端路由是 `/gateway/<平台>/<路由编号>`；外部路由是 `/<平台>`（2026-10-02
+    /// 统一外部接入，见 `docs/superpowers/specs/2026-10-02-gateway-unified-external-design.md`）。
     #[must_use]
     pub fn prefix(&self) -> String {
-        route_prefix(self.provider_id, &self.route_id)
+        if self.external {
+            format!("/{}", self.provider_id.as_str())
+        } else {
+            route_prefix(self.provider_id, &self.route_id)
+        }
     }
 }
 
@@ -111,6 +118,25 @@ pub fn build_route_url(host: &str, provider_id: ProviderId, route_id: &str) -> S
 #[must_use]
 pub fn route_prefix(provider_id: ProviderId, route_id: &str) -> String {
     format!("{ROUTE_PREFIX}/{}/{route_id}", provider_id.as_str())
+}
+
+/// 外部路由的编号：`external-<平台>`（与旧平台一致，日志里一眼可辨）。
+#[must_use]
+pub fn external_route_id(provider_id: ProviderId) -> String {
+    format!("external-{}", provider_id.as_str())
+}
+
+/// 外部接入路径的第一段平台。
+///
+/// 路径形状为 `/<平台>/…`（如 `/codex/v1/responses`）。`/gateway/…` 走终端路由
+/// 分支、未知平台与其它路径都会落 404——那些不由这里判定，返回 [`None`]。
+#[must_use]
+pub fn extract_external_provider(path: &str) -> Option<ProviderId> {
+    let first = segment(path, 0)?;
+    if first == ROUTE_PREFIX.trim_start_matches('/') {
+        return None;
+    }
+    parse_provider(first)
 }
 
 /// 从请求路径提取平台标识。
@@ -336,6 +362,26 @@ impl RouteRegistry {
         self.external
             .get(&provider_id)
             .and_then(|route_id| self.routes.get(route_id))
+    }
+
+    /// 确保某平台的外部路由存在（惰性注册，旧平台同款；幂等）。
+    ///
+    /// 外部路由没有终端绑定，永远是动态候选池；`vendor_id` / `local_token` /
+    /// `base_url` 对外部路由都没有意义，留空。返回其路由编号。
+    pub fn ensure_external_route(&mut self, provider_id: ProviderId) -> String {
+        let route_id = external_route_id(provider_id);
+        if self.external_route(provider_id).is_none() {
+            self.insert(VendorRoute {
+                route_id: route_id.clone(),
+                provider_id,
+                vendor_id: String::new(),
+                mode: RouteMode::Dynamic,
+                local_token: String::new(),
+                base_url: String::new(),
+                external: true,
+            });
+        }
+        route_id
     }
 
     /// 路由数量。
@@ -627,6 +673,56 @@ mod tests {
         // 移除后索引也要清掉。
         registry.remove("ext-codex");
         assert!(registry.external_route(ProviderId::Codex).is_none());
+    }
+
+    #[test]
+    fn the_first_segment_decides_the_external_provider() {
+        assert_eq!(extract_external_provider("/codex"), Some(ProviderId::Codex));
+        assert_eq!(
+            extract_external_provider("/codex/v1/responses"),
+            Some(ProviderId::Codex)
+        );
+        assert_eq!(
+            extract_external_provider("/claude/v1/messages?stream=true"),
+            Some(ProviderId::Claude)
+        );
+        // 终端路由不走外部分支。
+        assert_eq!(extract_external_provider("/gateway/codex/r1/v1/messages"), None);
+        // 未知平台与根路径都不是外部路由。
+        assert_eq!(extract_external_provider("/openai/v1"), None);
+        assert_eq!(extract_external_provider("/"), None);
+    }
+
+    #[test]
+    fn external_routes_use_the_bare_provider_prefix() {
+        let mut external = route("external-codex", "tok");
+        external.external = true;
+        // 外部前缀就是 `/<平台>`；终端路由仍是 `/gateway/<平台>/<编号>`。
+        assert_eq!(external.prefix(), "/codex");
+        assert_eq!(route("r1", "tok").prefix(), "/gateway/codex/r1");
+    }
+
+    #[test]
+    fn ensure_external_route_registers_lazily_and_is_idempotent() {
+        let mut registry = RouteRegistry::new();
+        let id = registry.ensure_external_route(ProviderId::Codex);
+        assert_eq!(id, "external-codex");
+        let registered = registry.external_route(ProviderId::Codex).expect("已注册");
+        assert!(registered.external);
+        assert_eq!(registered.mode, RouteMode::Dynamic);
+        assert!(registered.vendor_id.is_empty());
+        // 再调一次不重复建。
+        assert_eq!(
+            registry.ensure_external_route(ProviderId::Codex),
+            "external-codex"
+        );
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn external_route_ids_are_named_after_the_provider() {
+        assert_eq!(external_route_id(ProviderId::Codex), "external-codex");
+        assert_eq!(external_route_id(ProviderId::Qoder), "external-qoder");
     }
 
     #[test]

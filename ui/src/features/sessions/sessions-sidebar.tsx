@@ -25,7 +25,7 @@ import { gatewayPortLabel, gatewayTone } from "../../app/gateway-address";
 import { supportsSessionSettings } from "../../app/provider-capabilities";
 import { emptySessionMessage } from "../../app/session-display";
 import { QuickGroup, SearchResultRow } from "./session-row";
-import { supportsBatchActions, supportsTrash } from "../../app/sidebar-nav";
+import { supportsBatchActions, supportsTrash } from "../../app/provider-capabilities";
 import type { useConsole } from "../../app/use-console";
 import { resolveSidebarListMode } from "./sidebar-search";
 import { SessionCard } from "./session-card";

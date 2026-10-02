@@ -16,16 +16,14 @@ import {
 import * as api from "../../../ipc/commands";
 import type { GatewayLogEntry, GatewayVendorHealth, UsageSummary } from "../../../types";
 import {
-  USAGE_RANGES,
   formatCost,
   formatDuration,
   formatLogTime,
   formatTokenCount,
   outcomeLabel,
-  outcomeTone,
-  rangeBounds,
-  type UsageRangeKey
-} from "../../../app/gateway-range";
+  outcomeTone
+} from "../../../app/gateway-format";
+import { USAGE_RANGES, rangeBounds, type UsageRangeKey } from "../../../app/gateway-range";
 import { REQUEST_REFRESH_WINDOW_MS, createRefreshCoalescer } from "../../../app/refresh-coalescer";
 
 /**

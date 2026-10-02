@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { AiProviderSummary } from "../types";
 import {
+  supportsBatchActions,
   supportsBranch,
   supportsCustomCwd,
   supportsDuplicate,
   supportsExport,
   supportsSessionSettings,
-  supportsSkills
+  supportsSkills,
+  supportsTrash
 } from "./provider-capabilities";
 
 /**
@@ -157,5 +159,29 @@ describe("provider-capabilities：键名与缺键约定", () => {
     // `app.tsx` 在没选平台时传的就是空串：那时四项能力必须全假。
     expect(supportsSessionSettings(BACKEND, "")).toBe(false);
     expect(supportsSkills(BACKEND, "")).toBe(false);
+  });
+});
+
+describe("provider-capabilities：回收站与批量操作（P2-D 由 sidebar-nav.test 迁入）", () => {
+  it("按后端矩阵：四个平台的回收站与批量操作都为真", () => {
+    // 与 `crates/aivc-core/src/target.rs` 的 `ProviderId::capabilities()` 一致——
+    // 那里也有 Rust 侧断言（qoder.trash && qoder.batch_actions）。
+    for (const provider of BACKEND) {
+      expect(supportsTrash(BACKEND, provider.id)).toBe(true);
+      expect(supportsBatchActions(BACKEND, provider.id)).toBe(true);
+    }
+  });
+
+  it("**缺键 = 不支持**——不能因为少一个键就放行一个会报错的功能", () => {
+    const sparse: AiProviderSummary[] = [{ id: "codex", label: "Codex", capabilities: {} }];
+    expect(supportsTrash(sparse, "codex")).toBe(false);
+    expect(supportsBatchActions(sparse, "codex")).toBe(false);
+  });
+
+  it("平台不在列表（或还没选平台）时同样算不支持", () => {
+    expect(supportsTrash(BACKEND, "gemini:missing")).toBe(false);
+    expect(supportsBatchActions(BACKEND, "gemini:missing")).toBe(false);
+    expect(supportsTrash(BACKEND, "")).toBe(false);
+    expect(supportsBatchActions(BACKEND, "")).toBe(false);
   });
 });

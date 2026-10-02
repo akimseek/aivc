@@ -171,6 +171,17 @@ export type SessionMessagePage = {
 /** 会话视图。 */
 export type SessionView = "active" | "trash";
 
+/** 侧栏一级「地方」。活动栏按它推导当前亮着哪一个。 */
+export type SidebarPane = "sessions" | "workbench";
+
+/**
+ * 会话列表当前显示哪一类内容。
+ *
+ * `favorites` 的内容来自 `quickAccess`（收藏 + 最近打开两组），不是当前目标的
+ * 会话列表——这一点决定了「切到收藏夹不发列表请求」。
+ */
+export type SidebarView = "active" | "favorites" | "trash";
+
 /** 导出格式。与 Rust 侧 `ExportFormat` 的字符串取值逐字对应。 */
 export type ExportFormat = "markdown" | "json" | "html";
 

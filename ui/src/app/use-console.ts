@@ -14,7 +14,7 @@ import type {
   SessionQuickAccess,
   SessionView
 } from "../types";
-import type { SidebarPane, SidebarView } from "./sidebar-nav";
+import type { SidebarPane, SidebarView } from "../types";
 import { scopeTargets } from "./search-scope";
 
 /**

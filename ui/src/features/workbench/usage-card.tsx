@@ -1,5 +1,5 @@
 import { Button, Card, DescriptionList, EmptyState, Icon, LoadingBlock } from "../../components";
-import { formatCost, formatDuration, formatTokenCount } from "../../app/gateway-range";
+import { formatCost, formatDuration, formatTokenCount } from "../../app/gateway-format";
 import type { UsageSummary } from "../../types";
 import { successRateText } from "./workbench-cards";
 

@@ -1,5 +1,5 @@
 import { Button, Card, EmptyState, Icon, LoadingBlock } from "../../components";
-import { formatDuration } from "../../app/gateway-range";
+import { formatDuration } from "../../app/gateway-format";
 import { formatWhen } from "../../app/session-display";
 import type { FailureDiagnostic } from "../../types";
 

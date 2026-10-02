@@ -18,14 +18,8 @@ import {
 import * as api from "../../../ipc/commands";
 import { PanelHeader } from "../panel-header";
 import type { GatewayLogEntry, GatewayLogsPage } from "../../../types";
-import {
-  customBounds,
-  formatLogTime,
-  outcomeLabel,
-  outcomeTone,
-  rangeBounds,
-  type UsageRangeKey
-} from "../../../app/gateway-range";
+import { formatLogTime, outcomeLabel, outcomeTone } from "../../../app/gateway-format";
+import { customBounds, rangeBounds, type UsageRangeKey } from "../../../app/gateway-range";
 import { GatewayRangePicker } from "./gateway-range-picker";
 
 /** 每页条数。后端会把它钳制在上限内，因此这里给的是一个「意愿」（与异常页同一个数字）。 */

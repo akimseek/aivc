@@ -1,4 +1,4 @@
-import type { SidebarView } from "../../app/sidebar-nav";
+import type { SidebarView } from "../../types";
 
 /**
  * 列表区该显示什么。

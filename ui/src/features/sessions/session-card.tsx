@@ -50,7 +50,7 @@ export const SessionCard = memo(function SessionCard({
   checked,
   /**
    * 平台支不支持批量操作。不支持时**不渲染勾选框**——一个勾不出结果的框是误导
-   * （与老行同一条规则，见 `sidebar-nav.ts` 的能力矩阵）。
+   * （与老行同一条规则，见 `provider-capabilities.ts` 的能力矩阵）。
    */
   selectable = true,
   /** 这条会话此刻有终端在跑（卡片左上角那个点会亮起来）。 */

@@ -15,14 +15,8 @@ import { PanelHeader } from "../panel-header";
 // 各写一遍迟早会出现「一处 `0.0%`、一处 `-`」。
 import { successRateText } from "../../workbench/workbench-cards";
 import type { UsageDimension, UsageSummary } from "../../../types";
-import {
-  customBounds,
-  formatCost,
-  formatDuration,
-  formatTokenCount,
-  rangeBounds,
-  type UsageRangeKey
-} from "../../../app/gateway-range";
+import { formatCost, formatDuration, formatTokenCount } from "../../../app/gateway-format";
+import { customBounds, rangeBounds, type UsageRangeKey } from "../../../app/gateway-range";
 import { GatewayRangePicker } from "./gateway-range-picker";
 
 /**

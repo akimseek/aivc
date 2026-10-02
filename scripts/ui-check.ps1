@@ -34,7 +34,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $root "target\debug\aivc-app.exe"
+$exe = Join-Path $root "target\debug\AI.exe"
 
 if (-not (Test-Path $exe)) {
     throw "找不到 $exe；先跑一次 cargo build -p aivc-app。"
@@ -49,7 +49,7 @@ if (Test-Path $dist) {
     $distTime = (Get-Item $dist).LastWriteTimeUtc
     $exeTime = (Get-Item $exe).LastWriteTimeUtc
     if ($distTime -gt $exeTime) {
-        $hint = "ui/dist 比 aivc-app.exe 新，二进制里嵌的还是旧界面。先跑 cargo build -p aivc-app。"
+        $hint = "ui/dist 比 AI.exe 新，二进制里嵌的还是旧界面。先跑 cargo build -p aivc-app。"
         throw $hint
     }
 }

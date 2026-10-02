@@ -3,6 +3,7 @@
   "productName": "AI 可视化控制台",
   "version": "0.1.0",
   "identifier": "com.aivc.console",
+  "mainBinaryName": "AI",
   "build": {
     "frontendDist": "../../ui/dist",
     "beforeBuildCommand": "npm --prefix ../ui run build"

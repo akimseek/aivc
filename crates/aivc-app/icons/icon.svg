@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    AI Visual Console 应用图标（矢量源）。
+    与界面同源：渐变与界面令牌 ui-brand-gradient（135deg #059669 → #14b8a6）逐字一致，
+    「AI」字标与标题栏 .title-logo 相同。修改后的重生成命令见 docs 的构建手册
+    （tauri CLI 的 icon 子命令，输入本文件）。
+  -->
+  <defs>
+    <linearGradient id="brand" x1="64" y1="64" x2="960" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#059669"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#brand)"/>
+  <text x="512" y="592" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif"
+        font-weight="800" font-size="392" letter-spacing="-10" fill="#ffffff">AI</text>
+  <rect x="430" y="676" width="164" height="38" rx="19" fill="#ffffff"/>
+</svg>

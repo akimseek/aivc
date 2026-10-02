@@ -261,7 +261,7 @@ mod tests {
         // 同一台机器上跑出过三份互不相干的数据。
         let resolved = resolve_runtime_storage_root(
             false,
-            &p("D:/code/ai/aivc-rs/target/debug/aivc-app.exe"),
+            &p("D:/code/ai/aivc-rs/target/debug/AI.exe"),
             &p("D:/code/ai/aivc-rs"),
             Platform::Win32,
         );
@@ -274,13 +274,13 @@ mod tests {
         // 换一个 `CARGO_TARGET_DIR` 也只是换了个 exe 路径，数据落点不变。
         let a = resolve_runtime_storage_root(
             false,
-            &p("D:/code/ai/aivc-rs/target/debug/aivc-app.exe"),
+            &p("D:/code/ai/aivc-rs/target/debug/AI.exe"),
             &p("D:/code/ai/aivc-rs"),
             Platform::Win32,
         );
         let b = resolve_runtime_storage_root(
             false,
-            &p("E:/builds/custom-target/debug/aivc-app.exe"),
+            &p("E:/builds/custom-target/debug/AI.exe"),
             &p("D:/code/ai/aivc-rs"),
             Platform::Win32,
         );

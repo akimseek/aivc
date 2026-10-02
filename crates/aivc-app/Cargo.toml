@@ -8,6 +8,12 @@ authors.workspace = true
 repository.workspace = true
 description = "唯一二进制：装配、窗口、托盘、生命周期与退出清理"
 
+# 产物名是 **AI**（Windows 下 AI.exe；macOS/Linux 同为 AI）。
+# 包名保持 aivc-app（工作区引用、xtask 分层与脚本都按包名），只有落盘的二进制换名。
+[[bin]]
+name = "AI"
+path = "src/main.rs"
+
 [dependencies]
 tauri = { workspace = true }
 aivc-core = { workspace = true }

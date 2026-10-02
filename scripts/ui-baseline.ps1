@@ -33,7 +33,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $root "target\debug\aivc-app.exe"
+$exe = Join-Path $root "target\debug\AI.exe"
 $dist = Join-Path $root "ui\dist\index.html"
 
 if (-not (Test-Path $exe)) {
@@ -41,7 +41,7 @@ if (-not (Test-Path $exe)) {
 }
 # Tauri 在**编译时**把前端嵌进二进制。只跑 vite build 会拍到旧界面。
 if ((Test-Path $dist) -and ((Get-Item $dist).LastWriteTimeUtc -gt (Get-Item $exe).LastWriteTimeUtc)) {
-    throw "ui/dist 比 aivc-app.exe 新，二进制里嵌的还是旧界面。先跑 cargo build -p aivc-app。"
+    throw "ui/dist 比 AI.exe 新，二进制里嵌的还是旧界面。先跑 cargo build -p aivc-app。"
 }
 
 $shots = Join-Path $root "shots\$Name"

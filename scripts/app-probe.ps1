@@ -60,7 +60,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $root "target\debug\aivc-app.exe"
+$exe = Join-Path $root "target\debug\AI.exe"
 if (-not (Test-Path $exe)) {
   throw "找不到 $exe；先跑 .\scripts\cargo.ps1 build -p aivc-app"
 }
@@ -69,7 +69,7 @@ if (-not (Test-Path $exe)) {
 # 验证的会是旧资源，而且一切看起来都「正常」。这个守卫是踩过一次之后加的。
 $dist = Join-Path $root "ui\dist\index.html"
 if ((Test-Path $dist) -and ((Get-Item $dist).LastWriteTimeUtc -gt (Get-Item $exe).LastWriteTimeUtc)) {
-  throw "ui/dist 比 aivc-app.exe 新，二进制里嵌的还是旧界面。先跑 .\scripts\cargo.ps1 build -p aivc-app"
+  throw "ui/dist 比 AI.exe 新，二进制里嵌的还是旧界面。先跑 .\scripts\cargo.ps1 build -p aivc-app"
 }
 
 # 探针可以写成 `probes\x.js`、`x.js` 或绝对路径；按顺序找，报错时把找过的都列出来。

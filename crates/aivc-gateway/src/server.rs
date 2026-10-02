@@ -1468,7 +1468,11 @@ mod tests {
         assert_eq!(record.provider_id, ProviderId::Codex);
         // 访问令牌绝不能进日志；记录的是**路径**（不含查询串，键值自然也不在）。
         assert!(!record.path.contains("ext-secret"), "{}", record.path);
-        assert!(record.path.contains("/codex/v1/responses"), "{}", record.path);
+        assert!(
+            record.path.contains("/codex/v1/responses"),
+            "{}",
+            record.path
+        );
         handle.shutdown().await;
     }
 

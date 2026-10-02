@@ -687,7 +687,10 @@ mod tests {
             Some(ProviderId::Claude)
         );
         // 终端路由不走外部分支。
-        assert_eq!(extract_external_provider("/gateway/codex/r1/v1/messages"), None);
+        assert_eq!(
+            extract_external_provider("/gateway/codex/r1/v1/messages"),
+            None
+        );
         // 未知平台与根路径都不是外部路由。
         assert_eq!(extract_external_provider("/openai/v1"), None);
         assert_eq!(extract_external_provider("/"), None);

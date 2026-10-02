@@ -45,8 +45,9 @@ use crate::response::{
     extract_gateway_response_error, has_structured_gateway_payload, matches_gateway_failover_error,
 };
 use crate::routes::{
-    AuthRequest, RouteMode, RouteRegistry, VendorRoute, extract_provider, extract_route_id,
-    has_external_access_token, has_route_token,
+    AuthRequest, RouteMode, RouteRegistry, VendorRoute, external_route_id,
+    extract_external_provider, extract_provider, extract_route_id, has_external_access_token,
+    has_route_token,
 };
 use crate::upstream::{build_upstream_headers, join_upstream_url};
 
@@ -542,9 +543,24 @@ async fn handle_inner(
     let raw_body = request.into_body();
 
     // 路由解析 + 鉴权。
+    //
+    // 两类路径两个分支（2026-10-02 统一外部接入）：
+    // - `/gateway/<平台>/<编号>/…`：终端路由，按编号查注册表；
+    // - `/<平台>/…`：外部接入，每平台一条**惰性注册**的合成路由
+    //   （`external-<平台>`，动态候选池、共享令牌鉴权）。
+    let external_provider = extract_external_provider(&path);
+    if let Some(provider) = external_provider {
+        // 命中一次之后只读：先读锁查，缺了再写锁补。
+        if state.routes.read().await.external_route(provider).is_none() {
+            state.routes.write().await.ensure_external_route(provider);
+        }
+    }
     let (route, external) = {
         let routes = state.routes.read().await;
-        let route_id = extract_route_id(&path);
+        let route_id = match external_provider {
+            Some(provider) => external_route_id(provider),
+            None => extract_route_id(&path),
+        };
         // 这几条路径**都没有转发**。保持 `outcome = ok` 是有意的（不是供应商的错，
         // 记成失败会污染按供应商统计的失败率与熔断判定），但必须留下**原因**——
         // 否则它在日志里与一次真正转发成功的记录长得一样。见 `mark_ok_with`。
@@ -552,7 +568,12 @@ async fn handle_inner(
             tracker.mark_ok_with("ROUTE_NOT_FOUND");
             return json_error(StatusCode::NOT_FOUND, messages::ROUTE_NOT_FOUND);
         };
-        if extract_provider(&path) != Some(route.provider_id) {
+        // 平台必须与路径一致：终端路由看第 2 段，外部路由看第 1 段。
+        let provider_matches = match external_provider {
+            Some(provider) => route.provider_id == provider,
+            None => extract_provider(&path) == Some(route.provider_id),
+        };
+        if !provider_matches {
             tracker.mark_ok_with("ROUTE_NOT_FOUND");
             return json_error(StatusCode::NOT_FOUND, messages::ROUTE_NOT_FOUND);
         }
@@ -1254,6 +1275,7 @@ mod tests {
     use super::*;
     use aivc_core::gateway::GatewayOutcome;
     use aivc_core::time::Timestamp;
+    use sha2::{Digest, Sha256};
     use std::time::Duration;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1323,6 +1345,147 @@ mod tests {
             .await;
         let handle = serve(Arc::clone(&state)).await.expect("serve");
         (handle, source)
+    }
+
+    /// 外部接入形态的服务器：启用共享令牌（库内只存 SHA-256）。
+    async fn start_external(
+        vendors: Vec<ApiVendor>,
+        secret: &str,
+    ) -> (GatewayHandle, Arc<RecordingSource>) {
+        let settings = GatewaySettings {
+            enabled: true,
+            port: 0,
+            external_enabled: true,
+            external_token_hash: Some(hex::encode(Sha256::digest(secret.as_bytes()))),
+            ..GatewaySettings::default()
+        };
+        let source = Arc::new(RecordingSource::new(vendors, settings));
+        let state = Arc::new(GatewayState::new(source.clone()).expect("state"));
+        let handle = serve(Arc::clone(&state)).await.expect("serve");
+        (handle, source)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn external_requests_are_rejected_until_enabled() {
+        let upstream = MockServer::start().await;
+        // 默认设置：`external_enabled = false`。
+        let source = Arc::new(RecordingSource::new(
+            vec![vendor("v1", &upstream.uri(), 1)],
+            GatewaySettings {
+                enabled: true,
+                port: 0,
+                ..GatewaySettings::default()
+            },
+        ));
+        let state = Arc::new(GatewayState::new(source).expect("state"));
+        let handle = serve(Arc::clone(&state)).await.expect("serve");
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/codex/v1/responses", handle.address))
+            .bearer_auth("ext-secret")
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(response.status(), 503);
+        let body = response.text().await.expect("body");
+        assert!(body.contains(messages::EXTERNAL_API_DISABLED), "{body}");
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn external_requests_need_the_shared_token() {
+        let upstream = MockServer::start().await;
+        let (handle, _source) =
+            start_external(vec![vendor("v1", &upstream.uri(), 1)], "ext-secret").await;
+        let client = reqwest::Client::new();
+
+        // 不带令牌。
+        let response = client
+            .post(format!("{}/codex/v1/responses", handle.address))
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(response.status(), 401);
+
+        // 令牌不对。
+        let response = client
+            .post(format!("{}/codex/v1/responses", handle.address))
+            .bearer_auth("wrong")
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(response.status(), 401);
+
+        // 换一种携带方式（x-api-key）就认：上游没有挂 mock 会回 404，
+        // 关键是**不是 401**——鉴权这一关已经过了。
+        let response = client
+            .post(format!("{}/codex/v1/responses", handle.address))
+            .header("x-api-key", "ext-secret")
+            .send()
+            .await
+            .expect("request");
+        assert_ne!(response.status(), 401);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn external_requests_reach_the_pool_and_keep_the_protocol_path() {
+        let upstream = MockServer::start().await;
+        // mock 只在收到 `/v1/responses` 时命中：前缀剥离错误会让这里拿不到 200。
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
+            .mount(&upstream)
+            .await;
+
+        let (handle, source) =
+            start_external(vec![vendor("v1", &upstream.uri(), 1)], "ext-secret").await;
+        let client = reqwest::Client::new();
+        let response = client
+            // 认证走查询参数，顺便验证 `?key=` 被摘掉、其余参数保留。
+            .post(format!(
+                "{}/codex/v1/responses?stream=true&key=ext-secret",
+                handle.address
+            ))
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(response.status(), 200);
+
+        let mut records = Vec::new();
+        for _ in 0..50 {
+            records = source.taken();
+            if !records.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(records.len(), 1, "一次请求应当产生一条记录");
+        let record = &records[0];
+        // 合成路由的编号是 `external-<平台>`（日志里一眼可辨）。
+        assert_eq!(record.route_id, "external-codex");
+        assert_eq!(record.provider_id, ProviderId::Codex);
+        // 访问令牌绝不能进日志；记录的是**路径**（不含查询串，键值自然也不在）。
+        assert!(!record.path.contains("ext-secret"), "{}", record.path);
+        assert!(record.path.contains("/codex/v1/responses"), "{}", record.path);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn unknown_top_level_paths_are_not_external_routes() {
+        let upstream = MockServer::start().await;
+        let (handle, _source) =
+            start_external(vec![vendor("v1", &upstream.uri(), 1)], "ext-secret").await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/openai/v1/responses", handle.address))
+            .bearer_auth("ext-secret")
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(response.status(), 404);
+        handle.shutdown().await;
     }
 
     /// 记录切换通知。

@@ -274,17 +274,13 @@ export const enableVendor = (id: string) =>
 /**
  * 保存供应商（新建或更新）。
  *
- * 后端把**整个参数对象**反序列化成 `ApiVendorInput`，字段名必须逐个对上：
- * `providerId` / `name` / `apiKey` / `apiBaseUrl` / `sort?` / `enabled?` / `id?`。
+ * 后端把**整个参数对象**反序列化成 `ApiVendorInput`，字段名必须逐个对上
+ * （camelCase）：`providerId` / `name` / `apiKey` / `apiBaseUrl` / `sort?` /
+ * `enabled?` / `id?`。
  *
  * `apiKey` **留空表示沿用旧值**（领域层的归一化语义），因此编辑时不必重新输入密钥。
- */
-/**
- * 新建或更新一个供应商。
- *
- * 字段名与后端 `ApiVendorInput`（camelCase）逐字对应。`pricing` / `balanceQuery` /
- * `modelQuery` 都是**可选**的：不传表示不设置，传空对象则是「设置了但什么都没有」，
- * 两者不是一回事。
+ * `pricing` / `balanceQuery` / `modelQuery` 都是**可选**的：不传表示不设置，
+ * 传空对象则是「设置了但什么都没有」——两者不是一回事。
  */
 export const saveVendor = (request: {
   id?: string;
@@ -677,16 +673,13 @@ export const chooseDirectory = (title?: string) =>
   invoke<string | null>("dialog:choose-directory", title ? { title } : {});
 
 /**
- * 弹出原生**文件**选择框（限定 `.md`）。
- *
- * 技能既可以是目录，也可以是单个 `SKILL.md` —— 后端的 `import_from_path` 按
- * `path.is_dir()` 自动判断，两种都支持。取消同样返回 `null`。
- */
-/**
  * 弹出原生**文件**选择框。
  *
  * `kind` 决定过滤器：`"image"` 只列图片，`"skill"` 只列 `.md`，其余不加过滤器。
  * **此前过滤器写死是 `.md`**，于是自管输入的「添加文件」实际上只挑得到 Markdown。
+ *
+ * 技能导入既可以是目录也可以是单个 `SKILL.md`（后端 `import_from_path` 按
+ * `path.is_dir()` 自动判断，两种都支持）；用户取消时返回 `null`。
  */
 export const chooseFile = (title?: string, kind?: "skill" | "image" | "any") =>
   invoke<string | null>("dialog:choose-file", {
@@ -826,7 +819,6 @@ export const listSessionChildren = (parentSessionId: string, targetId?: string) 
     parentSessionId,
     ...(targetId ? { targetId } : {})
   });
-
 
 /**
  * 启动一路终端。

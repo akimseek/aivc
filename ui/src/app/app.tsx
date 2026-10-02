@@ -639,8 +639,8 @@ export function App() {
    *
    * 历史视图**不**吃这个值——它吃 `console.selectedSession`，与消息列表同源：
    * 两者一旦分叉（右键菜单的导出 / 打开目录 / 重命名 / 复制只改选中项、不动标签），
-   * 历史视图就会出现「S 的标题 + R 的消息」。画布该跟标签还是跟选中，是更上一层
-   * 的设计问题（批次二再议）。
+   * 历史视图就会出现「S 的标题 + R 的消息」。**口径已裁定（R32）：画布跟列表选中项走**，
+   * 标签自己的会话只喂信息条——分叉的两个动作都只改选中项，画布跟选中才不会错位。
    */
   const tabSession = workspace.activeTab?.sessionId ? activeSession : null;
 

@@ -211,6 +211,20 @@ export function SkillsPanel({
                     >
                       {skill.enabled ? "禁用" : "启用"}
                     </Button>
+                    {/* 移入回收站（可还原）。销毁是回收站视图里的另一个动作——
+                        两个动作、两个位置，避免在安装列表里误触不可逆的那一个。
+                        与会话的同类操作一样走 danger 档：它是这一行里唯一会「删东西」的。 */}
+                    <Button
+                      small
+                      variant="danger"
+                      onClick={() =>
+                        void act(`Skill 已移入回收站：${skill.name}`, () =>
+                          api.deleteSkill(targetId, skill.name)
+                        )
+                      }
+                    >
+                      移入回收站
+                    </Button>
                   </>
                 ) : (
                   <>

@@ -265,6 +265,40 @@ describe("SkillsPanel：Skill 动作要有回音", () => {
     expect(onNotify.mock.calls[0][0]).toContain("demo");
     expect(onNotify.mock.calls[0][0]).toContain("禁用");
   });
+
+  it("**移入回收站**：走 `skill:delete`、报一声、列表重载", async () => {
+    // 后端 `skill:delete` 的语义就是「移进回收站」（返回 `movedTo`）——
+    // 但前端从未接线：回收站视图能还原、能彻底删除，**却没有把技能放进去的入口**。
+    // 这一条钉住入口存在、命令正确、提示带名、删完重载。
+    const onNotify = vi.fn();
+    const calls: string[] = [];
+    fakeRuntime({
+      "skill:list": () => {
+        calls.push("list");
+        return [skill];
+      },
+      "skill:delete": (args) => {
+        calls.push(`delete:${String(args.name)}`);
+        return { movedTo: "/s/trash/demo" };
+      }
+    });
+    const view = render(
+      <SkillsPanel targetId="codex:local" onError={vi.fn()} onNotify={onNotify} />
+    );
+    const button = (label: string) =>
+      [...view.container.querySelectorAll("button")].find(
+        (item) => (item.textContent ?? "").trim() === label
+      );
+    await waitFor(() => expect(button("移入回收站")).toBeTruthy());
+    await act(async () => {
+      button("移入回收站")!.click();
+    });
+    await waitFor(() => expect(calls).toContain("delete:demo"));
+    // 删完必须重载：那条技能已经不在已安装列表里了。
+    expect(calls.filter((item) => item === "list").length).toBeGreaterThanOrEqual(2);
+    expect(String(onNotify.mock.calls[0]![0])).toContain("demo");
+    expect(String(onNotify.mock.calls[0]![0])).toContain("移入回收站");
+  });
 });
 
 /**

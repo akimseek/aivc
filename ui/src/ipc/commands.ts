@@ -356,6 +356,10 @@ export const setSkillEnabled = (targetId: string, name: string, enabled: boolean
 export const openSkillFolder = (targetId: string) =>
   invoke<unknown>("skill:open-folder", { targetId });
 
+/** 把技能移入回收站（可还原；不可逆的「彻底删除」在回收站视图里）。 */
+export const deleteSkill = (targetId: string, name: string) =>
+  invoke<{ movedTo: string }>("skill:delete", { targetId, name });
+
 /** 列出回收站里的技能。 */
 export const listTrashSkills = (targetId: string) =>
   invoke<SkillEntry[]>("skill:list-trash", { targetId });

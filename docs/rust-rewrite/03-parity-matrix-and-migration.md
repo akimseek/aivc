@@ -159,6 +159,11 @@
 | G46 | 供应商切换事件含 `reason`（manual / candidate-pool / failure）与 `mode` | ✅ | 集成测试 |
 | G47 | 路由未绑定终端时暂存切换原因，绑定后补发 | ✅ | 单测 |
 
+> 2026-10-02 偏离（G41 相关）：外部接入路径由旧版 `/external/<平台>` 改为 `/<平台>`
+> （短路径，语义不变；终端路由 `/gateway/…` 与令牌语义不动）。设计与裁定见
+> `docs/superpowers/specs/2026-10-02-gateway-unified-external-design.md`，
+> 落地记录见 `49-gateway-unified-external.md`。
+
 ## H. 供应商管理
 
 | # | 行为 | 级别 | 证据 |

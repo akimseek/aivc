@@ -16,6 +16,16 @@ import type { ITheme } from "@xterm/xterm";
  * 值的来源：明亮取 `:root` 的 `--term-bg` / `--term-text` / `--term-cursor`，
  * 暗黑取 `[data-theme="dark"]` 的同名三项（见 `tokens.css`）。
  */
+/**
+ * 终端字体栈。
+ *
+ * 与主题同理：xterm 读不到 CSS 变量，字体也得在这里抄一份 `--ui-font-mono`
+ * （tokens.css 的排版块）的值——**两处都改才是完整的改动**。
+ * `terminal-theme.test.ts` 从 tokens.css 读出来逐字比对，改漏一处就红。
+ */
+export const TERMINAL_FONT_FAMILY =
+  '"Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace';
+
 export function terminalThemeFor(resolved: "light" | "dark"): ITheme {
   if (resolved === "dark") {
     return {

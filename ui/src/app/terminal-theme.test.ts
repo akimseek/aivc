@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { terminalThemeFor } from "./terminal-theme";
+import { TERMINAL_FONT_FAMILY, terminalThemeFor } from "./terminal-theme";
 
 /**
  * 把「xterm 主题」与「tokens.css」钉在一起。
@@ -66,5 +66,12 @@ describe("terminalThemeFor", () => {
     expect(light.background).not.toBe(dark.background);
     expect(light.foreground).not.toBe(dark.foreground);
     expect(light.cursor).not.toBe(dark.cursor);
+  });
+
+  it("终端字体栈与 tokens.css 的 --ui-font-mono 逐字一致", () => {
+    // 字体在独立的 `:root`（排版）块里，不属于明暗任何一块——直接全文取。
+    const match = /--ui-font-mono\s*:\s*([^;]+);/.exec(TOKENS_CSS);
+    if (!match?.[1]) throw new Error("tokens.css 里找不到 --ui-font-mono");
+    expect(TERMINAL_FONT_FAMILY).toBe(match[1].trim());
   });
 });

@@ -2445,6 +2445,9 @@ select {
 .status-vendor.warn {
   border-radius: var(--ui-radius-sm);
   padding: 0 6px;
+  /* 前一行为 `color-mix` 的静态回退：老 WebView 不认 color-mix 时整条声明会被
+     丢掉，底色就没了——先给一个主题 token，认得的浏览器再由下一行覆盖。 */
+  background: var(--ui-warn-soft);
   background: color-mix(in srgb, var(--ui-warn) 18%, transparent);
   color: var(--ui-warn);
   font-weight: 600;
@@ -2807,7 +2810,7 @@ select {
   max-height: 40vh;
   overflow: auto;
   resize: vertical;
-  font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+  font-family: var(--ui-font-mono);
   font-size: 12px;
   white-space: pre;
 }

@@ -6,7 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import * as api from "../../ipc/commands";
 import { ComposerInput } from "./composer/composer-input";
 import { TerminalSearchBar } from "./terminal-search-bar";
-import { terminalThemeFor } from "../../app/terminal-theme";
+import { TERMINAL_FONT_FAMILY, terminalThemeFor } from "../../app/terminal-theme";
 import { TerminalPasteDialog, TerminalTextContextMenu } from "./terminal-text-menu";
 import type { TerminalSink } from "../../app/terminal-output";
 
@@ -219,7 +219,7 @@ export function TerminalPane({
     const term = new Terminal({
       convertEol: false,
       cursorBlink: true,
-      fontFamily: 'Consolas, "Cascadia Mono", "Courier New", monospace',
+      fontFamily: TERMINAL_FONT_FAMILY,
       fontSize: 13,
       // 主题由 props 决定（xterm 读不到 CSS 变量，值在 `terminal-theme.ts`）。
       theme: terminalThemeFor(resolvedTheme)

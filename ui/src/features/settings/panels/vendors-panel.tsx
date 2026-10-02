@@ -52,6 +52,12 @@ import { VendorConfigReader, VendorModelProbe, balanceText } from "./vendor-prob
  * 新增供应商），下面是厂商过滤 chips 与主表；「测连接」与「读本地配置」按需在
  * 表格下方展开卡片，不再各占一张常驻卡片——它们是偶尔用一次的动作，
  * 常驻会把主表挤到屏幕外。余额则**回到它属于的地方**：供应商自己那一行。
+ *
+ * # 2026-10-02 实机反馈后的三处
+ *
+ * 1. 表单**分区两列**（基本信息 / 计费）+ 必填红 * + 点「创建」就地校验
+ *    （此前靠禁用按钮，点了没反应也没提示）；2. 余额与操作**拆成两列**；
+ * 3. 操作列新增「复制」＝克隆为新供应商（id 留空、密钥重填）。
  */
 
 /** 供应商编辑草稿。数字字段用字符串存——输入框里「空」与「0」不是一回事。 */
@@ -82,6 +88,9 @@ type VendorDraft = {
   balanceQuery: string;
   modelQuery: string;
 };
+
+/** 草稿里带必填校验的三个字段。 */
+type VendorFieldKey = "name" | "apiBaseUrl" | "apiKey";
 
 /** 厂商过滤的取值。`"all"` 表示不过滤。 */
 type ProviderFilter = AiProviderId | "all";
@@ -276,6 +285,8 @@ export function VendorsPanel({
   const [filter, setFilter] = useState<ProviderFilter>("all");
   /** 正在编辑的草稿；`id` 为空表示新建。`null` 表示表单未打开（显示主表）。 */
   const [draft, setDraft] = useState<VendorDraft | null>(null);
+  /** 字段级报错（名称/地址/Key）。提交时给出；改哪个字段就消掉它那条。 */
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<VendorFieldKey, string>>>({});
   /** 下方展开的工具：测连接 / 读本地配置。空串表示都收起。 */
   const [tool, setTool] = useState<"" | "probe" | "config">("");
   /** 批量刷余额是否在跑。单家的进行中状态在 `balance` 里逐行记。 */
@@ -426,8 +437,33 @@ export function VendorsPanel({
     }
   }, [vendors, toast, onError]);
 
+  /**
+   * 更新草稿里的一个字段。
+   *
+   * 若是带必填校验的三个字段之一，**顺带消掉它那条报错**——用户正在改它，
+   * 旧结论已经过期；错误一直挂着会让人以为改的没生效。
+   */
+  const setDraftField = <K extends keyof VendorDraft>(key: K, value: VendorDraft[K]) => {
+    setDraft((current) => (current ? { ...current, [key]: value } : current));
+    if (key === "name" || key === "apiBaseUrl" || key === "apiKey") {
+      setFieldErrors((current) => ({ ...current, [key]: undefined }));
+    }
+  };
+
   const save = async () => {
     if (!draft) return;
+    // 必填先于费率/JSON：这三条是「表单填没填完」，比格式问题更靠前。
+    // 报错**落在字段旁边**（旧平台同一套做法）——此前靠禁用按钮，点了没反应也没提示。
+    const basicErrors: Partial<Record<VendorFieldKey, string>> = {};
+    if (!draft.name.trim()) basicErrors.name = "请输入供应商名称。";
+    if (!draft.apiBaseUrl.trim()) basicErrors.apiBaseUrl = "请输入 API 请求地址。";
+    // 编辑时留空 = 沿用原密钥；只有新建必须填。
+    if (!draft.id && !draft.apiKey.trim()) basicErrors.apiKey = "请输入 API Key。";
+    if (Object.keys(basicErrors).length > 0) {
+      setFieldErrors(basicErrors);
+      return;
+    }
+    setFieldErrors({});
     // 三个高级字段先解析：**任何一处不合法就整体不提交**。
     // 提交一半再报错，用户不知道哪一项存进去了。
     const inputPrice = parsePrice(draft.inputPrice, "输入费率");
@@ -489,6 +525,7 @@ export function VendorsPanel({
     // 表单开着时点「新增」会把草稿整个换掉——和删除一样是**不可逆**的（刚填的没了），
     // 因此先问一次；取消则什么都不动。手法与删除确认一致（`window.confirm`）。
     if (draft !== null && !window.confirm("正在编辑供应商，放弃当前修改并新建？")) return;
+    setFieldErrors({});
     setDraft({
       id: "",
       providerId: defaultProvider(),
@@ -600,110 +637,105 @@ export function VendorsPanel({
 
       {draft ? (
         <div className="editor">
-          <div className="field-grid">
-            {/*
-              **模型厂商**是一组按钮而不是下拉。
-              选项只有四个、而且这是这张表单里最要紧的一个选择——下拉会把
-              「我要加的是哪一家」藏在一次点击之后，而按钮让四家一直看得见。
-              这与旧平台一致。
-            */}
-            <Field
-              label="模型厂商"
-              hint={
-                draft.id
-                  ? "改动会把这条供应商移到另一家的候选池。"
-                  : "这个供应商服务哪一家模型；决定它进哪个候选池。"
-              }
-            >
-              <ChipGroup
-                value={draft.providerId}
-                onChange={(value) =>
-                  setDraft((current) =>
-                    current ? { ...current, providerId: value as AiProviderId } : current
-                  )
+          <section className="vendor-form-section">
+            <div className="vendor-form-section-title">基本信息</div>
+            <div className="field-grid vendor-form-grid">
+              {/*
+                **模型厂商**是一组按钮而不是下拉。
+                选项只有四个、而且这是这张表单里最要紧的一个选择——下拉会把
+                「我要加的是哪一家」藏在一次点击之后，而按钮让四家一直看得见。
+                这与旧平台一致。
+              */}
+              <Field
+                className="span-full"
+                label="模型厂商"
+                hint={
+                  draft.id
+                    ? "改动会把这条供应商移到另一家的候选池。"
+                    : "这个供应商服务哪一家模型；决定它进哪个候选池。"
                 }
-                options={providers.map((item) => ({ value: item.id, label: item.label }))}
-              />
-            </Field>
+              >
+                <ChipGroup
+                  value={draft.providerId}
+                  onChange={(value) => setDraftField("providerId", value as AiProviderId)}
+                  options={providers.map((item) => ({ value: item.id, label: item.label }))}
+                />
+              </Field>
 
-            <Field label="名称">
-              <TextInput
-                value={draft.name}
-                placeholder="例如 官方 v2"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current ? { ...current, name: event.target.value } : current
-                  )
-                }
-              />
-            </Field>
+              <Field label="名称" required error={fieldErrors.name}>
+                <TextInput
+                  value={draft.name}
+                  required
+                  aria-invalid={fieldErrors.name ? true : undefined}
+                  placeholder="例如 官方 v2"
+                  onChange={(event) => setDraftField("name", event.target.value)}
+                />
+              </Field>
 
-            <Field label="API 地址">
-              <TextInput
-                value={draft.apiBaseUrl}
-                placeholder="https://api.example.com/v1"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current ? { ...current, apiBaseUrl: event.target.value } : current
-                  )
-                }
-              />
-            </Field>
+              <Field label="API 地址" required error={fieldErrors.apiBaseUrl}>
+                <TextInput
+                  value={draft.apiBaseUrl}
+                  required
+                  aria-invalid={fieldErrors.apiBaseUrl ? true : undefined}
+                  placeholder="https://api.example.com/v1"
+                  onChange={(event) => setDraftField("apiBaseUrl", event.target.value)}
+                />
+              </Field>
 
-            <Field label="API Key" hint={draft.id ? "留空表示沿用原密钥。" : undefined}>
-              <TextInput
-                value={draft.apiKey}
-                placeholder={draft.id ? "（不修改）" : "sk-…"}
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current ? { ...current, apiKey: event.target.value } : current
-                  )
-                }
-              />
-            </Field>
+              {/*
+                API Key 只在**新建**时必填；编辑时留空 = 沿用原密钥（照旧平台），
+                因此编辑态下不给红标。报错由提交时的校验给出。
+              */}
+              <Field
+                label="API Key"
+                required={!draft.id}
+                error={fieldErrors.apiKey}
+                hint={draft.id ? "留空表示沿用原密钥。" : undefined}
+              >
+                <TextInput
+                  value={draft.apiKey}
+                  aria-invalid={fieldErrors.apiKey ? true : undefined}
+                  placeholder={draft.id ? "（不修改）" : "sk-…"}
+                  onChange={(event) => setDraftField("apiKey", event.target.value)}
+                />
+              </Field>
 
-            <Field label="排序" hint="同厂商内唯一，决定候选池顺序。">
-              <TextInput
-                value={draft.sort}
-                inputMode="numeric"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current ? { ...current, sort: event.target.value } : current
-                  )
-                }
-              />
-            </Field>
+              <Field label="排序" hint="同厂商内唯一，决定候选池顺序。">
+                <TextInput
+                  value={draft.sort}
+                  inputMode="numeric"
+                  onChange={(event) => setDraftField("sort", event.target.value)}
+                />
+              </Field>
+            </div>
+          </section>
 
-            {/*
-              费率。后端 `VendorPricing` 两个字段都是可选的，因此留空 = 未设置。
-              **与 0 不是一回事**：0 是免费，未设置是「不知道」，表里那一格显示 `-`。
-            */}
-            <Field label="输入费率" hint="每百万 Token 的美元价；留空表示未设置。">
-              <TextInput
-                value={draft.inputPrice}
-                inputMode="decimal"
-                placeholder="例如 0.55"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current ? { ...current, inputPrice: event.target.value } : current
-                  )
-                }
-              />
-            </Field>
+          <section className="vendor-form-section">
+            <div className="vendor-form-section-title">计费（可选）</div>
+            <div className="field-grid vendor-form-grid">
+              {/*
+                费率。后端 `VendorPricing` 两个字段都是可选的，因此留空 = 未设置。
+                **与 0 不是一回事**：0 是免费，未设置是「不知道」，表里那一格显示 `-`。
+              */}
+              <Field label="输入费率" hint="每百万 Token 的美元价；留空表示未设置。">
+                <TextInput
+                  value={draft.inputPrice}
+                  inputMode="decimal"
+                  placeholder="例如 0.55"
+                  onChange={(event) => setDraftField("inputPrice", event.target.value)}
+                />
+              </Field>
 
-            <Field label="输出费率" hint="每百万 Token 的美元价；留空表示未设置。">
-              <TextInput
-                value={draft.outputPrice}
-                inputMode="decimal"
-                placeholder="例如 2.2"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current ? { ...current, outputPrice: event.target.value } : current
-                  )
-                }
-              />
-            </Field>
-          </div>
+              <Field label="输出费率" hint="每百万 Token 的美元价；留空表示未设置。">
+                <TextInput
+                  value={draft.outputPrice}
+                  inputMode="decimal"
+                  placeholder="例如 2.2"
+                  onChange={(event) => setDraftField("outputPrice", event.target.value)}
+                />
+              </Field>
+            </div>
+          </section>
 
           {/*
             高级 JSON 单独一块、默认收起。旧的供应商对话框把这两项混在表单里，
@@ -722,11 +754,7 @@ export function VendorsPanel({
                 spellCheck={false}
                 value={draft.balanceQuery}
                 placeholder='{"endpoint":"/user/balance","method":"GET"}'
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current ? { ...current, balanceQuery: event.target.value } : current
-                  )
-                }
+                onChange={(event) => setDraftField("balanceQuery", event.target.value)}
               />
             </Field>
             <Field label="模型查询配置">
@@ -736,22 +764,17 @@ export function VendorsPanel({
                 spellCheck={false}
                 value={draft.modelQuery}
                 placeholder='{"endpoint":"/models","authMode":"bearer"}'
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current ? { ...current, modelQuery: event.target.value } : current
-                  )
-                }
+                onChange={(event) => setDraftField("modelQuery", event.target.value)}
               />
             </Field>
           </details>
 
           <Toolbar>
-            <Button
-              small
-              variant="primary"
-              disabled={!draft.name.trim() || !draft.apiBaseUrl.trim()}
-              onClick={() => void save()}
-            >
+            {/*
+              **不禁用**：缺字段时在点击的那一刻就地报错。此前按钮在名称/地址为空时
+              直接禁用、点击毫无反应——用户实测的「没反应，也没提示」正是这种形态。
+            */}
+            <Button small variant="primary" onClick={() => void save()}>
               {draft.id ? "保存修改" : "创建"}
             </Button>
             <Button small onClick={() => setDraft(null)}>
@@ -832,9 +855,9 @@ export function VendorsPanel({
                   <th>费率 (输入/输出/M)</th>
                   <th>健康</th>
                   <th>候选池状态</th>
-                  {/* 这一格装着两样东西：余额状态机（含单家刷新）与三个操作按钮。
-                      列头如实写出来，用户才找得到「余额」在哪一列。 */}
-                  <th>操作 / 余额</th>
+                  {/* 余额与操作**分列**（2026-10-02 实机反馈：合并成一格读不清）。 */}
+                  <th>余额</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -904,10 +927,13 @@ export function VendorsPanel({
                             刷新
                           </Button>
                         </div>
+                      </td>
+                      <td>
                         <div className="vendor-row-actions">
                           <Button
                             small
-                            onClick={() =>
+                            onClick={() => {
+                              setFieldErrors({});
                               setDraft({
                                 id: vendor.id,
                                 providerId: vendor.providerId,
@@ -923,10 +949,39 @@ export function VendorsPanel({
                                 outputPrice: formatPrice(vendor.pricing?.outputPerMillionUsd),
                                 balanceQuery: formatJson(vendor.balanceQuery),
                                 modelQuery: formatJson(vendor.modelQuery)
-                              })
-                            }
+                              });
+                            }}
                           >
                             编辑
+                          </Button>
+                          {/*
+                            **复制 = 克隆为新供应商**（用户 2026-10-02 选定的语义）：
+                            预填整份配置（名称带「副本」），但 **id 留空、密钥必须重填**——
+                            这是它与「编辑」的本质区别，也是它真正有用的那个场景：
+                            同一家中转商配第二个密钥时不用从头填。
+                          */}
+                          <Button
+                            small
+                            title="复制这条配置新建供应商（名称带「副本」，API Key 需重填）"
+                            onClick={() => {
+                              setFieldErrors({});
+                              setDraft({
+                                id: "",
+                                providerId: vendor.providerId,
+                                name: `${vendor.name} 副本`,
+                                apiKey: "",
+                                apiBaseUrl: vendor.apiBaseUrl,
+                                sort: String(vendors.length),
+                                // 与「新增」同一理由：启用会写 CLI 配置文件，不顺手做。
+                                enabled: false,
+                                inputPrice: formatPrice(vendor.pricing?.inputPerMillionUsd),
+                                outputPrice: formatPrice(vendor.pricing?.outputPerMillionUsd),
+                                balanceQuery: formatJson(vendor.balanceQuery),
+                                modelQuery: formatJson(vendor.modelQuery)
+                              });
+                            }}
+                          >
+                            复制
                           </Button>
                           <Button
                             small

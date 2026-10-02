@@ -168,6 +168,7 @@ describe("VendorsPanel：模型厂商选择", () => {
     });
     await typeInto(inputsByPlaceholder("官方")!, "测试家");
     await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
     await act(async () => {
       byText("创建")!.click();
     });
@@ -192,6 +193,7 @@ describe("VendorsPanel：模型厂商选择", () => {
 
     await typeInto(inputsByPlaceholder("官方")!, "中转站");
     await typeInto(inputsByPlaceholder("https://")!, "https://b/v1");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
     await act(async () => {
       byText("创建")!.click();
     });
@@ -204,13 +206,19 @@ describe("VendorsPanel：模型厂商选择", () => {
     });
   });
 
-  it("没有 API 地址时创建按钮禁用（地址是必填）", async () => {
-    const { byText, inputsByPlaceholder, typeInto } = setup();
+  it("没有 API 地址时点创建：就地报错、不提交（不再静默禁用）", async () => {
+    const { byText, view, runtime, inputsByPlaceholder, typeInto } = setup();
     await act(async () => {
       byText("新增供应商")!.click();
     });
     await typeInto(inputsByPlaceholder("官方")!, "只有名字");
-    expect(byText("创建")!.disabled).toBe(true);
+    // 按钮可点（点不动且无提示正是用户报的「没反应」）；报错落在字段旁边。
+    expect(byText("创建")!.disabled).toBe(false);
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    expect(view.container.textContent).toContain("请输入 API 请求地址。");
+    expect(runtime.calls.some((item) => item.command === "vendor:save")).toBe(false);
   });
 });
 
@@ -358,13 +366,16 @@ describe("VendorsPanel：表格列", () => {
     expect(view.container.querySelectorAll("tbody tr")).toHaveLength(2);
   });
 
-  it("「操作 / 余额」列头如实说明这一格装着两样东西（余额不在列清单里）", async () => {
-    // 余额按行内状态机呈现 + 每行带单家刷新按钮，于是这一格里既有余额又有三个操作。
-    // 列头只写「操作」的话，用户找不到「余额」在哪一列。
+  it("「余额」与「操作」分列且余额在左（2026-10-02 实机反馈：合并列拆开）", async () => {
+    // 此前是一格「操作 / 余额」：余额状态机与三个操作按钮叠在同一个单元格里，
+    // 读起来分不清哪块是哪块。拆成两列后，列头必须各自如实。
     const { view } = setup({ existing: [vendor()] });
     await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
     const heads = [...view.container.querySelectorAll("thead th")].map((item) => item.textContent);
-    expect(heads).toContain("操作 / 余额");
+    const balanceAt = heads.indexOf("余额");
+    const actionsAt = heads.indexOf("操作");
+    expect(balanceAt).toBeGreaterThanOrEqual(0);
+    expect(actionsAt).toBeGreaterThan(balanceAt);
   });
 
   it("**健康列不编造数据**：有快照才显示，没有就留空（后端根本不记延时）", async () => {
@@ -751,6 +762,7 @@ describe("VendorsPanel：费率与高级 JSON 接线", () => {
     });
     await typeInto(inputsByPlaceholder("官方")!, "带费率的");
     await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
     await typeInto(inputsByPlaceholder("0.55")!, "0.55");
     await typeInto(inputsByPlaceholder("2.2")!, "2.2");
     await act(async () => {
@@ -772,6 +784,7 @@ describe("VendorsPanel：费率与高级 JSON 接线", () => {
     });
     await typeInto(inputsByPlaceholder("官方")!, "无费率");
     await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
     await act(async () => {
       byText("创建")!.click();
     });
@@ -788,6 +801,8 @@ describe("VendorsPanel：费率与高级 JSON 接线", () => {
     });
     await typeInto(inputsByPlaceholder("官方")!, "JSON 错");
     await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    // 必填先过（新增 KEY），这样下面测到的才是 JSON 那一道校验。
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
     // **在本次渲染的容器里找**，不要在 `document` 里找：那个范围包含别的测试
     // 留下的节点，写进去的值不会进当前组件的 state——测试会以「没报错」的形式失败，
     // 看起来像产品缺陷，其实是测试读错了元素。
@@ -829,5 +844,130 @@ describe("VendorsPanel：费率与高级 JSON 接线", () => {
       (item.placeholder ?? "").includes("endpoint")
     ) as HTMLTextAreaElement;
     expect(area.value).toContain("/balance");
+  });
+});
+
+describe("VendorsPanel：必填标记与就地校验（2026-10-02 实机反馈）", () => {
+  it("**必填字段带红标**：名称 / API 地址 / API Key（新建时）", async () => {
+    const { byText, view } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    const labeled = (label: string) =>
+      [...view.container.querySelectorAll(".field")].find((item) =>
+        (item.querySelector(".field-label")?.textContent ?? "").startsWith(label)
+      );
+    for (const label of ["名称", "API 地址", "API Key"]) {
+      expect(labeled(label)?.querySelector(".field-required"), label).toBeTruthy();
+    }
+    // 标记不多不少：模型厂商/排序/费率不是必填。
+    expect(view.container.querySelectorAll(".field-required")).toHaveLength(3);
+  });
+
+  it("编辑时 API Key 不是必填（留空=沿用原密钥），红标只出现两处", async () => {
+    const { byText, view } = setup({ existing: [vendor({ name: "官方" })] });
+    await waitFor(() => expect(byText("编辑")).toBeTruthy());
+    await act(async () => {
+      byText("编辑")!.click();
+    });
+    expect(view.container.querySelectorAll(".field-required")).toHaveLength(2);
+  });
+
+  it("**缺 API Key 点创建：就地报错、不提交**（用户实测的那条）", async () => {
+    const { byText, view, runtime, inputsByPlaceholder, typeInto } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await typeInto(inputsByPlaceholder("官方")!, "没填 Key");
+    await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    expect(runtime.calls.some((item) => item.command === "vendor:save")).toBe(false);
+    // 报错落在**字段旁边**（表单里就能看到），不是底部状态栏。
+    expect(view.container.textContent).toContain("请输入 API Key。");
+    expect(inputsByPlaceholder("sk-")!.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("字段全空点创建：三条必填都就地报出来", async () => {
+    const { byText, view, runtime } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    expect(runtime.calls.some((item) => item.command === "vendor:save")).toBe(false);
+    for (const message of ["请输入供应商名称。", "请输入 API 请求地址。", "请输入 API Key。"]) {
+      expect(view.container.textContent, message).toContain(message);
+    }
+  });
+
+  it("改动字段后它那条报错消失（旧结论过期）", async () => {
+    const { byText, view, inputsByPlaceholder, typeInto } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    expect(view.container.textContent).toContain("请输入 API Key。");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-x");
+    expect(view.container.textContent).not.toContain("请输入 API Key。");
+  });
+});
+
+describe("VendorsPanel：余额与操作分列 + 复制（2026-10-02 实机反馈）", () => {
+  const target = vendor({
+    id: "v1",
+    providerId: "claude",
+    name: "官方",
+    pricing: { inputPerMillionUsd: 1.5 },
+    balanceQuery: { endpoint: "/balance" }
+  });
+
+  it("表头把「余额」「操作」分成两列，两格内容在不同单元格", async () => {
+    const { view } = setup({ existing: [target] });
+    await waitFor(() => expect(view.container.querySelector("tbody tr")).toBeTruthy());
+    const headers = [...view.container.querySelectorAll("thead th")].map((item) =>
+      (item.textContent ?? "").trim()
+    );
+    expect(headers).toContain("余额");
+    expect(headers).toContain("操作");
+    expect(headers.some((text) => text.includes("操作 / 余额"))).toBe(false);
+    const balanceCell = view.container.querySelector(".vendor-balance-line")!.closest("td");
+    const actionCell = view.container.querySelector(".vendor-row-actions")!.closest("td");
+    expect(balanceCell).toBeTruthy();
+    expect(actionCell).toBeTruthy();
+    expect(balanceCell).not.toBe(actionCell);
+  });
+
+  it("「复制」把配置克隆进新建表单：地址/费率/查询保留、Key 留空待重填、不带 id", async () => {
+    const { byText, runtime, inputsByPlaceholder, typeInto } = setup({ existing: [target] });
+    await waitFor(() => expect(byText("复制")).toBeTruthy());
+    await act(async () => {
+      byText("复制")!.click();
+    });
+
+    // 新建（不是编辑）：按钮是「创建」，名称带「副本」。
+    expect(byText("创建")).toBeTruthy();
+    expect(byText("保存修改")).toBeFalsy();
+    expect(inputsByPlaceholder("官方")!.value).toBe("官方 副本");
+    expect(inputsByPlaceholder("https://")!.value).toBe("https://a/v1");
+    expect(inputsByPlaceholder("0.55")!.value).toBe("1.5");
+    // 密钥不回填：克隆出来必须重填（这也是「复制」与「编辑」的区别）。
+    expect(inputsByPlaceholder("sk-")!.value).toBe("");
+
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-clone");
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    await waitFor(() => {
+      const call = runtime.calls.find((item) => item.command === "vendor:save");
+      expect(call?.args.name).toBe("官方 副本");
+      expect(call?.args.providerId).toBe("claude");
+      // **不带 id**：这是新供应商，不是改原来那条。
+      expect(call?.args).not.toHaveProperty("id");
+    });
   });
 });

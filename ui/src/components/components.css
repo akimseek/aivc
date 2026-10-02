@@ -133,6 +133,22 @@
   line-height: 1.5;
 }
 
+/* 必填星标与字段级报错（2026-10-02 实机反馈）：报错落在字段旁边，而不是底部状态栏。 */
+.field-required {
+  margin-left: 2px;
+  color: var(--ui-danger);
+}
+
+.field-error {
+  color: var(--ui-danger);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.control[aria-invalid="true"] {
+  border-color: var(--ui-danger);
+}
+
 .control {
   width: 100%;
   height: 34px;

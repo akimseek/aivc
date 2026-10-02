@@ -2885,6 +2885,25 @@ select {
   background: var(--ui-bg-activity);
 }
 
+/* ── 供应商表单（2026-10-02：分区 + 固定两列）──────────────
+   自动折行（auto-fit）在七个字段上会随宽度任意换行、也没有分区——实机反馈
+   「看起来很乱」。改成按语义分区、每区固定两列。 */
+.vendor-form-section {
+  display: grid;
+  gap: 10px;
+}
+.vendor-form-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ui-faint);
+}
+.vendor-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.vendor-form-grid .span-full {
+  grid-column: 1 / -1;
+}
+
 /* ── 供应商的高级配置 ────────────────────────────────────
    默认收起：十几个字段的高级配置摊开后，常用的「名称/地址/Key」反而不好找。 */
 .vendor-advanced {
@@ -2926,19 +2945,20 @@ select {
   gap: var(--ui-space-1);
   justify-items: start;
 }
-/* 余额与它的刷新入口贴在一起：两者说的是同一件事。 */
+/* 余额与它的刷新入口贴在一起：两者说的是同一件事。
+   余额已独立成列（2026-10-02），内容靠列左对齐。 */
 .vendor-balance-line {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--ui-space-2);
 }
+/* 操作列：编辑 / 复制 / 启用禁用 / 删除。独立成列后不再叠在余额下面。 */
 .vendor-row-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--ui-space-2);
-  margin-top: var(--ui-space-2);
 }
 
 /* ── 故障规则的「试规则」区 ──────────────────────────────

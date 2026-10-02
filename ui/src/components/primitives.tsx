@@ -102,16 +102,32 @@ export function ChipGroup({
 export function Field({
   label,
   hint,
+  required,
+  error,
+  className,
   children
 }: {
   label: string;
   hint?: ReactNode;
+  /** 必填标记：标签后一个红星。语义上的必填交给控件的 `required` 属性。 */
+  required?: boolean;
+  /** 字段级报错：非空则显示在控件下方（红字）。由调用方在提交时给出。 */
+  error?: string;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <label className="field">
-      <span className="field-label">{label}</span>
+    <label className={["field", className].filter(Boolean).join(" ")}>
+      <span className="field-label">
+        {label}
+        {required && (
+          <span className="field-required" aria-hidden="true">
+            *
+          </span>
+        )}
+      </span>
       {children}
+      {error !== undefined && <span className="field-error">{error}</span>}
       {hint !== undefined && <span className="field-hint">{hint}</span>}
     </label>
   );

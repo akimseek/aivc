@@ -111,25 +111,29 @@ export function TerminalPane({
   const onOutputRef = useRef(onOutput);
   onOutputRef.current = onOutput;
 
-  /** 文本右键菜单。`canCopy` 在右键那一刻取定，见 `onContextMenu`。 */
+  /** 文本右键菜单。`canCopy` 与要复制的文本都在右键那一刻取定，见 `onRightMouseCapture`。 */
   const [textMenu, setTextMenu] = useState<{
     x: number;
     y: number;
     canCopy: boolean;
+    copyText: string;
   } | null>(null);
   /** 待确认的粘贴内容。非空即显示确认框，见 `TerminalPasteDialog`。 */
   const [pasteText, setPasteText] = useState<string | null>(null);
 
   /**
-   * 复制选中内容。
+   * 把一段文本写进剪贴板。
    *
-   * 拿不到选中就什么都不做——不要退化成「复制整屏」，
+   * 文本由**右键那一刻的快照**给出（见 `onRightMouseCapture`），不是「点菜单时
+   * 再读实时选区」——实测（探针 `terminal-copy.js`）：开着鼠标上报的 CLI 里，
+   * 右键会把选区清掉，实时读到的只剩空气。
+   *
+   * 空文本什么都不做——不要退化成「复制整屏」，
    * 那会把几万行塞进剪贴板，用户下一次粘贴才知道闯了祸。
    */
-  const copySelection = useCallback(() => {
-    const selection = termRef.current?.getSelection();
-    if (!selection) return;
-    void api.copyText(selection).catch(() => undefined);
+  const copyToClipboard = useCallback((text: string) => {
+    if (!text) return;
+    void api.copyText(text).catch(() => undefined);
   }, []);
 
   /** 读剪贴板并弹出确认框；空内容不弹（弹一个空白框只会让人以为坏了）。 */
@@ -252,19 +256,50 @@ export function TerminalPane({
     });
 
     /**
-     * 右键：拦掉浏览器菜单，开自己的「复制 / 粘贴」。
+     * 右键：拦掉浏览器菜单，开自己的「复制 / 粘贴」；同时**屏蔽鼠标上报**。
      *
      * 终端是个 `canvas`，浏览器默认菜单对它没有意义（「在新标签页打开图片」之类），
-     * 因此必须拦掉。而一旦拦掉，**复制一段终端输出就只剩「选中 + Ctrl+C」这一条路**，
-     * 鼠标用户没有出口。
+     * 因此必须拦掉。键盘路径仍在（选中 + Ctrl+Shift+C，xterm 原生处理），
+     * 鼠标用户在这里拿到出口。
      *
-     * `canCopy` 在这一刻取：菜单弹出后再取就已经晚了（用户可能已经点了别处，
-     * 选中也就没了）。
+     * # 为什么要在捕获阶段挡 mousedown（探针 `terminal-copy.js` 复现出的缺陷）
+     *
+     * CLI（实测 Codex，鼠标模式 "any"）开着鼠标上报时，xterm 会把右键 mousedown
+     * 当作输入上报给 PTY，而它的 `SelectionService` 有一条「用户输入即清选区」——
+     * 菜单还没弹，选中已经被清掉。两步都在这里做：
+     *
+     * 1. **快照**：趁选区还在把文本拍下来，菜单的「复制」用快照，不再依赖实时选区；
+     * 2. **`stopPropagation`**：不让这次右键到达 `host` 内部的 xterm 监听——
+     *    既不给 TUI 送半截点击，选区高亮也不再消失。鼠标上报是按下/抬起成对的，
+     *    因此 `mouseup` 一并挡掉。
+     *
+     * 捕获先于 xterm 的冒泡监听执行；document 上菜单自己的监听用的是 `pointerdown`
+     * 与滚动，属于独立事件，不受影响。
      */
+    const selectionSnapshot = { text: "", taken: false };
+    const onRightMouseCapture = (event: MouseEvent) => {
+      if (event.button !== 2) return;
+      selectionSnapshot.text = term.hasSelection() ? term.getSelection() : "";
+      selectionSnapshot.taken = true;
+      event.stopPropagation();
+    };
+    const onRightMouseUpCapture = (event: MouseEvent) => {
+      if (event.button === 2) event.stopPropagation();
+    };
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault();
-      setTextMenu({ x: event.clientX, y: event.clientY, canCopy: term.hasSelection() });
+      // 快照优先；键盘路径（Shift+F10 等）没有 mousedown，退回读实时选区。
+      const text = selectionSnapshot.taken ? selectionSnapshot.text : term.getSelection();
+      selectionSnapshot.taken = false;
+      setTextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        canCopy: text.length > 0,
+        copyText: text
+      });
     };
+    host.addEventListener("mousedown", onRightMouseCapture, true);
+    host.addEventListener("mouseup", onRightMouseUpCapture, true);
     host.addEventListener("contextmenu", onContextMenu);
 
     const syncSize = () => {
@@ -289,6 +324,8 @@ export function TerminalPane({
     return () => {
       window.cancelAnimationFrame(initial);
       observer.disconnect();
+      host.removeEventListener("mousedown", onRightMouseCapture, true);
+      host.removeEventListener("mouseup", onRightMouseUpCapture, true);
       host.removeEventListener("contextmenu", onContextMenu);
       dataSub.dispose();
       unregisterSink(terminalId);
@@ -515,7 +552,7 @@ export function TerminalPane({
           canCopy={textMenu.canCopy}
           // 有终端就能粘：粘贴是往这一路 PTY 写，不需要它是不是在跑。
           canPaste
-          onCopy={copySelection}
+          onCopy={() => copyToClipboard(textMenu.copyText)}
           onPaste={requestPaste}
           onDismiss={() => setTextMenu(null)}
         />

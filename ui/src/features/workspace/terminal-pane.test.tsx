@@ -10,6 +10,19 @@ const focusSpy = vi.hoisted(() => vi.fn());
 /** `term.open(el)` 收到的挂载点——它必须是**不带 padding** 的内层（见修复用例）。 */
 const openSpy = vi.hoisted(() => vi.fn());
 
+/** 假 xterm 的选区状态。右键快照的相关用例靠它注入「选中了什么」。 */
+const termState = vi.hoisted(() => ({ hasSelection: false, selection: "" }));
+
+/** 复制最终写进剪贴板的内容（`clipboard:copy-text` 的载荷）。 */
+const copyTextSpy = vi.hoisted(() => vi.fn(async () => null));
+
+// 只把「复制到剪贴板」换成间谍，其余 IPC 保持真实导出（它们在这些用例里不会被调到，
+// 但别的组件可能从同一模块具名导入——全量替换成假模块会伤到那条链）。
+vi.mock("../../ipc/commands", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../ipc/commands")>();
+  return { ...actual, copyText: copyTextSpy };
+});
+
 /**
  * `TerminalPane` 的两条**消费式信号**：查找（`findSignal`）与焦点（`focusRequest`）。
  *
@@ -44,10 +57,10 @@ vi.mock("@xterm/xterm", () => {
     }
     write() {}
     hasSelection() {
-      return false;
+      return termState.hasSelection;
     }
     getSelection() {
-      return "";
+      return termState.selection;
     }
     select() {}
     scrollToLine() {}
@@ -229,5 +242,109 @@ describe("TerminalPane 的查找信号", () => {
     // 计数没变，重新渲染（例如父组件因别的原因重渲）不该把它弹回来。
     view.rerender(<TerminalPane {...props({ findSignal: 1 })} />);
     expect(searchBar(view.container)).toBeNull();
+  });
+});
+
+/**
+ * 右键复制的快照机制（2026-10-02 实机缺陷的回归）。
+ *
+ * 真机缺陷：CLI（实测 Codex，鼠标模式 "any"）开着鼠标上报时，右键 mousedown
+ * 被 xterm 上报给 PTY，触发它的「用户输入即清选区」——菜单还没弹，选中已经没了，
+ * 「复制」因此不可用。完整证据见探针 `scripts/probes/terminal-copy.js`
+ * （修复前 V2 复现、修复后转 OK）。这里在 jsdom 里钉住修复的两条：
+ *
+ * 1. 右键 mousedown 在**捕获阶段**被拦住——宿主内部的监听（模拟 xterm 的）收不到，
+ *    既没有上报也就没有清选区；
+ * 2. 「复制」写的是**右键那一刻的快照**，实时选区之后被谁清掉都不影响。
+ */
+describe("TerminalPane 的右键复制（鼠标上报形态的回归）", () => {
+  beforeEach(() => {
+    // **必须清掉**：`openSpy` 还留着早前用例的挂载点，而那个节点在 `cleanup()` 之后
+    // 已经脱离 DOM——往它上面派事件到不了当前组件的处理器（写错一次，红得莫名其妙）。
+    openSpy.mockClear();
+    termState.hasSelection = false;
+    termState.selection = "";
+    copyTextSpy.mockClear();
+  });
+
+  /** 拿挂载点，并在它内部放一个深层的「事件目标」——真实的右键落在 xterm 的 canvas 上。 */
+  const mountWithTarget = () => {
+    const mount = openSpy.mock.calls[0]![0] as HTMLElement;
+    const deep = document.createElement("div");
+    mount.appendChild(deep);
+    return { mount, deep };
+  };
+
+  const menuCopyButton = (container: HTMLElement) =>
+    [...container.querySelectorAll(".context-menu button")].find(
+      (item) => item.textContent?.trim() === "复制"
+    ) as HTMLButtonElement | undefined;
+
+  it("右键 mousedown/up 在捕获阶段被拦住：宿主内部的监听（xterm 位置的）一个都收不到", () => {
+    const view = render(<TerminalPane {...props()} />);
+    const { mount, deep } = mountWithTarget();
+    let atDeep = 0;
+    let bubbleAtMount = 0;
+    deep.addEventListener("mousedown", () => {
+      atDeep += 1;
+    });
+    deep.addEventListener("mouseup", () => {
+      atDeep += 1;
+    });
+    mount.addEventListener("mousedown", () => {
+      bubbleAtMount += 1;
+    });
+    mount.addEventListener("mouseup", () => {
+      bubbleAtMount += 1;
+    });
+
+    fireEvent.mouseDown(deep, { button: 2, clientX: 30, clientY: 40 });
+    fireEvent.mouseUp(deep, { button: 2, clientX: 30, clientY: 40 });
+    expect(atDeep).toBe(0);
+    expect(bubbleAtMount).toBe(0);
+
+    // 菜单照常打开（右键没有被自己人吃掉）。
+    fireEvent.contextMenu(deep, { clientX: 30, clientY: 40 });
+    expect(view.container.querySelector(".context-menu")).not.toBeNull();
+  });
+
+  it("**点击「复制」写的是快照**——哪怕实时选区已被清掉（正是真机缺陷的形态）", async () => {
+    termState.hasSelection = true;
+    termState.selection = "第一段文本";
+    const view = render(<TerminalPane {...props()} />);
+    const { deep } = mountWithTarget();
+
+    fireEvent.mouseDown(deep, { button: 2, clientX: 30, clientY: 40 });
+    // 模拟鼠标上报的清除效果：mousedown 之后 xterm 的选区已经没了。
+    termState.hasSelection = false;
+    termState.selection = "";
+    fireEvent.contextMenu(deep, { clientX: 30, clientY: 40 });
+
+    const copy = menuCopyButton(view.container)!;
+    expect(copy.disabled).toBe(false);
+    fireEvent.click(copy);
+    await vi.waitFor(() => expect(copyTextSpy).toHaveBeenCalledWith("第一段文本"));
+  });
+
+  it("没有选中时「复制」禁用（与快照为空一致）", () => {
+    const view = render(<TerminalPane {...props()} />);
+    const { deep } = mountWithTarget();
+    fireEvent.mouseDown(deep, { button: 2, clientX: 30, clientY: 40 });
+    fireEvent.contextMenu(deep, { clientX: 30, clientY: 40 });
+    expect(menuCopyButton(view.container)?.disabled).toBe(true);
+  });
+
+  it("键盘路径（没有 mousedown）退回读实时选区", async () => {
+    termState.hasSelection = true;
+    termState.selection = "键盘选中";
+    const view = render(<TerminalPane {...props()} />);
+    fireEvent.contextMenu(view.container.querySelector(".terminal-mount")!, {
+      clientX: 10,
+      clientY: 10
+    });
+    const copy = menuCopyButton(view.container)!;
+    expect(copy.disabled).toBe(false);
+    fireEvent.click(copy);
+    await vi.waitFor(() => expect(copyTextSpy).toHaveBeenCalledWith("键盘选中"));
   });
 });

@@ -195,6 +195,7 @@ describe("VendorsPanel：供应商动作要有回音", () => {
     const inputs = [...view.container.querySelectorAll<HTMLInputElement>("input")];
     await setValue(inputs.find((i) => i.placeholder.includes("官方"))!, "新家");
     await setValue(inputs.find((i) => i.placeholder.includes("https://"))!, "https://n/v1");
+    await setValue(inputs.find((i) => i.placeholder.includes("sk-"))!, "sk-test");
     await act(async () => {
       [...view.container.querySelectorAll("button")].find((b) => b.textContent === "创建")!.click();
     });
@@ -229,6 +230,7 @@ describe("VendorsPanel：供应商动作要有回音", () => {
     const inputs = [...view.container.querySelectorAll<HTMLInputElement>("input")];
     await setValue(inputs.find((i) => i.placeholder.includes("官方"))!, "新家");
     await setValue(inputs.find((i) => i.placeholder.includes("https://"))!, "https://n/v1");
+    await setValue(inputs.find((i) => i.placeholder.includes("sk-"))!, "sk-test");
     const create = [...view.container.querySelectorAll("button")].find(
       (b) => b.textContent === "创建"
     )!;

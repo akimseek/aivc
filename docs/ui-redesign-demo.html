@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Visual Console - 现代化 UI 重构方案演示 (第九版 - 现代精研标签页版)</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    /* ─── 现代专业设计系统 (默认明亮，支持暗黑一键切换，包含终端主题) ─── */
+    :root, html.light {
+      --bg-app: #f8fafc;
+      --bg-header: #ffffff;
+      --bg-activity: #f1f5f9;
+      --bg-sidebar: #ffffff;
+      --bg-main: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f1f5f9;
+      --bg-card-active: #e2e8f0;
+      --bg-input: #ffffff;
+      --bg-badge: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --border-focus: #10b981;
+      --accent: #059669;
+      --accent-strong: #047857;
+      --accent-soft: #ecfdf5;
+      --accent-border: #a7f3d0;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #64748b;
+      
+      /* 明亮模式终端主题 (Clean VS Code / iTerm Light) */
+      --term-bg: #f8fafc;
+      --term-border: #e2e8f0;
+      --term-text: #1e293b;
+      --term-prompt: #059669;
+      --term-card-bg: #ffffff;
+      --term-card-border: #cbd5e1;
+      --term-cursor: #0f172a;
+      
+      --modal-bg: #ffffff;
+      --modal-nav: #f8fafc;
+      --status-bg: #ffffff;
+      --status-border: #e2e8f0;
+      --tab-bar-bg: #f1f5f9;
+    }
+
+    html.dark {
+      --bg-app: #0b0d13;
+      --bg-header: #11131c;
+      --bg-activity: #0d0f16;
+      --bg-sidebar: #131622;
+      --bg-main: #0b0d13;
+      --bg-card: #181b29;
+      --bg-card-hover: #1f2436;
+      --bg-card-active: #262c42;
+      --bg-input: #171a27;
+      --bg-badge: #1f2436;
+      --border-subtle: #1f2537;
+      --border-strong: #2f3750;
+      --border-focus: #10b981;
+      --accent: #10b981;
+      --accent-strong: #34d399;
+      --accent-soft: rgba(16, 185, 129, 0.15);
+      --accent-border: rgba(16, 185, 129, 0.35);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+
+      /* 暗黑模式终端主题 (Deep Dark Hacker Terminal) */
+      --term-bg: #0d0f17;
+      --term-border: #1e2434;
+      --term-text: #e2e8f0;
+      --term-prompt: #10b981;
+      --term-card-bg: #141824;
+      --term-card-border: #232b3e;
+      --term-cursor: #10b981;
+
+      --modal-bg: #151824;
+      --modal-nav: #11131c;
+      --status-bg: #0d0f16;
+      --status-border: #1b2030;
+      --tab-bar-bg: #0f121d;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 13.5px;
+      line-height: 1.5;
+      user-select: none;
+      background-color: var(--bg-app);
+      color: var(--text-main);
+      transition: background-color 150ms ease, color 150ms ease;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: var(--text-dim);
+    }
+
+    /* ─── 现代 Warp / Cursor 风格流体标签页 ─── */
+    .modern-tab {
+      transition: all 120ms ease;
+    }
+    .modern-tab-active {
+      background-color: var(--bg-card) !important;
+      border-color: var(--border-strong) !important;
+      color: var(--text-main) !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    .modern-tab-inactive {
+      background-color: transparent !important;
+      border-color: transparent !important;
+      color: var(--text-muted) !important;
+    }
+    .modern-tab-inactive:hover {
+      background-color: rgba(148, 163, 184, 0.15) !important;
+      color: var(--text-main) !important;
+    }
+
+    .session-card:hover .action-buttons {
+      opacity: 1;
+    }
+
+    .glow-dot {
+      box-shadow: 0 0 8px var(--accent);
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col overflow-hidden text-sm">
+
+  <!-- 1. 顶部全局应用栏 (Chrome / Window Header) -->
+  <header class="h-10 border-b flex items-center justify-between px-3.5 shrink-0" style="background-color: var(--bg-header); border-color: var(--border-subtle);">
+    <div class="flex items-center gap-3">
+      <!-- 品牌 Logo 与标题 -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-6 h-6 rounded-md bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center font-bold text-white text-xs shadow-xs">
+          AI
+        </div>
+        <span class="font-bold tracking-tight text-[13.5px]" style="color: var(--text-main);">AI Visual Console</span>
+        <span class="text-xs px-2 py-0.5 rounded font-mono font-medium" style="background-color: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border);">v0.1.0-rs</span>
+      </div>
+    </div>
+
+    <!-- 中间纯净留白，支持窗口平滑拖拽 -->
+    <div class="flex-1" style="-webkit-app-region: drag;"></div>
+
+    <!-- 顶部右侧：明暗主题切换 + 提醒铃铛 -->
+    <div class="flex items-center gap-2.5">
+      <!-- ☀️/🌙 明暗主题切换 -->
+      <button onclick="toggleTheme()" id="btn-theme-toggle" title="切换明亮 / 暗黑主题" class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border hover:bg-slate-100 dark:hover:bg-slate-800 transition font-medium text-xs" style="background-color: var(--bg-card); border-color: var(--border-strong); color: var(--text-main);">
+        <span id="theme-icon">☀️</span>
+        <span id="theme-label">明亮</span>
+      </button>
+
+      <!-- 提醒铃铛 -->
+      <button title="消息与关注中心" class="relative p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition" style="color: var(--text-muted);">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+        <span class="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 2. 主体布局 (Activity Bar + Sidebar + Main Stage) -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- 2.1 极窄活动栏 -->
+    <aside class="border-r flex flex-col items-center py-3 justify-between shrink-0" style="background-color: var(--bg-activity); border-color: var(--border-subtle); width: 50px;">
+      <!-- 顶部主模式切换：1. 会话；2. 工作台 -->
+      <div class="flex flex-col items-center gap-2.5 w-full">
+        <!-- 会话管理器 (Active) -->
+        <button id="act-sessions" onclick="switchActivity('sessions')" title="AI 会话管理" class="w-9 h-9 rounded-lg flex items-center justify-center transition relative shadow-xs" style="background-color: var(--accent-soft); border: 1px solid var(--accent-border); color: var(--accent);">
+          <span class="absolute left-0 w-0.5 h-4 rounded-r" style="background-color: var(--accent);"></span>
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </button>
+
+        <!-- 工作台与运行概览 -->
+        <button id="act-workbench" onclick="switchActivity('workbench')" title="工作台与运行概览 (全量监控)" class="w-9 h-9 rounded-lg flex items-center justify-center transition" style="color: var(--text-muted);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- 左下角统一设置按钮 -->
+      <div class="flex flex-col items-center w-full">
+        <button onclick="toggleSettingsModal('vendors')" title="偏好设置与系统配置中心" class="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 transition" style="color: var(--text-muted);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- 2.2 现代化会话侧栏 -->
+    <aside id="sidebar-sessions" class="border-r flex flex-col shrink-0" style="background-color: var(--bg-sidebar); border-color: var(--border-subtle); width: 310px;">
+      
+      <!-- 侧栏顶部标题行：网关胶囊 + 新建会话 -->
+      <div class="p-3.5 border-b space-y-3" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <div class="flex items-center justify-between">
+          <div onclick="toggleSettingsModal('gateway')" title="点击查看本地网关详情与配置" class="cursor-pointer flex items-center gap-1.5 px-3 py-1 rounded-full border transition font-mono text-xs shadow-2xs hover:opacity-90" style="background-color: var(--accent-soft); border-color: var(--accent-border); color: var(--accent);">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 glow-dot animate-pulse"></span>
+            <span class="font-bold">网关: 22755</span>
+          </div>
+
+          <!-- 新建会话按钮 -->
+          <button onclick="createNewSession()" title="新建会话" class="px-3 py-1.5 rounded-md flex items-center gap-1.5 font-medium transition shadow-xs text-white text-xs" style="background-color: var(--accent);">
+            <span class="font-bold">+</span>
+            <span>新建会话</span>
+          </button>
+        </div>
+
+        <!-- 步骤 1：平台选择器 -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-semibold flex items-center justify-between" style="color: var(--text-muted);">
+            <span>1. 平台</span>
+            <span id="platform-hint" class="font-mono text-xs" style="color: var(--accent);">Codex CLI</span>
+          </label>
+          <div class="relative">
+            <select id="select-platform" onchange="onPlatformChange(this.value)" class="w-full text-sm rounded-md px-3 py-1.5 border appearance-none font-medium focus:outline-none transition cursor-pointer" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">
+              <option value="codex" selected>Codex (OpenAI)</option>
+              <option value="claude">Claude (Anthropic)</option>
+              <option value="gemini">Gemini (Google)</option>
+              <option value="qoder">Qoder</option>
+            </select>
+            <div class="absolute right-3 top-2.5 pointer-events-none" style="color: var(--text-dim);">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤 2：目标环境选择器 -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-semibold flex items-center justify-between" style="color: var(--text-muted);">
+            <span>2. 目标环境</span>
+            <span id="target-status" class="flex items-center gap-1 text-xs" style="color: var(--accent);">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 glow-dot"></span>
+              <span>就绪</span>
+            </span>
+          </label>
+          <div class="relative">
+            <select id="select-target" onchange="onTargetChange(this.value)" class="w-full text-sm rounded-md px-3 py-1.5 border appearance-none font-medium focus:outline-none transition cursor-pointer" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">
+              <option value="local">本机 Codex (Win32)</option>
+              <option value="wsl-ubuntu">WSL: Ubuntu-22.04</option>
+              <option value="wsl-debian">WSL: Debian</option>
+            </select>
+            <div class="absolute right-3 top-2.5 pointer-events-none" style="color: var(--text-dim);">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 搜索栏 -->
+      <div class="p-3 border-b" style="border-color: var(--border-subtle);">
+        <div class="relative w-full">
+          <input type="text" placeholder="搜索会话标题、正文..." class="w-full text-xs rounded-md pl-8 pr-3 py-2 border focus:outline-none transition shadow-2xs" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+          <svg class="w-4 h-4 absolute left-2.5 top-2.5" style="color: var(--text-dim);" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+      </div>
+
+      <!-- 会话分类筛选 Chips -->
+      <div class="px-3 py-2 border-b flex items-center justify-between" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <div class="flex items-center gap-1.5">
+          <button class="px-2.5 py-1 rounded text-xs font-semibold" style="background-color: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border);">全部 (33)</button>
+          <button class="px-2.5 py-1 rounded text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition" style="color: var(--text-muted);">⭐ 收藏 (4)</button>
+        </div>
+        <button title="回收站" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition" style="color: var(--text-dim);">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- 会话列表 (单列卡片) -->
+      <div class="flex-1 overflow-y-auto p-2.5 space-y-2 custom-scrollbar">
+        <!-- 会话 1: 活跃 -->
+        <div class="session-card p-3 rounded-lg border transition cursor-pointer relative shadow-xs" style="background-color: var(--bg-card-active); border-color: var(--accent-border);">
+          <div class="flex items-start justify-between gap-1.5 mb-1.5">
+            <div class="flex items-center gap-2 font-medium truncate" style="color: var(--text-main);">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 glow-dot"></span>
+              <span class="truncate font-bold text-sm">重构 UI 布局方案</span>
+            </div>
+            <span class="text-xs shrink-0 font-mono" style="color: var(--text-dim);">14:49</span>
+          </div>
+          <div class="text-xs truncate mb-2.5 leading-relaxed" style="color: var(--text-muted);">
+            重新设计了终端标签页造型，对齐现代 Warp 与 Cursor 灵动质感...
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="px-2 py-0.5 rounded font-mono" style="background-color: var(--bg-badge); color: var(--text-muted);">14 条消息 · 3 分支</span>
+            <div class="action-buttons opacity-0 transition-opacity flex items-center gap-1.5">
+              <button title="标记收藏" class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">⭐</button>
+              <button onclick="event.stopPropagation(); openMessagesBranchModal();" title="分支与历史" class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">🌿</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 会话 2 -->
+        <div class="session-card p-3 rounded-lg border transition cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/60" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="flex items-start justify-between gap-1.5 mb-1.5">
+            <div class="flex items-center gap-2 font-medium truncate" style="color: var(--text-main);">
+              <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+              <span class="truncate font-semibold text-sm">网关路由超时排查</span>
+            </div>
+            <span class="text-xs shrink-0 font-mono" style="color: var(--text-dim);">12:01</span>
+          </div>
+          <div class="text-xs truncate mb-2.5 leading-relaxed" style="color: var(--text-muted);">
+            GATEAI 节点延时激增，切换至 DeepSeek 直连...
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="px-2 py-0.5 rounded font-mono" style="background-color: var(--bg-badge); color: var(--text-muted);">8 条消息</span>
+            <div class="action-buttons opacity-0 transition-opacity flex items-center gap-1.5">
+              <button title="标记收藏" class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">⭐</button>
+              <button onclick="event.stopPropagation(); openMessagesBranchModal();" title="分支与历史" class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">🌿</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 侧栏底端状态摘要 -->
+      <div class="p-2.5 border-t text-xs flex items-center justify-between font-mono" style="border-color: var(--border-subtle); background-color: var(--bg-activity); color: var(--text-muted);">
+        <span id="session-summary-text">CODEX · 共 33 条会话</span>
+        <button class="hover:underline flex items-center gap-1 text-xs" style="color: var(--accent);">
+          <span>⟳ 刷新</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- 2.3 工作台与运行概览侧栏 -->
+    <aside id="sidebar-workbench" class="hidden border-r flex flex-col shrink-0" style="background-color: var(--bg-sidebar); border-color: var(--border-subtle); width: 340px;">
+      <div class="p-3.5 border-b flex items-center justify-between" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-sm" style="color: var(--text-main);">📊 运行概览与工作台</span>
+          <span class="text-xs px-2 py-0.5 rounded font-mono" style="background-color: var(--accent-soft); color: var(--accent);">实时监控</span>
+        </div>
+        <button onclick="switchActivity('sessions')" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs" style="color: var(--text-dim);" title="返回会话">✕</button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
+        <!-- 看板 1: 当前会话上下文大卡 -->
+        <div class="p-3.5 rounded-xl border space-y-2.5 shadow-xs" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm" style="color: var(--text-main);">运行上下文</span>
+            <span class="text-xs px-2 py-0.5 rounded font-mono font-medium" style="background-color: var(--accent-soft); color: var(--accent);">Codex / Win32</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="p-2 rounded-lg" style="background-color: var(--bg-activity);">
+              <div style="color: var(--text-dim);">当前模型</div>
+              <div class="font-mono font-bold text-sm mt-0.5" style="color: var(--text-main);">o3-mini</div>
+            </div>
+            <div class="p-2 rounded-lg" style="background-color: var(--bg-activity);">
+              <div style="color: var(--text-dim);">会话已消耗</div>
+              <div class="font-mono font-bold text-sm mt-0.5 text-emerald-600 dark:text-emerald-400">18.4k Tokens</div>
+            </div>
+          </div>
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs" style="color: var(--text-muted);">
+              <span>上下文窗口已用</span>
+              <span class="font-mono">14.3% / 128k</span>
+            </div>
+            <div class="w-full h-2 rounded-full overflow-hidden" style="background-color: var(--bg-badge);">
+              <div class="h-full bg-emerald-500 rounded-full" style="width: 14.3%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 看板 2: 速率限制看板 -->
+        <div class="p-3.5 rounded-xl border space-y-3 shadow-xs" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm" style="color: var(--text-main);">CLI 速率限制监控</span>
+            <span class="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">正常运行</span>
+          </div>
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs">
+              <span style="color: var(--text-muted);">主窗口 (5h 滚动)</span>
+              <span class="font-mono font-bold" style="color: var(--text-main);">22% (44/200)</span>
+            </div>
+            <div class="w-full h-2 rounded-full overflow-hidden" style="background-color: var(--bg-badge);">
+              <div class="h-full bg-blue-500 rounded-full" style="width: 22%;"></div>
+            </div>
+            <div class="text-xs text-right" style="color: var(--text-dim);">将于 3h 12m 后完全重置</div>
+          </div>
+          <div class="space-y-1.5 pt-2 border-t" style="border-color: var(--border-subtle);">
+            <div class="flex justify-between text-xs">
+              <span style="color: var(--text-muted);">周限额窗口</span>
+              <span class="font-mono font-bold" style="color: var(--text-main);">8% (80/1000)</span>
+            </div>
+            <div class="w-full h-2 rounded-full overflow-hidden" style="background-color: var(--bg-badge);">
+              <div class="h-full bg-emerald-500 rounded-full" style="width: 8%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 看板 3: 最近路由变更 -->
+        <div class="p-3.5 rounded-xl border space-y-2.5 shadow-xs" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm" style="color: var(--text-main);">最近路由变更</span>
+            <span class="text-xs font-mono" style="color: var(--text-dim);">自动熔断接管</span>
+          </div>
+          <div class="p-2.5 rounded-lg border space-y-1 text-xs" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+            <div class="flex items-center justify-between">
+              <span class="font-bold" style="color: var(--accent);">GATEAI ➔ DeepSeek</span>
+              <span class="font-mono text-xs" style="color: var(--text-dim);">12:01:24</span>
+            </div>
+            <div style="color: var(--text-muted);">触发原因：429 限流重试超限 (3次)</div>
+          </div>
+        </div>
+
+        <!-- 看板 4: 本地 Gateway 今日用量概况 -->
+        <div class="p-3.5 rounded-xl border space-y-2.5 shadow-xs" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm" style="color: var(--text-main);">今日 Gateway 用量</span>
+            <button onclick="toggleSettingsModal('usage')" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">用量明细 ↗</button>
+          </div>
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <span style="color: var(--text-dim);">总请求数</span>
+              <p class="text-base font-bold font-mono mt-0.5" style="color: var(--text-main);">142 <span class="text-xs font-normal text-emerald-600">(98.6%)</span></p>
+            </div>
+            <div>
+              <span style="color: var(--text-dim);">平均延时</span>
+              <p class="text-base font-bold font-mono mt-0.5 text-blue-600 dark:text-blue-400">185ms</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 2.4 主工作区：精研现代标签页 + 终端常驻全屏画布 + Warp 风格沉浸式输入组件 -->
+    <main class="flex-1 flex flex-col overflow-hidden relative" style="background-color: var(--bg-main);">
+      
+      <!-- 【全新重构】：Warp / Cursor 风格现代化悬浮流体标签栏 -->
+      <div class="h-11 border-b flex items-center justify-between px-3 gap-3 shrink-0" style="background-color: var(--tab-bar-bg); border-color: var(--border-subtle);">
+        
+        <!-- 左侧：悬浮圆角标签组 + 快速新建按钮 -->
+        <div class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar py-1">
+          
+          <!-- 标签 1：当前活跃会话标签 -->
+          <div id="tab-btn-1" onclick="switchTerminalTab(1)" class="modern-tab modern-tab-active h-8 px-3.5 rounded-lg flex items-center gap-2 border cursor-pointer select-none group shrink-0">
+            <span id="tab-dot-1" class="w-2 h-2 rounded-full bg-emerald-500 glow-dot animate-pulse"></span>
+            <span id="tab-title-1" class="font-bold text-xs truncate max-w-[160px]">重构 UI 布局方案</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold" style="background-color: var(--accent-soft); color: var(--accent);">Codex</span>
+            <button onclick="event.stopPropagation(); closeTerminalTab(1);" class="w-4 h-4 rounded-full flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-100 transition text-xs ml-0.5" title="关闭标签页">
+              ✕
+            </button>
+          </div>
+
+          <!-- 标签 2：非活跃标签（精美幽灵卡片，悬停平滑微光） -->
+          <div id="tab-btn-2" onclick="switchTerminalTab(2)" class="modern-tab modern-tab-inactive h-8 px-3.5 rounded-lg flex items-center gap-2 border cursor-pointer select-none group shrink-0">
+            <span id="tab-dot-2" class="w-2 h-2 rounded-full bg-slate-400"></span>
+            <span id="tab-title-2" class="font-medium text-xs truncate max-w-[160px]">网关路由超时排查</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded font-mono text-slate-400">Claude</span>
+            <button onclick="event.stopPropagation(); closeTerminalTab(2);" class="w-4 h-4 rounded-full flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-100 transition text-xs ml-0.5 opacity-0 group-hover:opacity-100" title="关闭标签页">
+              ✕
+            </button>
+          </div>
+
+          <!-- 新增终端标签按钮 (＋) -->
+          <button onclick="createNewSession()" title="新建会话标签 (Ctrl+T)" class="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition shrink-0 ml-0.5">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- 右侧：终端辅助工具栏与消息分支入口 -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          
+          <!-- 快捷操作：查找 -->
+          <button onclick="alert('已唤起终端关键字查找工具条 (Ctrl+F)')" title="查找终端内容 (Ctrl+F)" class="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+
+          <span class="text-slate-300 dark:text-slate-700 mx-0.5">|</span>
+
+          <!-- 消息历史与分支胶囊按钮 -->
+          <button onclick="openMessagesBranchModal()" class="px-3 py-1.5 rounded-lg border hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5 font-medium text-xs shadow-2xs" style="background-color: var(--bg-card); border-color: var(--border-strong); color: var(--text-main);">
+            <span class="text-sm">🌿</span>
+            <span class="font-bold">消息与分支</span>
+            <span class="text-xs px-1.5 py-0.2 rounded font-mono font-bold" style="background-color: var(--accent-soft); color: var(--accent);">14 条</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 核心画布：会话终端 (PTY 常驻全屏，支持大字号 13.5px，1.6倍舒适行高) -->
+      <div id="terminal-canvas" onclick="setFocusedInputMode('terminal')" class="flex-1 p-5 font-mono text-[13.5px] leading-relaxed overflow-y-auto custom-scrollbar cursor-text transition-colors duration-150" style="background-color: var(--term-bg); color: var(--term-text);">
+        <!-- 欢迎头与会话元数据 -->
+        <div class="pb-3.5 border-b mb-3.5 text-xs" style="border-color: var(--term-border); color: var(--text-muted);">
+          <div class="flex items-center gap-2.5">
+            <span id="term-header-title" class="font-bold text-emerald-600 dark:text-emerald-400 text-sm">OpenAI Codex (v0.158.0)</span>
+            <span>·</span>
+            <span id="term-header-id">PTY Session: 01a0c2ee</span>
+            <span>·</span>
+            <span>Win32 ConPTY Native Canvas</span>
+          </div>
+          <div class="text-xs mt-1" style="color: var(--text-dim);">
+            Base URL: http://127.0.0.1:22755/v1 · Provider: GATEAI (Locked) · Target: 本机 Codex
+          </div>
+        </div>
+
+        <!-- 历史交互卡片 1 -->
+        <div id="term-card-1" class="p-3.5 rounded-xl border mb-3.5 space-y-2 shadow-2xs" style="background-color: var(--term-card-bg); border-color: var(--term-card-border);">
+          <div class="flex items-center justify-between text-xs" style="color: var(--text-dim);">
+            <span class="flex items-center gap-2 font-bold text-blue-600 dark:text-blue-400 text-xs">
+              <span>●</span> 用户指令 [自管输入通道]
+            </span>
+            <span>14:48:32</span>
+          </div>
+          <p class="leading-relaxed text-[13.5px]" style="color: var(--term-text);">
+            终端会话的标签样式重新精研，采用现代化浮动卡片圆角样式，去除老旧硬边框，并配备会话查找与历史分支追溯功能。
+          </p>
+        </div>
+
+        <!-- 终端实时输出 -->
+        <div id="term-output-stream" class="space-y-1.5 leading-relaxed text-[13.5px]">
+          <p class="text-emerald-600 dark:text-emerald-400 font-bold">➜ aivc-rs git:(refactor/modern-ui) cargo check --workspace</p>
+          <p class="text-slate-500">    Checking aivc-core v0.1.0 (d:\code\ai\aivc-rs\crates\core)</p>
+          <p class="text-slate-500">    Checking aivc-gateway v0.1.0 (d:\code\ai\aivc-rs\crates\gateway)</p>
+          <p class="text-slate-500">    Checking aivc-tauri v0.1.0 (d:\code\ai\aivc-rs\src-tauri)</p>
+          <p class="text-emerald-600 dark:text-emerald-400 font-bold">    Finished `dev` profile [unoptimized + debuginfo] in 1.42s</p>
+          <p class="text-slate-500">    UI vitest suite: 43 files passed, 479 tests passed (0 failures).</p>
+          <div class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 pt-1.5">
+            <span class="font-bold">[Codex]</span>
+            <span class="animate-pulse font-bold text-base">_</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Warp 风格沉浸式自管输入框 -->
+      <div class="p-3.5 border-t shrink-0 relative" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+        <div id="composer-card" class="border rounded-xl p-3 shadow-sm transition-all focus-within:ring-2 focus-within:ring-emerald-500/20" style="background-color: var(--bg-input); border-color: var(--border-strong);">
+          <!-- 输入区 -->
+          <textarea id="composer-textarea" onfocus="setFocusedInputMode('composer')" rows="2" placeholder="给 Codex 发送提示词... (Enter 发送，Shift+Enter 换行，支持直接粘贴图片)" class="w-full text-sm bg-transparent border-0 focus:outline-none resize-none leading-relaxed" style="color: var(--text-main);"></textarea>
+
+          <!-- 底部工具栏与操作 -->
+          <div class="flex items-center justify-between pt-2.5 border-t mt-1.5" style="border-color: var(--border-subtle);">
+            <div class="flex items-center gap-2 relative">
+              <!-- 模型选择胶囊 -->
+              <div class="relative">
+                <select class="text-xs rounded-md px-2.5 py-1 border font-mono bg-transparent cursor-pointer focus:outline-none" style="border-color: var(--border-subtle); color: var(--text-muted);">
+                  <option>o3-mini (推荐)</option>
+                  <option>o1</option>
+                  <option>gpt-4o</option>
+                  <option>claude-3-7-sonnet</option>
+                </select>
+              </div>
+
+              <!-- 合并后的单个附件下拉菜单按钮 -->
+              <div class="relative">
+                <button type="button" onclick="toggleAttachmentMenu(event)" class="px-2.5 py-1 rounded-md border hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5 text-xs" style="border-color: var(--border-subtle); color: var(--text-muted);">
+                  <span>📎</span>
+                  <span>附件 ▾</span>
+                </button>
+                <!-- 附件弹出菜单 -->
+                <div id="attachment-dropdown" class="hidden absolute bottom-full left-0 mb-2 w-36 rounded-lg border shadow-lg py-1 z-30" style="background-color: var(--modal-bg); border-color: var(--border-strong);">
+                  <button type="button" onclick="selectAttachmentOption('image')" class="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2" style="color: var(--text-main);">
+                    <span>🖼️</span>
+                    <span>添加图片</span>
+                  </button>
+                  <button type="button" onclick="selectAttachmentOption('file')" class="w-full text-left px-3.5 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2" style="color: var(--text-main);">
+                    <span>📄</span>
+                    <span>添加文件</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右侧发送与模式状态 -->
+            <div class="flex items-center gap-3">
+              <span class="text-xs hidden sm:inline" style="color: var(--text-dim);">Enter 发送</span>
+              <button class="px-4 py-1.5 rounded-md text-white font-medium transition flex items-center gap-1.5 text-xs shadow-xs" style="background-color: var(--accent);">
+                <span>发送</span>
+                <span>↵</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- 3. 底部状态栏 (高度 28px，字号 12px) -->
+  <footer class="h-7 border-t px-3.5 flex items-center justify-between text-xs font-mono shrink-0 select-none z-20" style="background-color: var(--status-bg); border-color: var(--status-border); color: var(--text-muted);">
+    
+    <!-- 左侧四元组：会话编号 | 更新时间 | 工作目录 | 当前供应商 (支持锁定) -->
+    <div class="flex items-center gap-3.5">
+      <!-- 1. 会话编号 -->
+      <span class="flex items-center gap-1 hover:underline cursor-pointer" onclick="navigator.clipboard.writeText('01a0c2ee'); alert('已复制会话编号: 01a0c2ee');" title="点击复制会话编号">
+        <span class="text-slate-400">会话:</span>
+        <span class="font-bold text-slate-800 dark:text-slate-100">01a0c2ee</span>
+      </span>
+
+      <span class="text-slate-300 dark:text-slate-700">|</span>
+
+      <!-- 2. 更新时间 -->
+      <span class="flex items-center gap-1">
+        <span class="text-slate-400">更新:</span>
+        <span>2026-09-30 10:23:15</span>
+      </span>
+
+      <span class="text-slate-300 dark:text-slate-700">|</span>
+
+      <!-- 3. 工作目录 -->
+      <span class="flex items-center gap-1 truncate max-w-[320px]" title="工作目录: d:\code\ai\aivc-rs">
+        <span class="text-slate-400">目录:</span>
+        <span class="truncate">d:\code\ai\aivc-rs</span>
+      </span>
+
+      <span class="text-slate-300 dark:text-slate-700">|</span>
+
+      <!-- 4. 当前供应商与锁定状态 -->
+      <div class="relative flex items-center gap-1.5">
+        <span class="text-slate-400">供应商:</span>
+        <button onclick="toggleVendorLockPopover(event)" class="font-semibold hover:underline flex items-center gap-1" style="color: var(--accent);">
+          <span id="status-current-vendor">GATEAI (主通道)</span>
+          <span id="vendor-lock-badge" class="text-xs px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-bold">🔒锁定</span>
+          <span>▾</span>
+        </button>
+
+        <!-- 供应商切换与锁定浮窗 -->
+        <div id="vendor-lock-popover" class="hidden absolute bottom-full left-0 mb-1.5 w-72 rounded-xl border shadow-xl p-3 z-40" style="background-color: var(--modal-bg); border-color: var(--border-strong);">
+          <div class="text-xs font-bold mb-2 flex items-center justify-between" style="color: var(--text-main);">
+            <span>切换当前路由供应商</span>
+            <span class="text-xs text-emerald-600 font-bold">网关在线</span>
+          </div>
+          <div class="space-y-1.5 mb-3 max-h-40 overflow-y-auto custom-scrollbar">
+            <div onclick="selectVendor('GATEAI (主通道)', '142ms')" class="p-2 rounded-lg flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer font-sans text-xs">
+              <span class="font-semibold">GATEAI (主通道)</span>
+              <span class="text-xs font-mono text-emerald-600 font-bold">142ms · 活跃</span>
+            </div>
+            <div onclick="selectVendor('DeepSeek Direct', '89ms')" class="p-2 rounded-lg flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer font-sans text-xs">
+              <span class="font-semibold">DeepSeek Direct</span>
+              <span class="text-xs font-mono text-slate-400">89ms · 候选</span>
+            </div>
+            <div onclick="selectVendor('OpenAI Official', '320ms')" class="p-2 rounded-lg flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer font-sans text-xs">
+              <span class="font-semibold">OpenAI Official</span>
+              <span class="text-xs font-mono text-slate-400">320ms · 候选</span>
+            </div>
+          </div>
+          <!-- 锁定复选框 -->
+          <label class="flex items-center gap-2 pt-2 border-t text-xs cursor-pointer" style="border-color: var(--border-subtle); color: var(--text-main);">
+            <input type="checkbox" id="chk-vendor-lock" checked onchange="onVendorLockToggle(this.checked)" class="rounded text-emerald-600" />
+            <span class="font-semibold">锁定此供应商（禁用故障自动切换）</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：自管输入 / 终端输入模式指示胶囊 -->
+    <div class="flex items-center gap-2">
+      <button onclick="toggleInputModeManually()" id="status-input-mode" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded border transition cursor-pointer font-sans font-semibold text-xs" style="background-color: var(--accent-soft); border-color: var(--accent-border); color: var(--accent);">
+        <span id="input-mode-icon">💬</span>
+        <span id="input-mode-text">自管输入模式</span>
+      </button>
+    </div>
+
+  </footer>
+
+  <!-- 4. 消息历史与会话分支独立弹框 (Modal) -->
+  <div id="messages-branch-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-6">
+    <div class="border rounded-2xl w-full max-w-3xl h-[600px] flex flex-col shadow-2xl overflow-hidden" style="background-color: var(--modal-bg); border-color: var(--border-strong);">
+      
+      <!-- 弹框头部 -->
+      <div class="h-12 px-5 border-b flex items-center justify-between" style="background-color: var(--modal-nav); border-color: var(--border-subtle);">
+        <div class="flex items-center gap-2.5">
+          <span class="text-base">🌿</span>
+          <span class="font-bold text-base" style="color: var(--text-main);">会话消息历史与分支演进</span>
+          <span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold" style="background-color: var(--accent-soft); color: var(--accent);">ID: 01a0c2ee</span>
+        </div>
+        <button onclick="closeMessagesBranchModal()" class="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition" style="color: var(--text-muted);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- 分支血缘关系卡片 (置顶) -->
+      <div class="p-3.5 border-b flex items-center gap-2.5 text-xs" style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-muted);">
+        <span class="font-bold" style="color: var(--text-main);">会话血缘:</span>
+        <span class="px-2.5 py-1 rounded border" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">根会话</span>
+        <span>➔</span>
+        <span class="px-2.5 py-1 rounded font-bold border" style="background-color: var(--accent-soft); border-color: var(--accent-border); color: var(--accent);">当前会话: 重构 UI 布局</span>
+        <span>➔</span>
+        <span class="text-slate-400">无下游分支</span>
+      </div>
+
+      <!-- 弹框正文 -->
+      <div class="flex-1 p-6 overflow-y-auto custom-scrollbar space-y-4" style="background-color: var(--bg-main);">
+        <!-- 消息卡片 1: User -->
+        <div class="flex gap-3.5 group">
+          <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">我</div>
+          <div class="flex-1 border rounded-xl p-4 leading-relaxed shadow-xs relative text-sm" style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-main);">
+            <div class="flex items-center justify-between mb-1.5 text-xs" style="color: var(--text-dim);">
+              <span>第 1 轮提问 · 14:48</span>
+              <button onclick="alert('已从当前提问成功分支出新会话！')" class="opacity-0 group-hover:opacity-100 px-2.5 py-1 rounded border hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium" style="border-color: var(--border-strong); color: var(--accent);">
+                <span>🌿 从此提问分支</span>
+              </button>
+            </div>
+            <div>
+              终端会话的标签样式太丑了，调整一下。
+            </div>
+          </div>
+        </div>
+
+        <!-- 消息卡片 2: Assistant -->
+        <div class="flex gap-3.5 group">
+          <div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">AI</div>
+          <div class="flex-1 border rounded-xl p-4 leading-relaxed space-y-2 shadow-xs relative text-sm" style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-main);">
+            <div class="flex items-center justify-between mb-1.5 text-xs" style="color: var(--text-dim);">
+              <span>Codex CLI · 14:49</span>
+              <button onclick="alert('已从此回答成功分支出新会话！')" class="opacity-0 group-hover:opacity-100 px-2.5 py-1 rounded border hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 font-medium" style="border-color: var(--border-strong); color: var(--accent);">
+                <span>🌿 从此回答分支</span>
+              </button>
+            </div>
+            <p>已彻底重构终端标签页！摒弃生硬硬边框，采用类似 Warp 与 Cursor 的现代浮动圆角卡片，内置厂商微标与圆形悬停关闭，并配备「＋」快捷新建与分支追溯工具！</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="h-11 px-5 border-t flex items-center justify-between" style="background-color: var(--modal-nav); border-color: var(--border-subtle);">
+        <span class="text-xs" style="color: var(--text-dim);">共 14 条历史消息记录</span>
+        <button onclick="closeMessagesBranchModal()" class="px-4 py-1.5 rounded-md text-white font-medium shadow-xs text-xs" style="background-color: var(--accent);">
+          关闭
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 5. 现代化两栏式设置中心 (由左下角“⚙️ 设置”唤起) -->
+  <div id="settings-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-6">
+    <div class="border rounded-2xl w-full max-w-5xl h-[660px] flex flex-col shadow-2xl overflow-hidden" style="background-color: var(--modal-bg); border-color: var(--border-strong);">
+      
+      <!-- 弹窗顶栏 -->
+      <div class="h-14 px-6 border-b flex items-center justify-between" style="background-color: var(--modal-nav); border-color: var(--border-subtle);">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-sm font-bold shadow-xs">⚙️</div>
+          <div>
+            <span class="font-bold text-base tracking-tight" style="color: var(--text-main);">系统配置与服务中心</span>
+            <span class="text-xs ml-2 font-normal" style="color: var(--text-dim);">统一管理供应商、网关路由、观测审计、运行时扩展及系统信息</span>
+          </div>
+        </div>
+        <button onclick="toggleSettingsModal()" class="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition" style="color: var(--text-muted);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- 弹窗主体：左侧分类导航 + 右侧面板呈现 -->
+      <div class="flex-1 flex overflow-hidden">
+        
+        <!-- 左侧 10 大功能模块导航 (分 4 组) -->
+        <nav class="w-56 border-r p-3 space-y-4 shrink-0 overflow-y-auto custom-scrollbar" style="background-color: var(--modal-nav); border-color: var(--border-subtle);">
+          
+          <!-- 分组 1: 服务与路由 -->
+          <div>
+            <div class="text-xs font-bold px-2.5 mb-1.5 uppercase tracking-wider" style="color: var(--text-dim);">🔌 服务与路由</div>
+            <div class="space-y-1">
+              <button onclick="switchSettingsTab('vendors')" id="nav-tab-vendors" class="w-full text-left px-3 py-2 rounded-lg font-semibold text-xs flex items-center gap-2" style="background-color: var(--accent-soft); color: var(--accent);">
+                <span>🏢 供应商管理</span>
+              </button>
+              <button onclick="switchSettingsTab('gateway')" id="nav-tab-gateway" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>🌐 本地网关 & 路由</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 分组 2: 观测与审计 -->
+          <div>
+            <div class="text-xs font-bold px-2.5 mb-1.5 uppercase tracking-wider" style="color: var(--text-dim);">📊 观测与审计</div>
+            <div class="space-y-1">
+              <button onclick="switchSettingsTab('usage')" id="nav-tab-usage" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>📈 用量报表</span>
+              </button>
+              <button onclick="switchSettingsTab('failures')" id="nav-tab-failures" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>⚠️ 异常诊断</span>
+              </button>
+              <button onclick="switchSettingsTab('logs')" id="nav-tab-logs" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>📝 请求日志</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 分组 3: 环境与扩展 -->
+          <div>
+            <div class="text-xs font-bold px-2.5 mb-1.5 uppercase tracking-wider" style="color: var(--text-dim);">🛠️ 环境与扩展</div>
+            <div class="space-y-1">
+              <button onclick="switchSettingsTab('skills')" id="nav-tab-skills" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>🧩 平台技能 (Skills)</span>
+              </button>
+              <button onclick="switchSettingsTab('environment')" id="nav-tab-environment" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>⚙️ 运行时环境</span>
+              </button>
+              <button onclick="switchSettingsTab('presets')" id="nav-tab-presets" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>📁 工作区预设</span>
+              </button>
+              <button onclick="switchSettingsTab('diagnostics')" id="nav-tab-diagnostics" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>🩺 系统诊断</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 分组 4: 系统与关于 -->
+          <div>
+            <div class="text-xs font-bold px-2.5 mb-1.5 uppercase tracking-wider" style="color: var(--text-dim);">ℹ️ 系统与关于</div>
+            <div class="space-y-1">
+              <button onclick="switchSettingsTab('about')" id="nav-tab-about" class="w-full text-left px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition hover:bg-slate-200 dark:hover:bg-slate-800" style="color: var(--text-muted);">
+                <span>ℹ️ 关于控制台</span>
+              </button>
+            </div>
+          </div>
+
+        </nav>
+
+        <!-- 右侧内容展示区 -->
+        <div class="flex-1 p-7 overflow-y-auto custom-scrollbar" style="background-color: var(--bg-card);">
+          
+          <!-- 模块 1: 供应商管理 (vendors) -->
+          <div id="panel-vendors" class="settings-panel space-y-5">
+            <div id="vendor-list-view" class="space-y-5">
+              <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+                <div>
+                  <h3 class="text-base font-bold" style="color: var(--text-main);">供应商管理 (38)</h3>
+                  <p class="text-xs mt-1" style="color: var(--text-muted);">配置 OpenAI、Claude、Gemini、Qoder 的 API 端点、密钥、费率及智能联调探活。</p>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <button onclick="alert('已触发刷新各供应商在线余额与可用配额！')" class="px-3 py-1.5 rounded-md border transition text-xs font-medium" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">查余额</button>
+                  <button onclick="alert('已发起各节点连接探测，测试 API 端点可用性！')" class="px-3 py-1.5 rounded-md border transition text-xs font-medium" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">测连接 (列模型)</button>
+                  <button onclick="alert('已读取 ~/.codex/config.toml 等本地实际生效配置！')" class="px-3 py-1.5 rounded-md border transition text-xs font-medium" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">读本地配置</button>
+                  <button onclick="openVendorForm('new')" class="px-3 py-1.5 rounded-md text-white font-semibold transition text-xs shadow-xs flex items-center gap-1.5" style="background-color: var(--accent);">
+                    <span class="text-sm font-bold">+</span>
+                    <span>新增供应商</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 厂商过滤 Chips -->
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-medium mr-1" style="color: var(--text-dim);">厂商过滤:</span>
+                <button class="px-3 py-1 rounded-md font-bold text-xs" style="background-color: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border);">全部 (38)</button>
+                <button class="px-3 py-1 rounded-md text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition" style="color: var(--text-muted);">Codex (18)</button>
+                <button class="px-3 py-1 rounded-md text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition" style="color: var(--text-muted);">Claude (12)</button>
+                <button class="px-3 py-1 rounded-md text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition" style="color: var(--text-muted);">Gemini (5)</button>
+                <button class="px-3 py-1 rounded-md text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition" style="color: var(--text-muted);">Qoder (3)</button>
+              </div>
+
+              <!-- 数据表 -->
+              <div class="border rounded-xl overflow-hidden" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+                <table class="w-full text-left text-xs">
+                  <thead class="border-b" style="background-color: var(--bg-activity); border-color: var(--border-subtle); color: var(--text-muted);">
+                    <tr>
+                      <th class="py-3 px-4 font-bold text-xs">名称 / 接口端点</th>
+                      <th class="py-3 px-4 font-bold text-xs">服务厂商</th>
+                      <th class="py-3 px-4 font-bold text-xs">费率 (输入/输出/M)</th>
+                      <th class="py-3 px-4 font-bold text-xs">连通延时</th>
+                      <th class="py-3 px-4 font-bold text-xs">候选池状态</th>
+                      <th class="py-3 px-4 font-bold text-xs text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y" style="border-color: var(--border-subtle); color: var(--text-main);">
+                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                      <td class="py-3 px-4">
+                        <div class="font-bold text-sm">GATEAI (主通道)</div>
+                        <div class="text-xs font-mono mt-0.5" style="color: var(--text-dim);">https://api.gateai.cc/v1</div>
+                      </td>
+                      <td class="py-3 px-4 font-mono font-bold" style="color: var(--accent);">Codex</td>
+                      <td class="py-3 px-4 font-mono" style="color: var(--text-muted);">$0.15 / $0.60</td>
+                      <td class="py-3 px-4 font-mono font-bold text-emerald-600">142ms</td>
+                      <td class="py-3 px-4">
+                        <span class="px-2 py-0.5 rounded font-mono font-semibold text-xs" style="background-color: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border);">已启用 · 优先</span>
+                      </td>
+                      <td class="py-3 px-4 text-right">
+                        <button onclick="openVendorForm('edit', 'GATEAI (主通道)')" class="text-blue-600 dark:text-blue-400 font-semibold hover:underline mr-3">编辑</button>
+                        <button onclick="alert('已从配置库删除该供应商')" class="text-red-600 dark:text-red-400 font-semibold hover:underline">删除</button>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                      <td class="py-3 px-4">
+                        <div class="font-bold text-sm">Anthropic API Direct</div>
+                        <div class="text-xs font-mono mt-0.5" style="color: var(--text-dim);">https://api.anthropic.com/v1</div>
+                      </td>
+                      <td class="py-3 px-4 font-mono font-bold text-purple-600">Claude</td>
+                      <td class="py-3 px-4 font-mono" style="color: var(--text-muted);">$3.00 / $15.00</td>
+                      <td class="py-3 px-4 font-mono font-bold text-blue-600">280ms</td>
+                      <td class="py-3 px-4">
+                        <span class="px-2 py-0.5 rounded font-mono font-semibold text-xs" style="background-color: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border);">已启用</span>
+                      </td>
+                      <td class="py-3 px-4 text-right">
+                        <button onclick="openVendorForm('edit', 'Anthropic API Direct')" class="text-blue-600 dark:text-blue-400 font-semibold hover:underline mr-3">编辑</button>
+                        <button onclick="alert('已从配置库删除该供应商')" class="text-red-600 dark:text-red-400 font-semibold hover:underline">删除</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 新增/编辑供应商表单 -->
+            <div id="vendor-form-view" class="hidden space-y-5">
+              <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+                <div class="flex items-center gap-3">
+                  <button onclick="closeVendorForm()" class="px-2.5 py-1 rounded-md border hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium" style="border-color: var(--border-strong); color: var(--text-muted);" title="返回供应商列表">
+                    ← 返回列表
+                  </button>
+                  <span class="text-slate-300">|</span>
+                  <h3 id="vendor-form-title" class="text-base font-bold" style="color: var(--text-main);">新增供应商配置</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                  <button onclick="closeVendorForm()" class="px-3.5 py-1.5 rounded-md border text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800" style="border-color: var(--border-strong); color: var(--text-main);">取消</button>
+                  <button onclick="saveVendorForm()" class="px-4 py-1.5 rounded-md text-white font-semibold text-xs shadow-xs" style="background-color: var(--accent);">💾 保存供应商</button>
+                </div>
+              </div>
+
+              <!-- 表单主体卡片 -->
+              <div class="border rounded-2xl p-5 space-y-4" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+                <div class="grid grid-cols-2 gap-5">
+                  <div class="space-y-1.5">
+                    <label class="block text-xs font-bold" style="color: var(--text-muted);">服务厂商 (Provider) <span class="text-red-500">*</span></label>
+                    <select id="form-vendor-provider" class="w-full text-sm rounded-lg px-3 py-2 border font-medium focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">
+                      <option value="codex">Codex (OpenAI 协议)</option>
+                      <option value="claude">Claude (Anthropic 协议)</option>
+                      <option value="gemini">Gemini (Google 协议)</option>
+                      <option value="qoder">Qoder</option>
+                    </select>
+                  </div>
+                  <div class="space-y-1.5">
+                    <label class="block text-xs font-bold" style="color: var(--text-muted);">供应商名称 <span class="text-red-500">*</span></label>
+                    <input type="text" id="form-vendor-name" placeholder="例如：GATEAI (中转通道) 或 DeepSeek 直连" class="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-5">
+                  <div class="space-y-1.5">
+                    <label class="block text-xs font-bold" style="color: var(--text-muted);">API Base URL (端点) <span class="text-red-500">*</span></label>
+                    <input type="text" id="form-vendor-url" placeholder="https://api.openai.com/v1 或中转站地址" class="w-full text-sm font-mono rounded-lg px-3 py-2 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                  </div>
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between">
+                      <label class="block text-xs font-bold" style="color: var(--text-muted);">API 密钥 (API Key) <span class="text-red-500">*</span></label>
+                      <button type="button" onclick="toggleKeyVisibility()" id="btn-toggle-key" class="text-xs text-blue-600 dark:text-blue-400 font-semibold hover:underline">显示明文</button>
+                    </div>
+                    <input type="password" id="form-vendor-key" placeholder="sk-..." class="w-full text-sm font-mono rounded-lg px-3 py-2 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-5">
+                  <div class="space-y-1.5">
+                    <label class="block text-xs font-bold" style="color: var(--text-muted);">路由优先级权重 (Sort)</label>
+                    <input type="number" id="form-vendor-sort" value="10" min="1" max="999" class="w-full text-sm font-mono rounded-lg px-3 py-2 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                  </div>
+                  <div class="space-y-1.5">
+                    <label class="block text-xs font-bold" style="color: var(--text-muted);">启用状态</label>
+                    <div class="flex items-center gap-3 pt-2">
+                      <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold" style="color: var(--text-main);">
+                        <input type="checkbox" id="form-vendor-enabled" checked class="w-4 h-4 rounded text-emerald-600" />
+                        <span>加入候选池并允许网关路由</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="p-4 rounded-xl border space-y-2.5" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                  <div class="text-xs font-bold" style="color: var(--text-main);">💰 费率配置 (美元 / 每百万 Token)</div>
+                  <div class="grid grid-cols-2 gap-5">
+                    <div>
+                      <label class="block text-xs font-medium mb-1" style="color: var(--text-muted);">输入价格 (Input USD / 1M Tokens)</label>
+                      <input type="text" id="form-vendor-input-price" placeholder="例如 0.15" class="w-full text-sm font-mono rounded-lg px-3 py-1.5 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium mb-1" style="color: var(--text-muted);">输出价格 (Output USD / 1M Tokens)</label>
+                      <input type="text" id="form-vendor-output-price" placeholder="例如 0.60" class="w-full text-sm font-mono rounded-lg px-3 py-1.5 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 模块 2: 本地网关 & 路由 (gateway) -->
+          <div id="panel-gateway" class="settings-panel hidden space-y-5">
+            <!-- 头部：标题与网关总开关 -->
+            <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+              <div>
+                <h3 class="text-base font-bold" style="color: var(--text-main);">本地网关 (Gateway) 与故障转移配置</h3>
+                <p class="text-xs mt-1" style="color: var(--text-muted);">控制本地反向代理端口、外部客户端接入、熔断器阈值及故障识别引擎。</p>
+              </div>
+
+              <!-- 显式 启用/停用网关总开关 Toggle -->
+              <div class="flex items-center gap-2.5">
+                <button type="button" onclick="toggleGatewayMasterSwitch()" id="btn-gateway-master-switch" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border shadow-xs transition cursor-pointer font-sans text-xs font-bold" style="background-color: var(--accent-soft); border-color: var(--accent-border); color: var(--accent);">
+                  <span id="gateway-master-indicator" class="w-2.5 h-2.5 rounded-full bg-emerald-500 glow-dot animate-pulse"></span>
+                  <span id="gateway-master-label">● 本地网关已启用</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 卡片 1: 网关端口与熔断韧性参数配置 (集中保存) -->
+            <div class="border rounded-2xl p-5 space-y-4 shadow-xs" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="text-sm font-bold" style="color: var(--text-main);">🌐 网关端口与熔断韧性参数配置</h4>
+                  <p class="text-xs mt-0.5" style="color: var(--text-muted);">统一保存端口分配与熔断规则；端口需重启应用生效，阈值即时生效。</p>
+                </div>
+                <button onclick="saveGatewayAndResilienceConfig()" class="px-4 py-2 rounded-lg text-white font-bold text-xs shadow-xs flex items-center gap-2 hover:opacity-90 transition cursor-pointer" style="background-color: var(--accent);">
+                  <span>💾</span>
+                  <span>保存网关与熔断配置</span>
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 gap-5">
+                <div class="space-y-1.5">
+                  <label class="block text-xs font-bold" style="color: var(--text-muted);">配置端口 (填 0 表示自动分配)</label>
+                  <div class="flex items-center gap-2.5">
+                    <input type="text" id="gateway-input-port" value="22755" class="w-32 px-3 py-1.5 rounded-lg border text-sm font-mono font-bold focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                    <span class="text-xs font-mono text-slate-400">活跃端口: 22755 · 监听中</span>
+                  </div>
+                  <p class="text-[11px]" style="color: var(--text-dim);">修改后对下次启动的 Gateway 生效。若端口被占用将自动回退可用端口。</p>
+                </div>
+
+                <div class="space-y-1.5">
+                  <label class="block text-xs font-bold" style="color: var(--text-muted);">终端代理模式</label>
+                  <div class="p-2.5 rounded-lg border text-xs leading-relaxed" style="background-color: var(--bg-activity); border-color: var(--border-subtle); color: var(--text-muted);">
+                    AI 会话终端 ConPTY 流量经由本地网关统一路由切源，透明支持动态负载均衡与故障转移。
+                  </div>
+                </div>
+              </div>
+
+              <div class="p-4 rounded-xl border space-y-3" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                <div class="text-xs font-bold" style="color: var(--text-main);">🛡️ 失败转移与熔断阈值参数</div>
+                <div class="grid grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label class="block text-xs font-semibold mb-1" style="color: var(--text-muted);">异常切换阈值 (次, 1–10)</label>
+                    <input type="number" id="input-failure-threshold" value="3" min="1" max="10" class="w-full px-3 py-1.5 rounded-lg border font-mono text-sm focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                    <span class="text-[11px] block mt-1" style="color: var(--text-dim);">连续失败达到该次数后切换至下一个候选源</span>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold mb-1" style="color: var(--text-muted);">熔断次数阈值 (次, 1–20)</label>
+                    <input type="number" id="input-circuit-threshold" value="5" min="1" max="20" class="w-full px-3 py-1.5 rounded-lg border font-mono text-sm focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                    <span class="text-[11px] block mt-1" style="color: var(--text-dim);">窗口内累计失败达标后进入熔断冷冻</span>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold mb-1" style="color: var(--text-muted);">熔断持续时间 (秒, 10–86400)</label>
+                    <input type="number" id="input-circuit-duration" value="60" min="10" max="86400" class="w-full px-3 py-1.5 rounded-lg border font-mono text-sm focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                    <span class="text-[11px] block mt-1" style="color: var(--text-dim);">熔断到期后进入半开状态并允许一次试探</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 卡片 2: 🔌 外部网关 / 外部 API 接入 (开启外部网关) -->
+            <div class="border rounded-2xl p-5 space-y-4 shadow-xs" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h4 class="text-sm font-bold" style="color: var(--text-main);">🔌 外部网关与 API 接入 (开启外部网关)</h4>
+                    <span id="external-gateway-badge" class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">已开启</span>
+                  </div>
+                  <p class="text-xs mt-0.5" style="color: var(--text-muted);">供本机第三方应用与 IDE 扩展（如 Cursor、VS Code、Open WebUI 等）调用，按路径选择平台并复用供应商路由池与熔断机制。</p>
+                </div>
+                
+                <!-- 开启/关闭外部网关总开关 -->
+                <div class="flex items-center gap-2">
+                  <button type="button" onclick="toggleExternalGatewaySwitch()" id="btn-external-gateway-switch" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full border shadow-xs transition cursor-pointer font-sans text-xs font-bold" style="background-color: var(--accent-soft); border-color: var(--accent-border); color: var(--accent);">
+                    <span id="external-gateway-indicator" class="w-2.5 h-2.5 rounded-full bg-emerald-500 glow-dot"></span>
+                    <span id="external-gateway-switch-label">● 外部网关已开启</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 共享访问令牌管理行 -->
+              <div class="p-3.5 rounded-xl border space-y-3" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                <div class="flex items-center justify-between">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-bold" style="color: var(--text-main);">🔑 共享访问令牌 (Shared Access Token)</span>
+                      <span class="text-xs px-2 py-0.5 rounded font-mono bg-blue-500/10 text-blue-600 border border-blue-500/20 font-bold" id="token-status-badge">已配置</span>
+                    </div>
+                    <p class="text-xs" style="color: var(--text-dim);" id="token-status-hint">已配置令牌；安全机制下仅本地单向存储哈希，点击「轮换令牌」将生成新令牌并使旧令牌立即失效。</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button type="button" onclick="rotateExternalApiToken()" class="px-3.5 py-1.5 rounded-lg border text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5 shadow-2xs cursor-pointer" style="border-color: var(--border-strong); color: var(--text-main);">
+                      <span>⟳</span>
+                      <span>轮换令牌</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 轮换时动态展示新令牌横幅 (仅展示一次) -->
+                <div id="new-token-banner" class="hidden p-3.5 rounded-lg border flex items-center justify-between" style="background-color: var(--bg-card); border-color: var(--accent-border);">
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-bold text-amber-600">⚠️ 新令牌仅在本次展示：</span>
+                      <code id="revealed-token-text" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-emerald-600 select-all">sk-gw-8f7b2a9e1d0c4b5a6f3e7d8c9b0a1e2f</code>
+                    </div>
+                    <div class="text-[11px] text-slate-500">关闭后将再也无法取回（本地仅存哈希），请立即复制并更新至您的外部客户端配置中。</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button onclick="navigator.clipboard.writeText(document.getElementById('revealed-token-text').innerText); alert('新令牌已复制到剪贴板！');" class="px-3 py-1 rounded text-white text-xs font-bold cursor-pointer" style="background-color: var(--accent);">复制令牌</button>
+                    <button onclick="document.getElementById('new-token-banner').classList.add('hidden')" class="px-3 py-1 rounded border text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer" style="border-color: var(--border-strong);">我已保存</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 平台外部端点 (Base URL) 清单 -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold" style="color: var(--text-main);">🔗 平台外部接入端点 (Base URL)</span>
+                  <span class="text-xs font-mono text-slate-400">仅监听 127.0.0.1，拒绝局域网非本机连接</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2.5 text-xs font-mono">
+                  <div class="p-2.5 rounded-lg border flex items-center justify-between" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                    <div class="truncate mr-2">
+                      <span class="font-bold text-emerald-600 mr-2">[Codex]</span>
+                      <span id="endpoint-codex" class="select-all">http://127.0.0.1:22755/external/codex/v1</span>
+                    </div>
+                    <button onclick="copyEndpoint('endpoint-codex')" class="px-2 py-0.5 rounded border text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer" style="border-color: var(--border-strong);">复制</button>
+                  </div>
+                  <div class="p-2.5 rounded-lg border flex items-center justify-between" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                    <div class="truncate mr-2">
+                      <span class="font-bold text-purple-600 mr-2">[Claude]</span>
+                      <span id="endpoint-claude" class="select-all">http://127.0.0.1:22755/external/claude</span>
+                    </div>
+                    <button onclick="copyEndpoint('endpoint-claude')" class="px-2 py-0.5 rounded border text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer" style="border-color: var(--border-strong);">复制</button>
+                  </div>
+                  <div class="p-2.5 rounded-lg border flex items-center justify-between" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                    <div class="truncate mr-2">
+                      <span class="font-bold text-blue-600 mr-2">[Gemini]</span>
+                      <span id="endpoint-gemini" class="select-all">http://127.0.0.1:22755/external/gemini</span>
+                    </div>
+                    <button onclick="copyEndpoint('endpoint-gemini')" class="px-2 py-0.5 rounded border text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer" style="border-color: var(--border-strong);">复制</button>
+                  </div>
+                  <div class="p-2.5 rounded-lg border flex items-center justify-between" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                    <div class="truncate mr-2">
+                      <span class="font-bold text-amber-600 mr-2">[Qoder]</span>
+                      <span id="endpoint-qoder" class="select-all">http://127.0.0.1:22755/external/qoder/v1</span>
+                    </div>
+                    <button onclick="copyEndpoint('endpoint-qoder')" class="px-2 py-0.5 rounded border text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer" style="border-color: var(--border-strong);">复制</button>
+                  </div>
+                </div>
+                <div class="text-[11px] leading-relaxed pt-1" style="color: var(--text-muted);">
+                  💡 <b>外部客户端认证协议</b>：Codex / Qoder 请求头使用 <code>Authorization: Bearer &lt;Token&gt;</code>；Claude 使用 <code>x-api-key: &lt;Token&gt;</code>；Gemini 使用 <code>x-goog-api-key: &lt;Token&gt;</code> 或 URL query 参数 <code>?key=&lt;Token&gt;</code>；四者统一使用上述共享访问令牌。
+                </div>
+              </div>
+            </div>
+
+            <!-- 卡片 3: 🛡️ 故障识别与失败转移规则 (Failover Rules) -->
+            <div class="border rounded-2xl p-5 space-y-4 shadow-xs" style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+              <!-- 规则列表视图 -->
+              <div id="rule-list-view" class="space-y-3.5">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h4 class="text-sm font-bold" style="color: var(--text-main);">🔍 故障识别与自定义拦截规则</h4>
+                    <p class="text-xs mt-0.5" style="color: var(--text-muted);">当上游返回指定错误文本或 HTTP 状态码时，触发自动切源或由网关直接应答友好报错。</p>
+                  </div>
+                  <button onclick="openRuleForm('new')" class="px-3.5 py-1.5 rounded-lg text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer" style="background-color: var(--accent);">
+                    <span class="text-sm">+</span>
+                    <span>新增规则</span>
+                  </button>
+                </div>
+
+                <div class="border rounded-xl overflow-hidden text-xs" style="border-color: var(--border-subtle);">
+                  <div class="grid grid-cols-12 p-3 font-bold border-b" style="background-color: var(--bg-activity); border-color: var(--border-subtle); color: var(--text-muted);">
+                    <span class="col-span-2">作用域</span>
+                    <span class="col-span-3">错误文本模式</span>
+                    <span class="col-span-2">HTTP 状态码</span>
+                    <span class="col-span-2">自定义拦截返回</span>
+                    <span class="col-span-1">状态</span>
+                    <span class="col-span-2 text-right">操作</span>
+                  </div>
+                  <!-- 规则 1 -->
+                  <div class="grid grid-cols-12 p-3.5 items-center border-b hover:bg-slate-50 dark:hover:bg-slate-800/30 transition" style="border-color: var(--border-subtle); color: var(--text-main);">
+                    <span class="col-span-2 font-medium flex items-center gap-1.5">
+                      <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                      <span>全局</span>
+                    </span>
+                    <span class="col-span-3 font-mono text-emerald-600 dark:text-emerald-400 font-bold text-xs truncate" title="insufficient_quota">insufficient_quota</span>
+                    <span class="col-span-2 font-mono text-xs">429</span>
+                    <span class="col-span-2 font-mono text-slate-400">透传上游</span>
+                    <span class="col-span-1">
+                      <span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">已启用</span>
+                    </span>
+                    <div class="col-span-2 text-right space-x-2.5">
+                      <button onclick="openRuleForm('edit', { scope: 'global', pattern: 'insufficient_quota', statusCodes: '429', customStatus: '', customBody: '', enabled: true })" class="text-blue-600 font-semibold hover:underline cursor-pointer">编辑</button>
+                      <button onclick="alert('已切换该规则启停状态')" class="text-amber-600 font-semibold hover:underline cursor-pointer">停用</button>
+                      <button onclick="alert('已删除该规则')" class="text-red-500 font-semibold hover:underline cursor-pointer">删除</button>
+                    </div>
+                  </div>
+                  <!-- 规则 2 -->
+                  <div class="grid grid-cols-12 p-3.5 items-center border-b hover:bg-slate-50 dark:hover:bg-slate-800/30 transition" style="border-color: var(--border-subtle); color: var(--text-main);">
+                    <span class="col-span-2 font-medium flex items-center gap-1.5">
+                      <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                      <span>按平台 · Codex</span>
+                    </span>
+                    <span class="col-span-3 font-mono text-emerald-600 dark:text-emerald-400 font-bold text-xs truncate" title="rate_limit_exceeded">rate_limit_exceeded</span>
+                    <span class="col-span-2 font-mono text-xs">429, 503</span>
+                    <span class="col-span-2 font-mono text-xs text-blue-600 dark:text-blue-400">503 · JSON 自定义</span>
+                    <span class="col-span-1">
+                      <span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">已启用</span>
+                    </span>
+                    <div class="col-span-2 text-right space-x-2.5">
+                      <button onclick="openRuleForm('edit', { scope: 'provider', providerId: 'codex', pattern: 'rate_limit_exceeded', statusCodes: '429, 503', customStatus: '503', customBody: '{\&quot;error\&quot;:\&quot;上游服务限流，已自动熔断\&quot;}', enabled: true })" class="text-blue-600 font-semibold hover:underline cursor-pointer">编辑</button>
+                      <button onclick="alert('已切换该规则启停状态')" class="text-amber-600 font-semibold hover:underline cursor-pointer">停用</button>
+                      <button onclick="alert('已删除该规则')" class="text-red-500 font-semibold hover:underline cursor-pointer">删除</button>
+                    </div>
+                  </div>
+                  <!-- 规则 3 -->
+                  <div class="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition" style="color: var(--text-main);">
+                    <span class="col-span-2 font-medium flex items-center gap-1.5">
+                      <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                      <span>按供应商 · GATEAI</span>
+                    </span>
+                    <span class="col-span-3 font-mono text-emerald-600 dark:text-emerald-400 font-bold text-xs truncate" title="upstream_timeout">upstream_timeout</span>
+                    <span class="col-span-2 font-mono text-xs">504</span>
+                    <span class="col-span-2 font-mono text-slate-400">透传上游</span>
+                    <span class="col-span-1">
+                      <span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-500/10 text-slate-500 border border-slate-500/20">已停用</span>
+                    </span>
+                    <div class="col-span-2 text-right space-x-2.5">
+                      <button onclick="openRuleForm('edit', { scope: 'vendor', vendorId: 'gateai', pattern: 'upstream_timeout', statusCodes: '504', customStatus: '', customBody: '', enabled: false })" class="text-blue-600 font-semibold hover:underline cursor-pointer">编辑</button>
+                      <button onclick="alert('已启用该规则')" class="text-emerald-600 font-semibold hover:underline cursor-pointer">启用</button>
+                      <button onclick="alert('已删除该规则')" class="text-red-500 font-semibold hover:underline cursor-pointer">删除</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 新增/编辑规则完整表单视图 -->
+              <div id="rule-form-view" class="hidden space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b" style="border-color: var(--border-subtle);">
+                  <div class="flex items-center gap-3">
+                    <button onclick="closeRuleForm()" class="px-2.5 py-1 rounded-md border hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium cursor-pointer" style="border-color: var(--border-strong); color: var(--text-muted);" title="返回规则列表">
+                      ← 返回规则列表
+                    </button>
+                    <span class="text-slate-300">|</span>
+                    <h4 id="rule-form-title" class="text-sm font-bold" style="color: var(--text-main);">新增故障转移与拦截规则</h4>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <button onclick="closeRuleForm()" class="px-3.5 py-1.5 rounded-md border text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer" style="border-color: var(--border-strong); color: var(--text-main);">取消</button>
+                    <button onclick="saveRuleForm()" class="px-4 py-1.5 rounded-md text-white font-bold text-xs shadow-xs cursor-pointer" style="background-color: var(--accent);">💾 保存规则</button>
+                  </div>
+                </div>
+
+                <div class="space-y-4 text-xs">
+                  <!-- 行 1: 作用域与级联目标选择 -->
+                  <div class="grid grid-cols-2 gap-5">
+                    <div class="space-y-1.5">
+                      <label class="block text-xs font-bold" style="color: var(--text-muted);">作用域 (Scope) <span class="text-red-500">*</span></label>
+                      <select id="form-rule-scope" onchange="handleRuleScopeChange(this.value)" class="w-full text-sm rounded-lg px-3 py-2 border font-medium focus:outline-none cursor-pointer" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">
+                        <option value="global">全局生效 (Global)</option>
+                        <option value="provider">按服务平台 (Provider)</option>
+                        <option value="vendor">按指定供应商 (Vendor)</option>
+                      </select>
+                      <p class="text-[11px]" style="color: var(--text-dim);" id="scope-hint">全局作用域将对所有平台与供应商请求生效。</p>
+                    </div>
+
+                    <!-- 动态目标选择框 -->
+                    <div id="rule-target-field" class="space-y-1.5 hidden">
+                      <label id="rule-target-label" class="block text-xs font-bold" style="color: var(--text-muted);">目标选择 <span class="text-red-500">*</span></label>
+                      <select id="form-rule-provider-select" class="w-full text-sm rounded-lg px-3 py-2 border font-medium focus:outline-none cursor-pointer" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">
+                        <option value="codex">OpenAI Codex</option>
+                        <option value="claude">Anthropic Claude</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="qoder">Qoder CLI</option>
+                      </select>
+                      <select id="form-rule-vendor-select" class="w-full text-sm rounded-lg px-3 py-2 border font-medium focus:outline-none hidden cursor-pointer" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);">
+                        <option value="gateai">GATEAI (智能聚合)</option>
+                        <option value="deepseek">DeepSeek 官方</option>
+                        <option value="moonshot">Moonshot Kimi</option>
+                        <option value="siliconflow">SiliconFlow 硅基流动</option>
+                        <option value="ollama">本地 Ollama / vLLM</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- 行 2: 匹配条件 (错误文本与 HTTP 状态码) -->
+                  <div class="grid grid-cols-2 gap-5">
+                    <div class="space-y-1.5">
+                      <label class="block text-xs font-bold" style="color: var(--text-muted);">错误文本包含模式 (Pattern) <span class="text-red-500">*</span></label>
+                      <input type="text" id="form-rule-pattern" placeholder="例如 insufficient_quota 或 rate_limit_exceeded" class="w-full text-sm font-mono rounded-lg px-3 py-2 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                      <p class="text-[11px]" style="color: var(--text-dim);">不区分大小写的包含匹配，不是正则；上游返回报错包含该文本时触发切源。</p>
+                    </div>
+
+                    <div class="space-y-1.5">
+                      <label class="block text-xs font-bold" style="color: var(--text-muted);">HTTP 状态码匹配 (StatusCodes)</label>
+                      <input type="text" id="form-rule-status-codes" placeholder="例如 429, 500, 502, 503" class="w-full text-sm font-mono rounded-lg px-3 py-2 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                      <p class="text-[11px]" style="color: var(--text-dim);">支持多个状态码以逗号分隔；留空表示不按状态码判定，仅匹配文本。</p>
+                    </div>
+                  </div>
+
+                  <!-- 行 3: 自定义返回拦截 (状态码与 JSON 正文) -->
+                  <div class="p-4 rounded-xl border space-y-3" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                    <div>
+                      <span class="text-xs font-bold" style="color: var(--text-main);">⚡ 自定义拦截应答 (命中后由网关直接应答友好报错)</span>
+                      <p class="text-[11px] mt-0.5" style="color: var(--text-dim);">若配置了自定义返回，规则命中后网关将直接返回指定报错给客户端，不再透传上游不可读的原始错误。两项必须同时配置或同时留空。</p>
+                    </div>
+                    <div class="grid grid-cols-3 gap-4">
+                      <div>
+                        <label class="block text-xs font-semibold mb-1" style="color: var(--text-muted);">自定义返回状态码</label>
+                        <input type="number" id="form-rule-custom-status" min="100" max="599" placeholder="例如 503 (留空透传上游)" class="w-full text-sm font-mono rounded-lg px-3 py-1.5 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                      </div>
+                      <div class="col-span-2">
+                        <label class="block text-xs font-semibold mb-1" style="color: var(--text-muted);">自定义返回正文 (必须是合法 JSON，不超过 32 KB)</label>
+                        <textarea id="form-rule-custom-body" rows="2" placeholder='例如 {"error":{"message":"上游供应商配额已耗尽，已触发自动熔断切源","code":"gateway_failover_exhausted"}}' class="w-full text-xs font-mono rounded-lg px-3 py-1.5 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);"></textarea>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 行 4: 规则启用状态开关 -->
+                  <div class="flex items-center gap-2.5 pt-1">
+                    <input type="checkbox" id="form-rule-enabled" checked class="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer" />
+                    <label for="form-rule-enabled" class="text-xs font-bold cursor-pointer" style="color: var(--text-main);">立即启用此规则 (Enabled)</label>
+                    <span class="text-[11px]" style="color: var(--text-dim);">（停用后规则仍保留在列表中，但网关路由时将跳过此规则）</span>
+                  </div>
+
+                  <!-- 在线模拟规则测试引擎 -->
+                  <div class="p-4 rounded-xl border space-y-3" style="background-color: var(--bg-card); border-color: var(--accent-border);">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold" style="color: var(--accent);">🧪 在线模拟规则测试引擎</span>
+                      <span class="text-xs" style="color: var(--text-dim);">无需实际发出请求，在前端直接验证上游返回是否会精准命中该规则</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-4">
+                      <div>
+                        <label class="block text-xs font-semibold mb-1" style="color: var(--text-muted);">试：模拟上游状态码</label>
+                        <input type="text" id="test-rule-status" value="429" class="w-full text-sm font-mono rounded-lg px-3 py-1.5 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                      </div>
+                      <div class="col-span-2">
+                        <label class="block text-xs font-semibold mb-1" style="color: var(--text-muted);">试：模拟上游报错文本</label>
+                        <div class="flex items-center gap-2.5">
+                          <input type="text" id="test-rule-message" value="credit insufficient_quota error" class="flex-1 text-sm font-mono rounded-lg px-3 py-1.5 border focus:outline-none" style="background-color: var(--bg-input); border-color: var(--border-strong); color: var(--text-main);" />
+                          <button type="button" onclick="runRuleTester()" class="px-3.5 py-1.5 rounded-lg text-white text-xs font-bold shrink-0 shadow-xs cursor-pointer" style="background-color: var(--accent);">试一下</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div id="rule-test-result" class="pt-1 flex items-center gap-2">
+                      <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                        ✓ 判定结果：会命中！[错误文本包含匹配: "insufficient_quota"]
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 模块 3: 用量报表 (usage) -->
+          <div id="panel-usage" class="settings-panel hidden space-y-5">
+            <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+              <div>
+                <h3 class="text-base font-bold" style="color: var(--text-main);">网关用量与费用审计</h3>
+                <p class="text-xs mt-1" style="color: var(--text-muted);">多维度分析 Token 消耗、推理计算量与美元费用支出。</p>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <button class="px-3 py-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800" style="color: var(--text-muted);">今天</button>
+                <button class="px-3 py-1.5 rounded-md font-bold" style="background-color: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border);">近 7 天</button>
+                <button class="px-3 py-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800" style="color: var(--text-muted);">近 30 天</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-4">
+              <div class="p-4 rounded-xl border space-y-1.5" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                <span class="text-xs font-semibold" style="color: var(--text-dim);">近 7 天请求总数</span>
+                <div class="text-xl font-bold font-mono" style="color: var(--text-main);">1,280 <span class="text-xs font-normal text-emerald-600">(+12%)</span></div>
+              </div>
+              <div class="p-4 rounded-xl border space-y-1.5" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                <span class="text-xs font-semibold" style="color: var(--text-dim);">累计消耗 Tokens</span>
+                <div class="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">2.85M</div>
+              </div>
+              <div class="p-4 rounded-xl border space-y-1.5" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                <span class="text-xs font-semibold" style="color: var(--text-dim);">预估支出费用</span>
+                <div class="text-xl font-bold font-mono text-blue-600 dark:text-blue-400">$3.42 USD</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 模块 4: 异常诊断 (failures) -->
+          <div id="panel-failures" class="settings-panel hidden space-y-5">
+            <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+              <div>
+                <h3 class="text-base font-bold" style="color: var(--text-main);">异常诊断与故障追溯</h3>
+                <p class="text-xs mt-1" style="color: var(--text-muted);">按平台、供应商、时间范围追溯请求失败详情、上游状态码及熔断事件。</p>
+              </div>
+              <button class="px-3.5 py-1.5 rounded-lg text-white text-xs font-bold" style="background-color: var(--accent);">刷新诊断</button>
+            </div>
+            <div class="border rounded-xl overflow-hidden text-xs" style="border-color: var(--border-subtle);">
+              <div class="p-4 text-slate-500">最近 7 天内无重大网关熔断事件，共记录 2 条上游 429/504 异常。</div>
+            </div>
+          </div>
+
+          <!-- 模块 5: 请求日志 (logs) -->
+          <div id="panel-logs" class="settings-panel hidden space-y-5">
+            <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+              <div>
+                <h3 class="text-base font-bold" style="color: var(--text-main);">Gateway 请求日志流水</h3>
+                <p class="text-xs mt-1" style="color: var(--text-muted);">全量网络请求审计日志，支持按条件筛选、逐条多选与批量清除。</p>
+              </div>
+              <button onclick="if(confirm('确定清空所有网关审计日志吗？')) alert('日志已清空！');" class="px-3.5 py-1.5 rounded-lg border text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30" style="border-color: var(--border-strong);">清空全部日志</button>
+            </div>
+            <div class="border rounded-xl overflow-hidden text-xs" style="border-color: var(--border-subtle);">
+              <div class="p-4 text-slate-500">审计日志流水就绪，所有请求将按精确毫秒级延时与响应状态归档。</div>
+            </div>
+          </div>
+
+          <!-- 模块 6: 平台技能 (skills) -->
+          <div id="panel-skills" class="settings-panel hidden space-y-5">
+            <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+              <div>
+                <h3 class="text-base font-bold" style="color: var(--text-main);">平台技能管理 (Skills)</h3>
+                <p class="text-xs mt-1" style="color: var(--text-muted);">管理注入到各 AI CLI 运行时的自定义 Skill 扩展包（支持导入、启停及回收站）。</p>
+              </div>
+              <button onclick="alert('已从系统选取技能目录导入！')" class="px-3.5 py-1.5 rounded-lg text-white text-xs font-bold" style="background-color: var(--accent);">+ 导入技能</button>
+            </div>
+            <div class="border rounded-xl p-4 text-xs" style="border-color: var(--border-subtle);">
+              共 12 个已安装技能，运行正常。
+            </div>
+          </div>
+
+          <!-- 模块 7: 运行时环境 (environment) -->
+          <div id="panel-environment" class="settings-panel hidden space-y-5">
+            <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+              <div>
+                <h3 class="text-base font-bold" style="color: var(--text-main);">运行时环境探测与 CLI 自动部署</h3>
+                <p class="text-xs mt-1" style="color: var(--text-muted);">检查 Node.js、npm、nvm 及四大平台 CLI 的真实安装状态，支持一键安装缺失环境。</p>
+              </div>
+              <button onclick="alert('已重新扫描目标环境！')" class="px-3.5 py-1.5 rounded-lg border text-xs font-semibold" style="border-color: var(--border-strong);">⟳ 重新检测</button>
+            </div>
+            <div class="p-4 rounded-xl border" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+              Node v22.12.0 就绪 · Codex CLI v0.158.0 就绪。
+            </div>
+          </div>
+
+          <!-- 模块 8: 工作区预设 (presets) -->
+          <div id="panel-presets" class="settings-panel hidden space-y-5">
+            <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+              <div>
+                <h3 class="text-base font-bold" style="color: var(--text-main);">工作区预设 (Workspace Presets)</h3>
+                <p class="text-xs mt-1" style="color: var(--text-muted);">预设常用的项目工作目录、默认启动参数与提示词模板，新建会话时一键加载。</p>
+              </div>
+              <button onclick="alert('弹出新增预设表单')" class="px-3.5 py-1.5 rounded-lg text-white text-xs font-bold" style="background-color: var(--accent);">+ 新增预设</button>
+            </div>
+            <div class="p-4 border rounded-xl" style="border-color: var(--border-subtle);">
+              当前默认预设：d:\code\ai\aivc-rs
+            </div>
+          </div>
+
+          <!-- 模块 9: 系统诊断 (diagnostics) -->
+          <div id="panel-diagnostics" class="settings-panel hidden space-y-5">
+            <div class="flex items-center justify-between pb-3.5 border-b" style="border-color: var(--border-subtle);">
+              <div>
+                <h3 class="text-base font-bold" style="color: var(--text-main);">系统连通性与平台能力矩阵诊断</h3>
+                <p class="text-xs mt-1" style="color: var(--text-muted);">排查本机与 WSL 配置文件探测状态、本地数据库健康度及四大平台能力差异。</p>
+              </div>
+              <button onclick="alert('已开始系统全面诊断！')" class="px-3.5 py-1.5 rounded-lg text-white text-xs font-bold" style="background-color: var(--accent);">开始全面诊断</button>
+            </div>
+            <div class="p-4 rounded-xl border" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+              本机 ConPTY 与 SQLite 数据库状态正常。
+            </div>
+          </div>
+
+          <!-- 模块 10: 关于控制台 (about) -->
+          <div id="panel-about" class="settings-panel hidden space-y-6">
+            <div class="flex items-center gap-4 pb-5 border-b" style="border-color: var(--border-subtle);">
+              <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-2xl shadow-md">
+                AI
+              </div>
+              <div>
+                <h3 class="text-lg font-bold" style="color: var(--text-main);">AI Visual Console (AI 可视化控制台)</h3>
+                <p class="text-xs mt-0.5" style="color: var(--text-muted);">AI CLI 会话与本地智能 Gateway 管理平台 · Rust 架构新版</p>
+              </div>
+            </div>
+
+            <!-- 版本卡片 -->
+            <div class="grid grid-cols-2 gap-4 text-xs">
+              <div class="p-4 rounded-xl border space-y-1.5" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                <div style="color: var(--text-dim);" class="font-semibold">应用版本</div>
+                <div class="font-mono font-bold text-base" style="color: var(--accent);">v0.1.0-rs (Tauri 2 + Rust Core)</div>
+              </div>
+              <div class="p-4 rounded-xl border space-y-1.5" style="background-color: var(--bg-activity); border-color: var(--border-subtle);">
+                <div style="color: var(--text-dim);" class="font-semibold">底层渲染核心</div>
+                <div class="font-mono font-bold text-base" style="color: var(--text-main);">React 19 + @xterm/xterm (Pty Native)</div>
+              </div>
+            </div>
+
+            <div class="p-4 rounded-xl border text-sm leading-relaxed space-y-3" style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-muted);">
+              <p>
+                本控制台统一管理 <strong>OpenAI Codex</strong>、<strong>Claude Code</strong>、<strong>Google Gemini</strong> 与 <strong>Qoder</strong> 会话生命周期，提供具备失败转移、熔断重试、Token 审计的本地智能反向代理网关。
+              </p>
+              <div class="flex items-center gap-3.5 pt-3 border-t font-sans" style="border-color: var(--border-subtle);">
+                <button onclick="alert('已在系统资源管理器中打开日志目录：%APPDATA%\\aivc-rs\\logs')" class="px-3.5 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800" style="border-color: var(--border-strong); color: var(--text-main);">📂 打开日志目录</button>
+                <button onclick="alert('当前已是最新版本 v0.1.0-rs！')" class="px-3.5 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800" style="border-color: var(--border-strong); color: var(--text-main);">🔍 检查新版本</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 6. 交互脚本 -->
+  <script>
+    const TARGETS_BY_PROVIDER = {
+      codex: [
+        { id: "local", label: "本机 Codex (Win32)", count: 33 },
+        { id: "wsl-ubuntu", label: "WSL: Ubuntu-22.04", count: 12 },
+        { id: "wsl-debian", label: "WSL: Debian", count: 5 }
+      ],
+      claude: [
+        { id: "local", label: "本机 Claude (Win32)", count: 18 },
+        { id: "wsl-ubuntu", label: "WSL: Ubuntu-22.04", count: 6 }
+      ],
+      gemini: [
+        { id: "local", label: "本机 Gemini CLI (Win32)", count: 9 }
+      ],
+      qoder: [
+        { id: "local", label: "本机 Qoder (Win32)", count: 4 }
+      ]
+    };
+
+    function onPlatformChange(providerId) {
+      const selectTarget = document.getElementById("select-target");
+      const platformHint = document.getElementById("platform-hint");
+      const summaryText = document.getElementById("session-summary-text");
+
+      const targets = TARGETS_BY_PROVIDER[providerId] || [];
+      selectTarget.innerHTML = "";
+
+      targets.forEach((tgt, idx) => {
+        const opt = document.createElement("option");
+        opt.value = tgt.id;
+        opt.textContent = tgt.label;
+        if (idx === 0) opt.selected = true;
+        selectTarget.appendChild(opt);
+      });
+
+      platformHint.textContent = providerId.toUpperCase() + " CLI";
+      if (targets.length > 0) {
+        summaryText.textContent = `${providerId.toUpperCase()} · 共 ${targets[0].count} 条会话`;
+      }
+    }
+
+    function onTargetChange(targetId) {
+      const providerId = document.getElementById("select-platform").value;
+      const targets = TARGETS_BY_PROVIDER[providerId] || [];
+      const tgt = targets.find(t => t.id === targetId);
+      if (tgt) {
+        document.getElementById("session-summary-text").textContent = `${providerId.toUpperCase()} · 共 ${tgt.count} 条会话`;
+      }
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const isDark = html.classList.contains("dark");
+      const icon = document.getElementById("theme-icon");
+      const label = document.getElementById("theme-label");
+
+      if (isDark) {
+        html.classList.remove("dark");
+        html.classList.add("light");
+        icon.textContent = "☀️";
+        label.textContent = "明亮";
+      } else {
+        html.classList.remove("light");
+        html.classList.add("dark");
+        icon.textContent = "🌙";
+        label.textContent = "暗黑";
+      }
+    }
+
+    let currentInputMode = 'composer';
+
+    function setFocusedInputMode(mode) {
+      currentInputMode = mode;
+      const modeBtn = document.getElementById('status-input-mode');
+      const modeIcon = document.getElementById('input-mode-icon');
+      const modeText = document.getElementById('input-mode-text');
+      const composerCard = document.getElementById('composer-card');
+
+      if (mode === 'composer') {
+        modeIcon.textContent = '💬';
+        modeText.textContent = '自管输入模式';
+        modeBtn.style.backgroundColor = 'var(--accent-soft)';
+        modeBtn.style.borderColor = 'var(--accent-border)';
+        modeBtn.style.color = 'var(--accent)';
+        if (composerCard) composerCard.style.borderColor = 'var(--border-focus)';
+      } else {
+        modeIcon.textContent = '⌨️';
+        modeText.textContent = '终端原生输入';
+        modeBtn.style.backgroundColor = 'var(--bg-badge)';
+        modeBtn.style.borderColor = 'var(--border-subtle)';
+        modeBtn.style.color = 'var(--text-muted)';
+        if (composerCard) composerCard.style.borderColor = 'var(--border-strong)';
+      }
+    }
+
+    function toggleInputModeManually() {
+      setFocusedInputMode(currentInputMode === 'composer' ? 'terminal' : 'composer');
+      if (currentInputMode === 'composer') {
+        document.getElementById('composer-textarea')?.focus();
+      }
+    }
+
+    function toggleAttachmentMenu(e) {
+      e.stopPropagation();
+      const dd = document.getElementById('attachment-dropdown');
+      dd.classList.toggle('hidden');
+    }
+
+    function selectAttachmentOption(kind) {
+      document.getElementById('attachment-dropdown').classList.add('hidden');
+      if (kind === 'image') {
+        alert("已触发添加图片：选取本地图片文件 (PNG/JPG)。");
+      } else {
+        alert("已触发添加文件：选取本地代码或文本文件作为附件。");
+      }
+    }
+
+    function toggleVendorLockPopover(e) {
+      e.stopPropagation();
+      const pop = document.getElementById('vendor-lock-popover');
+      pop.classList.toggle('hidden');
+    }
+
+    function selectVendor(name, latency) {
+      document.getElementById('status-current-vendor').textContent = name;
+      document.getElementById('vendor-lock-popover').classList.add('hidden');
+    }
+
+    function onVendorLockToggle(locked) {
+      const badge = document.getElementById('vendor-lock-badge');
+      if (locked) {
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+
+    document.addEventListener('click', () => {
+      document.getElementById('attachment-dropdown')?.classList.add('hidden');
+      document.getElementById('vendor-lock-popover')?.classList.add('hidden');
+    });
+
+    function openMessagesBranchModal() {
+      document.getElementById('messages-branch-modal').classList.remove('hidden');
+    }
+
+    function closeMessagesBranchModal() {
+      document.getElementById('messages-branch-modal').classList.add('hidden');
+    }
+
+    function switchActivity(mode) {
+      const btnSessions = document.getElementById('act-sessions');
+      const btnWorkbench = document.getElementById('act-workbench');
+      const sidebarSessions = document.getElementById('sidebar-sessions');
+      const sidebarWorkbench = document.getElementById('sidebar-workbench');
+
+      if (mode === 'sessions') {
+        sidebarSessions.classList.remove('hidden');
+        sidebarWorkbench.classList.add('hidden');
+        btnSessions.style.backgroundColor = 'var(--accent-soft)';
+        btnSessions.style.borderColor = 'var(--accent-border)';
+        btnSessions.style.color = 'var(--accent)';
+        btnWorkbench.style.backgroundColor = 'transparent';
+        btnWorkbench.style.color = 'var(--text-muted)';
+      } else if (mode === 'workbench') {
+        sidebarSessions.classList.add('hidden');
+        sidebarWorkbench.classList.remove('hidden');
+        btnWorkbench.style.backgroundColor = 'var(--accent-soft)';
+        btnWorkbench.style.borderColor = 'var(--accent-border)';
+        btnWorkbench.style.color = 'var(--accent)';
+        btnSessions.style.backgroundColor = 'transparent';
+        btnSessions.style.color = 'var(--text-muted)';
+      }
+    }
+
+    // ──────────────────────────────────────────────
+    // 【全新重构】：现代化终端标签切换逻辑
+    // ──────────────────────────────────────────────
+    let activeTabId = 1;
+
+    function switchTerminalTab(id) {
+      activeTabId = id;
+      const tab1 = document.getElementById('tab-btn-1');
+      const tab2 = document.getElementById('tab-btn-2');
+      const dot1 = document.getElementById('tab-dot-1');
+      const dot2 = document.getElementById('tab-dot-2');
+      const headerTitle = document.getElementById('term-header-title');
+      const headerId = document.getElementById('term-header-id');
+
+      if (id === 1) {
+        tab1.className = 'modern-tab modern-tab-active h-8 px-3.5 rounded-lg flex items-center gap-2 border cursor-pointer select-none group shrink-0';
+        tab2.className = 'modern-tab modern-tab-inactive h-8 px-3.5 rounded-lg flex items-center gap-2 border cursor-pointer select-none group shrink-0';
+        dot1.className = 'w-2 h-2 rounded-full bg-emerald-500 glow-dot animate-pulse';
+        dot2.className = 'w-2 h-2 rounded-full bg-slate-400';
+        headerTitle.textContent = 'OpenAI Codex (v0.158.0)';
+        headerId.textContent = 'PTY Session: 01a0c2ee';
+      } else {
+        tab2.className = 'modern-tab modern-tab-active h-8 px-3.5 rounded-lg flex items-center gap-2 border cursor-pointer select-none group shrink-0';
+        tab1.className = 'modern-tab modern-tab-inactive h-8 px-3.5 rounded-lg flex items-center gap-2 border cursor-pointer select-none group shrink-0';
+        dot2.className = 'w-2 h-2 rounded-full bg-emerald-500 glow-dot animate-pulse';
+        dot1.className = 'w-2 h-2 rounded-full bg-slate-400';
+        headerTitle.textContent = 'Claude Code (v0.2.29)';
+        headerId.textContent = 'PTY Session: c7e810a9';
+      }
+    }
+
+    function closeTerminalTab(id) {
+      alert(`已关闭终端标签页 #${id}。`);
+      if (id === 2) {
+        document.getElementById('tab-btn-2').style.display = 'none';
+        switchTerminalTab(1);
+      }
+    }
+
+    const ALL_SETTINGS_TABS = [
+      'vendors', 'gateway', 'usage', 'failures', 'logs',
+      'skills', 'environment', 'presets', 'diagnostics', 'about'
+    ];
+
+    function toggleSettingsModal(initialTab) {
+      const modal = document.getElementById('settings-modal');
+      const isOpening = modal.classList.contains('hidden');
+      modal.classList.toggle('hidden');
+      if (isOpening) {
+        switchSettingsTab(initialTab || 'vendors');
+      }
+    }
+
+    function switchSettingsTab(tabKey) {
+      ALL_SETTINGS_TABS.forEach(key => {
+        const panel = document.getElementById(`panel-${key}`);
+        const navBtn = document.getElementById(`nav-tab-${key}`);
+        if (panel) {
+          if (key === tabKey) {
+            panel.classList.remove('hidden');
+          } else {
+            panel.classList.add('hidden');
+          }
+        }
+        if (navBtn) {
+          if (key === tabKey) {
+            navBtn.style.backgroundColor = 'var(--accent-soft)';
+            navBtn.style.color = 'var(--accent)';
+            navBtn.classList.add('font-bold');
+          } else {
+            navBtn.style.backgroundColor = 'transparent';
+            navBtn.style.color = 'var(--text-muted)';
+            navBtn.classList.remove('font-bold');
+          }
+        }
+      });
+    }
+
+    function createNewSession() {
+      alert("已触发新建会话对话框：为当前平台与目标环境创建全新 PTY 终端会话！");
+    }
+
+    function openVendorForm(mode, vendorName) {
+      document.getElementById('vendor-list-view').classList.add('hidden');
+      const formView = document.getElementById('vendor-form-view');
+      formView.classList.remove('hidden');
+
+      const title = document.getElementById('vendor-form-title');
+      const inputName = document.getElementById('form-vendor-name');
+      const inputUrl = document.getElementById('form-vendor-url');
+      const inputKey = document.getElementById('form-vendor-key');
+      const inputSort = document.getElementById('form-vendor-sort');
+      const inputInPrice = document.getElementById('form-vendor-input-price');
+      const inputOutPrice = document.getElementById('form-vendor-output-price');
+
+      if (mode === 'edit') {
+        title.textContent = `编辑供应商：${vendorName}`;
+        inputName.value = vendorName;
+        inputUrl.value = vendorName.includes('GATEAI') ? 'https://api.gateai.cc/v1' : 'https://api.anthropic.com/v1';
+        inputKey.value = 'sk-proj-abcdef1234567890';
+        inputSort.value = '10';
+        inputInPrice.value = vendorName.includes('GATEAI') ? '0.15' : '3.00';
+        inputOutPrice.value = vendorName.includes('GATEAI') ? '0.60' : '15.00';
+      } else {
+        title.textContent = '新增供应商配置';
+        inputName.value = '';
+        inputUrl.value = '';
+        inputKey.value = '';
+        inputSort.value = '10';
+        inputInPrice.value = '';
+        inputOutPrice.value = '';
+      }
+    }
+
+    function closeVendorForm() {
+      document.getElementById('vendor-form-view').classList.add('hidden');
+      document.getElementById('vendor-list-view').classList.remove('hidden');
+    }
+
+    function saveVendorForm() {
+      const name = document.getElementById('form-vendor-name').value.trim();
+      const url = document.getElementById('form-vendor-url').value.trim();
+      if (!name || !url) {
+        alert("请完整填写供应商名称和 API Base URL！");
+        return;
+      }
+      alert(`供应商「${name}」配置已成功保存！`);
+      closeVendorForm();
+    }
+
+    function toggleKeyVisibility() {
+      const keyInput = document.getElementById('form-vendor-key');
+      const btn = document.getElementById('btn-toggle-key');
+      if (keyInput.type === 'password') {
+        keyInput.type = 'text';
+        btn.textContent = '隐藏密文';
+      } else {
+        keyInput.type = 'password';
+        btn.textContent = '显示明文';
+      }
+    }
+
+    let isGatewayMasterEnabled = true;
+
+    function toggleGatewayMasterSwitch() {
+      isGatewayMasterEnabled = !isGatewayMasterEnabled;
+      const btn = document.getElementById('btn-gateway-master-switch');
+      const dot = document.getElementById('gateway-master-indicator');
+      const label = document.getElementById('gateway-master-label');
+
+      if (isGatewayMasterEnabled) {
+        btn.style.backgroundColor = 'var(--accent-soft)';
+        btn.style.borderColor = 'var(--accent-border)';
+        btn.style.color = 'var(--accent)';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 glow-dot animate-pulse';
+        label.textContent = '● 网关已启用';
+        alert('本地网关已开启！反向代理与终端路由正常工作。');
+      } else {
+        btn.style.backgroundColor = 'var(--bg-badge)';
+        btn.style.borderColor = 'var(--border-subtle)';
+        btn.style.color = 'var(--text-muted)';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+        label.textContent = '○ 网关已停用';
+        alert('本地网关已关闭！注意：使用本地网关代理的终端流量将立即停止转发。');
+      }
+    }
+
+    function saveGatewayAndResilienceConfig() {
+      const port = document.getElementById('gateway-input-port').value.trim();
+      const fail = document.getElementById('input-failure-threshold').value;
+      const circuit = document.getElementById('input-circuit-threshold').value;
+      const duration = document.getElementById('input-circuit-duration').value;
+
+      alert(
+        `【网关与熔断配置已全部集中保存】\n\n` +
+        `• 配置端口：${port === '0' ? '自动分配' : port} (重启应用生效)\n` +
+        `• 异常切换阈值：${fail} 次 (即时生效)\n` +
+        `• 熔断次数阈值：${circuit} 次 (即时生效)\n` +
+        `• 熔断持续时间：${duration} 秒 (即时生效)`
+      );
+    }
+
+    // 外部网关开关状态
+    let isExternalGatewayEnabled = true;
+
+    function toggleExternalGatewaySwitch() {
+      isExternalGatewayEnabled = !isExternalGatewayEnabled;
+      const btn = document.getElementById('btn-external-gateway-switch');
+      const dot = document.getElementById('external-gateway-indicator');
+      const label = document.getElementById('external-gateway-switch-label');
+      const badge = document.getElementById('external-gateway-badge');
+
+      if (isExternalGatewayEnabled) {
+        btn.style.backgroundColor = 'var(--accent-soft)';
+        btn.style.borderColor = 'var(--accent-border)';
+        btn.style.color = 'var(--accent)';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 glow-dot';
+        label.textContent = '● 外部网关已开启';
+        badge.className = 'px-2 py-0.5 rounded text-xs font-mono font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20';
+        badge.textContent = '已开启';
+        alert('外部网关与外部 API 接入已启用！本机第三方客户端现在可以通过平台端点与共享访问令牌调用。');
+      } else {
+        btn.style.backgroundColor = 'var(--bg-badge)';
+        btn.style.borderColor = 'var(--border-subtle)';
+        btn.style.color = 'var(--text-muted)';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+        label.textContent = '○ 外部网关已关闭';
+        badge.className = 'px-2 py-0.5 rounded text-xs font-mono font-bold bg-slate-500/10 text-slate-500 border border-slate-500/20';
+        badge.textContent = '已关闭';
+        alert('外部网关已关闭！外部第三方客户端请求将被直接拒绝。');
+      }
+    }
+
+    function rotateExternalApiToken() {
+      const newToken = 'sk-gw-' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+      document.getElementById('revealed-token-text').textContent = newToken;
+      document.getElementById('new-token-banner').classList.remove('hidden');
+      document.getElementById('token-status-badge').textContent = '已配置 (刚轮换)';
+      alert('已成功生成新共享访问令牌！旧令牌已立即失效。请务必在界面中复制新令牌，关闭后无法再次查看。');
+    }
+
+    function copyEndpoint(elementId) {
+      const text = document.getElementById(elementId).innerText;
+      navigator.clipboard.writeText(text);
+      alert(`已复制平台端点：\n${text}`);
+    }
+
+    function handleRuleScopeChange(scope) {
+      const targetField = document.getElementById('rule-target-field');
+      const targetLabel = document.getElementById('rule-target-label');
+      const providerSelect = document.getElementById('form-rule-provider-select');
+      const vendorSelect = document.getElementById('form-rule-vendor-select');
+      const scopeHint = document.getElementById('scope-hint');
+
+      if (scope === 'global') {
+        targetField.classList.add('hidden');
+        scopeHint.textContent = '全局作用域将对所有平台与供应商请求生效。';
+      } else if (scope === 'provider') {
+        targetField.classList.remove('hidden');
+        targetLabel.innerHTML = '目标服务平台 (Provider) <span class="text-red-500">*</span>';
+        providerSelect.classList.remove('hidden');
+        vendorSelect.classList.add('hidden');
+        scopeHint.textContent = '仅对选中的服务平台生效，该平台下任意供应商触发条件都将执行故障转移。';
+      } else if (scope === 'vendor') {
+        targetField.classList.remove('hidden');
+        targetLabel.innerHTML = '目标供应商 (Vendor) <span class="text-red-500">*</span>';
+        providerSelect.classList.add('hidden');
+        vendorSelect.classList.remove('hidden');
+        scopeHint.textContent = '仅对选中的具体供应商生效，不影响其他供应商。';
+      }
+    }
+
+    function openRuleForm(mode, ruleData) {
+      document.getElementById('rule-list-view').classList.add('hidden');
+      const formView = document.getElementById('rule-form-view');
+      formView.classList.remove('hidden');
+
+      const title = document.getElementById('rule-form-title');
+      const scopeSelect = document.getElementById('form-rule-scope');
+      const patternInput = document.getElementById('form-rule-pattern');
+      const statusInput = document.getElementById('form-rule-status-codes');
+      const customStatusInput = document.getElementById('form-rule-custom-status');
+      const customBodyInput = document.getElementById('form-rule-custom-body');
+      const enabledCheckbox = document.getElementById('form-rule-enabled');
+
+      if (mode === 'edit' && ruleData) {
+        title.textContent = `编辑故障规则：${ruleData.pattern}`;
+        scopeSelect.value = ruleData.scope || 'global';
+        handleRuleScopeChange(scopeSelect.value);
+        if (ruleData.scope === 'provider' && ruleData.providerId) {
+          document.getElementById('form-rule-provider-select').value = ruleData.providerId;
+        } else if (ruleData.scope === 'vendor' && ruleData.vendorId) {
+          document.getElementById('form-rule-vendor-select').value = ruleData.vendorId;
+        }
+        patternInput.value = ruleData.pattern || '';
+        statusInput.value = ruleData.statusCodes || '';
+        customStatusInput.value = ruleData.customStatus || '';
+        customBodyInput.value = ruleData.customBody || '';
+        enabledCheckbox.checked = ruleData.enabled !== false;
+      } else {
+        title.textContent = '新增故障转移与拦截规则';
+        scopeSelect.value = 'global';
+        handleRuleScopeChange('global');
+        patternInput.value = '';
+        statusInput.value = '429, 500';
+        customStatusInput.value = '';
+        customBodyInput.value = '';
+        enabledCheckbox.checked = true;
+      }
+    }
+
+    function closeRuleForm() {
+      document.getElementById('rule-form-view').classList.add('hidden');
+      document.getElementById('rule-list-view').classList.remove('hidden');
+    }
+
+    function saveRuleForm() {
+      const pattern = document.getElementById('form-rule-pattern').value.trim();
+      if (!pattern) {
+        alert('请填写错误文本包含模式！');
+        return;
+      }
+
+      const customStatus = document.getElementById('form-rule-custom-status').value.trim();
+      const customBody = document.getElementById('form-rule-custom-body').value.trim();
+
+      if ((customStatus && !customBody) || (!customStatus && customBody)) {
+        alert('自定义返回拦截：状态码与正文必须同时配置，或同时留空！');
+        return;
+      }
+
+      if (customBody) {
+        try {
+          JSON.parse(customBody);
+        } catch (e) {
+          alert('自定义返回正文必须是合法的 JSON 格式！');
+          return;
+        }
+      }
+
+      alert(`故障规则「${pattern}」已成功保存！`);
+      closeRuleForm();
+    }
+
+    function runRuleTester() {
+      const testCode = document.getElementById('test-rule-status').value.trim();
+      const testMsg = document.getElementById('test-rule-message').value.trim();
+      const pattern = document.getElementById('form-rule-pattern').value.trim() || 'insufficient_quota';
+      const statusCodesStr = document.getElementById('form-rule-status-codes').value;
+      const statusCodes = statusCodesStr ? statusCodesStr.split(',').map(s => s.trim()) : [];
+
+      const resBox = document.getElementById('rule-test-result');
+      const isStatusMatch = statusCodes.length > 0 && statusCodes.includes(testCode);
+      const isPatternMatch = testMsg && pattern && testMsg.toLowerCase().includes(pattern.toLowerCase());
+
+      if (isPatternMatch || isStatusMatch) {
+        const reasons = [];
+        if (isPatternMatch) reasons.push(`错误文本包含匹配: "${pattern}"`);
+        if (isStatusMatch) reasons.push(`HTTP 状态码匹配: ${testCode}`);
+        resBox.innerHTML = `<span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">✓ 判定结果：会命中！[${reasons.join(' 且 ')}]</span>`;
+      } else {
+        resBox.innerHTML = `<span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-red-500/10 text-red-600 border border-red-500/20">✗ 判定结果：未命中任何规则条件</span>`;
+      }
+    }
+  </script>
+</body>
+</html>

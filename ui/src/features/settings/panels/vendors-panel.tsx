@@ -61,7 +61,9 @@ import { formatWhen } from "../../../app/session-display";
  * 3. 余额与操作拆成两列；
  * 4. 操作列新增「复制」＝克隆为新供应商（id 留空、密钥重填）；
  * 5. 候选池状态改为**开关**（`role="switch"`，旧平台同形），操作列的
- *    启用/禁用按钮随之移除。
+ *    启用/禁用按钮随之移除；
+ * 6. **写 CLI 配置文件改为表单里的显式勾选**（`vendor:write-configs`，只写文件）；
+ *    候选池开关只翻启用位——二轮实机反馈修正（「启用写文件」是重写时的口径错误）。
  */
 
 /** 供应商编辑草稿。数字字段用字符串存——输入框里「空」与「0」不是一回事。 */
@@ -313,6 +315,13 @@ export function VendorsPanel({
    * 状态还没回来时连点两下，第二次会把它又翻回去。
    */
   const [togglingId, setTogglingId] = useState("");
+  /**
+   * 「保存时写入 CLI 配置文件」勾选。
+   *
+   * **每次打开表单都从未勾选开始**：写文件是动用户 HOME 的一次性动作，
+   * 不该被上一次的选择悄悄带进来。它与候选池开关无关（那个只翻启用位）。
+   */
+  const [writeOnSave, setWriteOnSave] = useState(false);
   /** 批量刷余额是否在跑。单家的进行中状态在 `balance` 里逐行记。 */
   const [busy, setBusy] = useState(false);
   /** 每一行的余额状态。不在表里的行就是「未获取」。 */
@@ -354,22 +363,14 @@ export function VendorsPanel({
     if (togglingId) return;
     setTogglingId(vendor.id);
     try {
-      if (vendor.enabled) {
-        // 停用：只翻启用位，**不动文件**——把用户 CLI 里的配置改回去不是
-        // 「停用」该做的事（那份文件可能有他自己后来加的改动）。
-        await api.setVendorEnabled(vendor.id, false);
-        await load();
-        onNotify?.(`已禁用供应商：${vendor.name}`);
-        return;
-      }
-      // 启用：**先写 CLI 配置（带备份），再翻启用位**。旧平台的含义就是这样——
-      // 供应商被启用的意思是「CLI 的配置指向它」。
-      const result = await api.enableVendor(vendor.id);
+      // **只翻候选池的启用位，绝不动用户的 CLI 配置文件**——写文件是表单里
+      // 那个「保存时写入」勾选的事（`vendor:write-configs`），两者互不牵连。
+      await api.setVendorEnabled(vendor.id, !vendor.enabled);
       await load();
       onNotify?.(
-        result.written.length === 0
-          ? `已启用供应商：${vendor.name}（这个平台没有标准配置模板，未写入文件）`
-          : `已启用供应商：${vendor.name}，写入 ${result.written.length} 个配置文件，原文件已备份到 ${result.backupRoot}`
+        vendor.enabled
+          ? `已禁用供应商：${vendor.name}（移出候选池）`
+          : `已启用供应商：${vendor.name}（加入候选池）`
       );
     } catch (error) {
       onError(errorText(error));
@@ -524,7 +525,7 @@ export function VendorsPanel({
             ...(outputPrice.value === undefined ? {} : { outputPerMillionUsd: outputPrice.value })
           };
     try {
-      await api.saveVendor({
+      const saved = await api.saveVendor({
         ...(draft.id ? { id: draft.id } : {}),
         // **用草稿里的厂商**，不是外层的当前平台。这一行就是用户报的那个缺陷。
         providerId: draft.providerId,
@@ -540,7 +541,24 @@ export function VendorsPanel({
       });
       setDraft(null);
       await load();
-      onNotify?.(draft.id ? `供应商已保存：${draft.name.trim()}` : `已新增供应商：${draft.name.trim()}`);
+      let writeNote = "";
+      if (writeOnSave) {
+        // 写文件是**单独一步**：它失败不该掩盖「记录已保存」这件事，因此分开报错、
+        // 分开提示；后端只写文件，不翻候选池启用位、也不刷「最近启用时刻」。
+        try {
+          const result = await api.writeVendorConfigs(saved.id);
+          writeNote =
+            result.written.length === 0
+              ? "；这个平台没有标准配置模板，未写入文件"
+              : `；已写入 ${result.written.length} 个配置文件（原文件已备份到 ${result.backupRoot}）`;
+        } catch (error) {
+          onError(`供应商已保存，但写入配置文件失败：${errorText(error)}`);
+        }
+      }
+      onNotify?.(
+        (draft.id ? `供应商已保存：${draft.name.trim()}` : `已新增供应商：${draft.name.trim()}`) +
+          writeNote
+      );
     } catch (error) {
       onError(errorText(error));
     }
@@ -555,6 +573,7 @@ export function VendorsPanel({
     // 因此先问一次；取消则什么都不动。手法与删除确认一致（`window.confirm`）。
     if (draft !== null && !window.confirm("正在编辑供应商，放弃当前修改并新建？")) return;
     setFieldErrors({});
+    setWriteOnSave(false);
     setDraft({
       id: "",
       providerId: defaultProvider(),
@@ -563,11 +582,8 @@ export function VendorsPanel({
       apiBaseUrl: "",
       sort: String(vendors.length),
       /**
-       * **新建默认不启用**。
-       *
-       * 启用会去**写用户的 CLI 配置文件**（见 `toggle`），那是一个有副作用的动作，
-       * 不该由「点了新增」顺手完成。用户先把地址、密钥、费率填对、确认无误，
-       * 再自己点「启用」。
+       * **新建默认不启用（不加入候选池）**：那是用户确认过地址/密钥/费率之后的
+       * 显式动作。写 CLI 配置文件同理——由表单里的勾选显式触发，从不顺手做。
        */
       enabled: false,
       inputPrice: "",
@@ -750,6 +766,19 @@ export function VendorsPanel({
           </section>
 
           {/*
+            写文件是一个**显式动作**：保存本身只写数据库。勾上才在保存后把配置模板
+            写进 CLI 配置文件（写前备份）。与候选池开关无关——那个只翻启用位。
+          */}
+          <label className="vendor-write-toggle">
+            <input
+              type="checkbox"
+              checked={writeOnSave}
+              onChange={(event) => setWriteOnSave(event.target.checked)}
+            />
+            <span>保存时写入 CLI 配置文件（写前备份）</span>
+          </label>
+
+          {/*
             高级 JSON 单独一块、默认收起。旧的供应商对话框把这两项混在表单里，
             十几个字段的配置摊开之后，真正常用的「名称 / 地址 / Key」反而不好找。
           */}
@@ -794,22 +823,20 @@ export function VendorsPanel({
             </Button>
             <ToolbarSpacer />
             {/*
-              **这里此前写的是「写入 CLI 配置前会自动备份到 data/vendor-backups/」——
-              那是一句这个界面做不到的承诺；后来一度矫枉过正改写成「本界面不会写 CLI 配置」，
-              同样不对。两种动作的后果必须如实分开说：**
+              三种动作的后果必须如实分开说（2026-10-02 二轮修正——「启用会写文件」
+              是重写时的口径错误，旧平台不是这样）：
 
-              实测：**启用**走 `vendor:enable`，它会把供应商的配置模板写进用户的 CLI
-              配置文件（写前备份；这个平台没有标准模板时不写，提示里会说）。
-              **禁用**走 `vendor:set-enabled`，只翻数据库里的标志位、不动文件。
-
-              表单保存本身改的只是应用数据库里的那条记录；凭据由网关在终端启动时注入。
+              - 候选池开关：`vendor:set-enabled`，只翻数据库里的启用位、从不碰文件；
+              - 表单「保存时写入」勾选：保存后走 `vendor:write-configs` 写配置模板
+                （写前备份；这个平台没有标准模板时不写，提示里会说）；
+              - 表单保存本身：只写应用数据库里的那条记录；凭据由网关在终端启动时注入。
             */}
             <span className="row-meta">
               {/* 整句包一层 `<span>`：`.row-meta` 是 `display: flex` 的，句子直接写在里面时
                   `<strong>` 会被当成**另一项**，整句被拆成三列（收尾那次清 `**` 就是这么拆坏的）。 */}
               <span>
-                表单保存的是<strong>应用数据库里的记录</strong>；「启用」会把配置模板写进你的 CLI
-                配置文件（写前备份），「禁用」只翻启用位、不改动文件。
+                表单保存的是<strong>应用数据库里的记录</strong>；勾选「保存时写入」才会把配置模板
+                写进你的 CLI 配置文件（写前备份）。候选池开关只翻启用位，从不改动文件。
               </span>
             </span>
           </Toolbar>
@@ -937,8 +964,8 @@ export function VendorsPanel({
                             className={`vendor-pool-switch${vendor.enabled ? " active" : ""}`}
                             title={
                               vendor.enabled
-                                ? "禁用：只翻启用位，不改动你的 CLI 配置文件"
-                                : "启用：先把配置模板写进 CLI 配置文件（写前备份），再翻启用位"
+                                ? "禁用：移出候选池（不改动你的 CLI 配置文件）"
+                                : "启用：加入候选池（不改动你的 CLI 配置文件）"
                             }
                             disabled={togglingId === vendor.id}
                             onClick={() => void toggle(vendor)}
@@ -974,6 +1001,7 @@ export function VendorsPanel({
                             small
                             onClick={() => {
                               setFieldErrors({});
+                              setWriteOnSave(false);
                               setDraft({
                                 id: vendor.id,
                                 providerId: vendor.providerId,
@@ -1005,6 +1033,7 @@ export function VendorsPanel({
                             title="复制这条配置新建供应商（名称带「副本」，API Key 需重填）"
                             onClick={() => {
                               setFieldErrors({});
+                              setWriteOnSave(false);
                               setDraft({
                                 id: "",
                                 providerId: vendor.providerId,

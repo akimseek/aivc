@@ -111,31 +111,82 @@ impl VendorCommands {
         ctx.vendor().set_enabled(&id, enabled).await
     }
 
-    /// 启用并记录启用时刻。
+    /// 写入供应商声明的配置模板（写前备份），**不碰数据库**。
+    ///
+    /// 这是「新增/编辑供应商时勾选写入」的落点：写文件与参与候选池是两件事——
+    /// 候选池开关只翻启用位（见 [`Self::set_enabled`]），不应动用户的 CLI 配置文件。
+    ///
+    /// # Errors
+    ///
+    /// 供应商不存在、未启用任何配置模板、路径不允许、内容为空或写文件失败。
+    pub async fn write_configs(ctx: &ProviderContext, args: &Value) -> Result<Value> {
+        let id = VendorId::from(require_string(args.get("id"), "id")?);
+        let vendor = Self::require_vendor_by_id(ctx, &id).await?;
+        let (written, backup_root) = Self::write_vendor_files(ctx, &vendor, &vendor_at(args))?;
+        Ok(json!({
+            "vendorId": vendor.id.as_str(),
+            "written": written,
+            "backupRoot": backup_root.to_string_lossy(),
+        }))
+    }
+
+    /// 启用并记录启用时刻：**写文件 + 翻启用位**（旧平台 `vendor:enable` 的完整语义）。
     ///
     /// 启用时刻用于候选池排序（最近启用的优先），因此不能在 `set_enabled` 里顺手写——
     /// 停用再启用会刷新它，而单纯改启用位不应该影响排序。
     ///
     /// # Errors
     ///
-    /// 供应商不存在或数据库写入失败。
+    /// 供应商不存在、写文件失败或数据库写入失败。
     pub async fn enable(ctx: &ProviderContext, args: &Value) -> Result<Value> {
         let id = VendorId::from(require_string(args.get("id"), "id")?);
-        let at = args
-            .get("at")
-            .and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .map_or_else(Timestamp::now, Timestamp::from_raw);
-
+        let at = vendor_at(args);
         // 先找供应商：启用要写它声明的配置文件，没有配置就没有可写的东西。
-        let vendor = ctx
-            .vendor()
+        let vendor = Self::require_vendor_by_id(ctx, &id).await?;
+
+        // 先写完全部文件，再改数据库。
+        //
+        // 顺序不能颠倒：反过来的话，写文件失败会留下「数据库说已启用、但配置没写进去」
+        // 的状态——界面显示已启用而 CLI 实际用的是旧配置，这是最难排查的一类不一致。
+        let (written, backup_root) = Self::write_vendor_files(ctx, &vendor, &at)?;
+
+        let vendor = ctx.vendor().set_enabled(&id, true).await?;
+        ctx.vendor().mark_enabled_at(&id, &at).await?;
+
+        Ok(json!({
+            "vendorId": vendor.id.as_str(),
+            "written": written,
+            "backupRoot": backup_root.to_string_lossy(),
+            "lastEnabledAt": vendor.last_enabled_at.as_ref().map(|value| value.as_str().to_owned()),
+        }))
+    }
+
+    /// 按 id 找供应商（写文件与启用共用）。
+    ///
+    /// # Errors
+    ///
+    /// 供应商不存在或列表读取失败。
+    async fn require_vendor_by_id(ctx: &ProviderContext, id: &VendorId) -> Result<ApiVendor> {
+        ctx.vendor()
             .list(None)
             .await?
             .into_iter()
-            .find(|vendor| vendor.id == id)
-            .ok_or_else(|| failed("供应商不存在。".to_owned()))?;
+            .find(|vendor| vendor.id == *id)
+            .ok_or_else(|| failed("供应商不存在。".to_owned()))
+    }
 
+    /// 把全部启用中的配置模板写进目标文件，返回 `(已写入的路径, 本次备份根)`。
+    ///
+    /// 每次用一个新的时间戳目录：反复写入时，**每一次的历史内容都值得保留**。
+    ///
+    /// # Errors
+    ///
+    /// 未启用任何模板、路径不允许、内容为空或写文件失败（中途失败会如实报告已写入的部分）。
+    fn write_vendor_files(
+        ctx: &ProviderContext,
+        vendor: &ApiVendor,
+        at: &Timestamp,
+    ) -> Result<(Vec<String>, std::path::PathBuf)> {
         let active: Vec<&aivc_core::vendor::VendorConfigTemplate> = vendor
             .configs
             .iter()
@@ -145,8 +196,6 @@ impl VendorCommands {
             return Err(failed("请至少启用一个配置文件。".to_owned()));
         }
 
-        // 每次启用用一个新的时间戳目录：反复启用时，**每一次的历史内容都值得保留**。
-        //
         // `backup_root` 接收的是**父目录**（它自己会拼一层 `vendor-backups`），
         // 因此这里传 `data/` 而不是 `ctx.vendor_backup_root()`——后者本身已经
         // 是 `data/vendor-backups`，再传进去会得到 `data/vendor-backups/vendor-backups/...`。
@@ -154,10 +203,6 @@ impl VendorCommands {
         let backup_root =
             aivc_tooling::vendor::backup_root(&ctx.paths().data_dir(), &vendor.name, at.as_str());
 
-        // 先写完全部文件，再改数据库。
-        //
-        // 顺序不能颠倒：反过来的话，写文件失败会留下「数据库说已启用、但配置没写进去」
-        // 的状态——界面显示已启用而 CLI 实际用的是旧配置，这是最难排查的一类不一致。
         let mut written: Vec<String> = Vec::new();
         for config in active {
             let content = aivc_tooling::vendor::normalize_config_content(
@@ -198,17 +243,16 @@ impl VendorCommands {
             })?;
             written.push(config.target_path.clone());
         }
-
-        let vendor = ctx.vendor().set_enabled(&id, true).await?;
-        ctx.vendor().mark_enabled_at(&id, &at).await?;
-
-        Ok(json!({
-            "vendorId": vendor.id.as_str(),
-            "written": written,
-            "backupRoot": backup_root.to_string_lossy(),
-            "lastEnabledAt": vendor.last_enabled_at.as_ref().map(|value| value.as_str().to_owned()),
-        }))
+        Ok((written, backup_root))
     }
+}
+
+/// 解析可选 `at` 参数（缺失/空白时取当前时刻）。
+fn vendor_at(args: &Value) -> Timestamp {
+    args.get("at")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map_or_else(Timestamp::now, Timestamp::from_raw)
 }
 
 /// 查询类命令：模型列表与余额。
@@ -616,12 +660,24 @@ mod tests {
             .await
             .expect_err("必须拒绝");
         assert_eq!(error.to_string(), "请至少启用一个配置文件。");
+
+        // `write_configs` 走同一套写入前置检查，拒绝口径一致。
+        let error = VendorCommands::write_configs(&ctx, &json!({ "id": saved.id.as_str() }))
+            .await
+            .expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "请至少启用一个配置文件。");
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn enabling_a_missing_vendor_is_rejected() {
         let (ctx, _dir) = context().await;
         let error = VendorCommands::enable(&ctx, &json!({ "id": "nope" }))
+            .await
+            .expect_err("必须拒绝");
+        assert_eq!(error.to_string(), "供应商不存在。");
+
+        // `write_configs` 对不存在的供应商给同一句话。
+        let error = VendorCommands::write_configs(&ctx, &json!({ "id": "nope" }))
             .await
             .expect_err("必须拒绝");
         assert_eq!(error.to_string(), "供应商不存在。");

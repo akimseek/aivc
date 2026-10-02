@@ -2903,6 +2903,15 @@ select {
 .vendor-form-grid .span-full {
   grid-column: 1 / -1;
 }
+/* 「保存时写入 CLI 配置文件」勾选：写文件是显式动作，勾选项放在表单末尾。 */
+.vendor-write-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  font-size: 12px;
+  color: var(--ui-muted);
+  cursor: pointer;
+}
 
 /* ── 供应商的高级配置 ────────────────────────────────────
    默认收起：十几个字段的高级配置摊开后，常用的「名称/地址/Key」反而不好找。 */

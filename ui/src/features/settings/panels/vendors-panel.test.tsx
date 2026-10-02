@@ -39,6 +39,8 @@ function fakeRuntime(
     /** 单家余额：`"fail"` 表示后端返回带 `error` 的结果。 */
     balance?: Record<string, unknown> | "fail";
     allBalances?: unknown[];
+    /** `"fail"` 表示写配置文件抛错（`vendor:write-configs`）。 */
+    writeConfigs?: "fail";
   } = {}
 ) {
   const calls: Invoke[] = [];
@@ -59,6 +61,14 @@ function fakeRuntime(
           return { vendorId, balance: extra.balance ?? {} };
         }
         if (name === "vendor:refresh-balances") return extra.allBalances ?? [];
+        if (name === "vendor:write-configs") {
+          if (extra.writeConfigs === "fail") throw new Error("磁盘只读");
+          return {
+            vendorId: String(payload?.args?.id ?? ""),
+            written: ["~/.codex/auth.json"],
+            backupRoot: "data/vendor-backups/测试家/2026"
+          };
+        }
         if (name === "vendor:list-models") return [];
         if (name === "vendor:read-configs") return [];
         return null;
@@ -649,9 +659,10 @@ describe("VendorsPanel：启用与禁用的区别必须是说得出的话", () =
       expect(view.container.querySelectorAll('[role="switch"]')).toHaveLength(2);
     });
     const switches = [...view.container.querySelectorAll<HTMLButtonElement>('[role="switch"]')];
-    // 禁用只翻数据库标志位；启用会**写用户的 CLI 配置文件**（写前备份）。
-    expect(switches[0]!.getAttribute("title")).toContain("只翻启用位");
-    expect(switches[1]!.getAttribute("title")).toContain("写进 CLI 配置文件");
+    // **开关只管候选池**：两个方向都不碰用户的 CLI 配置文件（写文件是表单里的显式勾选）。
+    expect(switches[0]!.getAttribute("title")).toContain("移出候选池");
+    expect(switches[0]!.getAttribute("title")).toContain("不改动你的 CLI 配置文件");
+    expect(switches[1]!.getAttribute("title")).toContain("加入候选池");
   });
 
   it("表单底部的说明同样如实分开说（那句话此前与实现相反）", async () => {
@@ -837,6 +848,78 @@ describe("VendorsPanel：费率与高级 JSON 接线", () => {
       (item.placeholder ?? "").includes("endpoint")
     ) as HTMLTextAreaElement;
     expect(area.value).toContain("/balance");
+  });
+});
+
+describe("VendorsPanel：保存时写入 CLI 配置文件（二轮：写文件与候选池解耦）", () => {
+  it("**默认不勾选：只保存，不写文件**——写文件必须是一次显式动作", async () => {
+    const { byText, runtime, inputsByPlaceholder, typeInto } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await typeInto(inputsByPlaceholder("官方")!, "不写文件");
+    await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    await waitFor(() => {
+      expect(runtime.calls.some((item) => item.command === "vendor:save")).toBe(true);
+    });
+    expect(runtime.calls.some((item) => item.command === "vendor:write-configs")).toBe(false);
+  });
+
+  it("**勾选后保存：写配置模板（带备份）并在提示里如实说**", async () => {
+    const { byText, view, runtime, onNotify, inputsByPlaceholder, typeInto } = setup();
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await typeInto(inputsByPlaceholder("官方")!, "要写文件");
+    await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
+    const box = view.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(box.checked).toBe(false);
+    await act(async () => {
+      box.click();
+    });
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    await waitFor(() => {
+      const call = runtime.calls.find((item) => item.command === "vendor:write-configs");
+      // 写文件带的是**刚保存出来的**那条记录。
+      expect(call?.args.id).toBe("new");
+    });
+    await waitFor(() => {
+      expect(onNotify.mock.calls.some((call) => String(call[0]).includes("备份"))).toBe(true);
+    });
+    expect(onNotify.mock.calls.some((call) => String(call[0]).includes("已写入 1 个配置文件"))).toBe(
+      true
+    );
+  });
+
+  it("**写文件失败不掩盖「已保存」**：分开报错，通知照常", async () => {
+    const { byText, view, onError, onNotify, inputsByPlaceholder, typeInto } = setup({}, {
+      writeConfigs: "fail"
+    });
+    await act(async () => {
+      byText("新增供应商")!.click();
+    });
+    await typeInto(inputsByPlaceholder("官方")!, "写失败");
+    await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
+    await act(async () => {
+      view.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    });
+    await act(async () => {
+      byText("创建")!.click();
+    });
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(
+        expect.stringContaining("供应商已保存，但写入配置文件失败")
+      );
+    });
+    expect(onNotify.mock.calls.some((call) => String(call[0]).includes("已新增"))).toBe(true);
   });
 });
 

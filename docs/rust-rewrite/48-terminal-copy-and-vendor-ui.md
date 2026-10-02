@@ -89,3 +89,30 @@
 `npm run build` / `verify -Quick` 八段。删件：`vendor-probe-panel.tsx(.test)`、
 `readVendorConfigs` 包装、`VendorConfigFile` 类型；`balanceText` 迁入 `vendors-panel.tsx`。
 
+## 七、口径修正：启用候选池 ≠ 写 CLI 配置文件（2026-10-02 深夜，用户实机反馈）
+
+**用户报告**：启用候选池不该改配置文件；旧平台是新增/编辑供应商时勾选了才写。
+
+**核实**（旧 Electron 仓）：
+
+- 列表那个「参与候选池」开关（`vendor-candidate-toggle`）走 `vendor:set-enabled`——
+  **只翻数据库标志位**；`saveApiVendor` 也只写库。
+- 旧平台的写文件实现（`enableApiVendor`＝写模板+备份后翻位）在旧界面里
+  **没有任何调用入口**——它不是开关触发的。
+- 本重写把「启用」接到了 `vendor:enable`（写文件），属重写时的口径错误。
+
+**修正**：
+
+1. 候选池开关两个方向都只调 `vendor:set-enabled`（通知改「加入/移出候选池」，
+   提示语明确「不改动你的 CLI 配置文件」）。
+2. 后端新增 **`vendor:write-configs`**：只写文件（写前备份），**不翻启用位、
+   不刷「最近启用时刻」**——避免写入顺带改变候选池状态/排序。`vendor:enable`
+   保留原语义（写文件+翻位），界面不再调用。
+3. 新增/编辑表单加「**保存时写入 CLI 配置文件（写前备份）**」勾选（默认不勾、
+   每次打开都重置）；保存成功后单独执行写入，**写入失败与「已保存」分开报**。
+4. 命令注册表 97 → 98（Vendor 域 11 → 12），计数断言同步。
+
+验证：`tsc` / `vitest`（**87 文件 / 879 项全绿**：开关语义改写 + 新增 3 项表单写入用例）/
+`cargo test`（aivc-ipc 176 项 + 全 workspace）/ `npm run build` / `verify -Quick` 八段。
+本节修正取代前文里「启用会写 CLI 配置文件」的一切表述。
+

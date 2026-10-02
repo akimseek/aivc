@@ -617,6 +617,7 @@ impl CommandRouter {
             "vendor:delete" => to_value(VendorCommands::delete(ctx, &args).await?),
             "vendor:set-enabled" => to_value(VendorCommands::set_enabled(ctx, &args).await?),
             "vendor:enable" => Ok(VendorCommands::enable(ctx, &args).await?),
+            "vendor:write-configs" => Ok(VendorCommands::write_configs(ctx, &args).await?),
 
             // --- 工作区预设 ---
             "workspace:list-presets" => to_value(WorkspaceCommands::list_presets(ctx).await?),

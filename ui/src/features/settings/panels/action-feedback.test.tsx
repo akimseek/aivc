@@ -102,29 +102,29 @@ describe("VendorsPanel：供应商动作要有回音", () => {
     confirmSpy.mockRestore();
   });
 
-  it("**启用走 vendor:enable（写 CLI 配置），停用只翻启用位**", async () => {
-    // 旧平台「启用」的含义是「CLI 的配置指向它」——只翻标志位会留下
-    // 「界面说已启用、CLI 还用着旧配置」这种最难排查的不一致。
+  it("**候选池开关只翻启用位**：两个方向都不写 CLI 配置文件", async () => {
+    // 2026-10-02 二轮实机修正：旧平台的「参与候选池」开关从不改文件——写配置是
+    // 新增/编辑表单里那个显式勾选（`vendor:write-configs`）。开关若顺手写文件，
+    // 会把用户的 CLI 配置改掉，而且和表单里的勾选互相打架。
     const onNotify = vi.fn();
     const calls: string[] = [];
-    // 列表要**跟着状态变**：否则停用之后重新拉列表仍然回到「已启用」，
-    // 开关会弹回原位（第一版测试就是这么失败的）。
+    // 列表要**跟着状态变**：否则开关点完会被重新拉取的列表弹回原位。
     let enabled = true;
     fakeRuntime({
       "vendor:list": () => [{ ...vendor, enabled }],
-      "vendor:set-enabled": () => {
-        calls.push("set-enabled");
-        enabled = false;
+      "vendor:set-enabled": (args) => {
+        calls.push(`set-enabled:${String(args.enabled)}`);
+        enabled = args.enabled === true;
         return { ...vendor, enabled };
       },
+      // 下面两条**不该被开关碰到**——有记录就说明开关越界了。
       "vendor:enable": () => {
         calls.push("enable");
-        enabled = true;
-        return {
-          vendorId: "v1",
-          written: ["~/.codex/auth.json", "~/.codex/config.toml"],
-          backupRoot: "data/vendor-backups/测试家/2026"
-        };
+        return { vendorId: "v1", written: [], backupRoot: "" };
+      },
+      "vendor:write-configs": () => {
+        calls.push("write-configs");
+        return { vendorId: "v1", written: [], backupRoot: "" };
       }
     });
     const view = render(
@@ -138,24 +138,23 @@ describe("VendorsPanel：供应商动作要有回音", () => {
     const toggle = () => view.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
 
     await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("true"));
-    // 停用：只翻启用位，**不动用户的文件**。
+
+    // 停用：移出候选池。
     await act(async () => {
       toggle().click();
     });
     await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("false"));
-    expect(calls).toEqual(["set-enabled"]);
-    expect(onNotify.mock.calls[0][0]).toContain("已禁用");
+    expect(onNotify.mock.calls[0][0]).toContain("移出候选池");
 
-    // 启用：走 vendor:enable（写文件 + 备份）。
+    // 启用：加入候选池。
     await act(async () => {
       toggle().click();
     });
     await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("true"));
-    expect(calls).toContain("enable");
-    // 启用那条必须点名写了哪些文件、备份在哪——它动了用户 HOME 下的东西。
-    await waitFor(() => {
-      expect(onNotify.mock.calls.some((call) => String(call[0]).includes("备份"))).toBe(true);
-    });
+    expect(onNotify.mock.calls[1][0]).toContain("加入候选池");
+
+    // 两个方向都只发 set-enabled；写文件的命令一次都不该出现。
+    expect(calls).toEqual(["set-enabled:false", "set-enabled:true"]);
   });
 
   it("**开关在途时禁用**：第二下读到的还是切换前的状态，会把刚改完的又翻回去", async () => {

@@ -3117,14 +3117,6 @@ select {
   white-space: nowrap;
   user-select: all;
 }
-.gateway-endpoint-auth {
-  overflow: hidden;
-  color: var(--ui-faint);
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* 自定义拦截应答：与匹配条件分开一层底——它说的是「命中之后发生什么」。 */
 .gateway-custom-response {

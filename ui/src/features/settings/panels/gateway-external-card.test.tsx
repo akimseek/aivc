@@ -6,21 +6,16 @@ import { GatewayExternalCard, buildExternalEndpoints } from "./gateway-external-
 import type { AiProviderSummary, ExternalApiStatus } from "../../../types";
 
 /**
- * 外部网关卡：端点清单必须是**后端真实路由**，不是 demo 里的字符串。
+ * 外部网关卡：端点清单 = **网关根地址 + 平台路径**。
  *
- * # 为什么要专门钉这一条（裁定 B-R11）
+ * # 形制（2026-10-02 统一外部接入）
  *
- * demo（第 1141-1162 行）写的是 `http://127.0.0.1:22755/external/codex/v1` 这类地址，
- * 那是**旧平台**的形制（`D:/code/ai/src/electron/gateway/vendor-gateway.ts:238-240`
- * 的 `/external/<平台>`）。Rust 侧的路由前缀来自
- * `crates/aivc-gateway/src/routes.rs:33/102-114`：
+ * 外部接入路径是 `/<平台>`（如 `http://127.0.0.1:8787/codex`），直达该平台的
+ * 候选池；协议后缀（`/v1/responses` 等）由接入方按自己的协议追加、网关原样透传。
+ * 设计与裁定见 `docs/superpowers/specs/2026-10-02-gateway-unified-external-design.md`。
  *
- * - `ROUTE_PREFIX = "/gateway"`；
- * - `route_prefix()` 拼出 `/gateway/<平台>/<路由编号>`；
- * - `build_route_url()` 把 host 的尾斜杠去掉再接上前缀。
- *
- * 因此界面上必须是 `http://127.0.0.1:<port>/gateway/<平台>/<routeId>`。
- * 照抄 demo 会让用户把一个**永远 404** 的地址填进外部客户端。
+ * 旧两种形制都不能用：demo 的 `/external/<平台>`（旧 Electron 版）与更早界面上的
+ * `/gateway/<平台>/<routeId>` 占位符（Rust 版外部路由从未注册，那个地址必然 404）。
  */
 
 const STATUS: ExternalApiStatus = { enabled: true, hasToken: true };
@@ -64,14 +59,14 @@ function findButton(container: HTMLElement, text: string) {
   );
 }
 
-describe("buildExternalEndpoints：与 routes.rs 的形制一致，清单从 `providers` 派生", () => {
-  it("四个平台各一条，形如 `<base>/gateway/<平台>/<routeId>`（顺序即 providers 的顺序）", () => {
+describe("buildExternalEndpoints：`{base}/{平台}`，清单从 `providers` 派生", () => {
+  it("**端点就是 `{网关根地址}/{平台}`**：没有 `/gateway`、没有 `/external`、没有占位符", () => {
     const endpoints = buildExternalEndpoints(HOST, FOUR_PROVIDERS);
     expect(endpoints.map((item) => item.url)).toEqual([
-      `${HOST}/gateway/codex/<routeId>`,
-      `${HOST}/gateway/gemini/<routeId>`,
-      `${HOST}/gateway/claude/<routeId>`,
-      `${HOST}/gateway/qoder/<routeId>`
+      `${HOST}/codex`,
+      `${HOST}/gemini`,
+      `${HOST}/claude`,
+      `${HOST}/qoder`
     ]);
     // 显示名也取自 `providers`（与规则表同源），不从本地兜底表来。
     expect(endpoints.map((item) => item.label)).toEqual([
@@ -84,9 +79,9 @@ describe("buildExternalEndpoints：与 routes.rs 的形制一致，清单从 `pr
 
   it("**给三个平台就只出三条**：清单是 `providers` 的映射，不是本地那份写死的四个", () => {
     expect(buildExternalEndpoints(HOST, THREE_PROVIDERS).map((item) => item.url)).toEqual([
-      `${HOST}/gateway/codex/<routeId>`,
-      `${HOST}/gateway/claude/<routeId>`,
-      `${HOST}/gateway/qoder/<routeId>`
+      `${HOST}/codex`,
+      `${HOST}/claude`,
+      `${HOST}/qoder`
     ]);
   });
 
@@ -101,32 +96,13 @@ describe("buildExternalEndpoints：与 routes.rs 的形制一致，清单从 `pr
     ]);
   });
 
-  it("**没有一个端点长得像旧平台的 `/external/...`**（demo 那串字符串不能照抄）", () => {
-    for (const item of buildExternalEndpoints(HOST, FOUR_PROVIDERS)) {
-      expect(item.url).not.toContain("/external/");
-    }
-  });
-
   it("host 的尾斜杠被去掉（`build_route_url` 就是 trim 之后拼接）", () => {
-    expect(buildExternalEndpoints(`${HOST}///`)[0]!.url).toBe(
-      `${HOST}/gateway/codex/<routeId>`
-    );
+    expect(buildExternalEndpoints(`${HOST}///`)[0]!.url).toBe(`${HOST}/codex`);
   });
 
   it("没在监听（空地址）时返回空清单——编一个 `:0` 的地址只会误导", () => {
     expect(buildExternalEndpoints("")).toEqual([]);
     expect(buildExternalEndpoints("   ")).toEqual([]);
-  });
-
-  it("每个平台带上它的凭据携带方式（照各家客户端的约定）", () => {
-    const byProvider = new Map(
-      buildExternalEndpoints(HOST, FOUR_PROVIDERS).map((item) => [item.provider, item.auth])
-    );
-    expect(byProvider.get("codex")).toContain("Authorization: Bearer");
-    expect(byProvider.get("claude")).toContain("x-api-key");
-    expect(byProvider.get("gemini")).toContain("x-goog-api-key");
-    expect(byProvider.get("gemini")).toContain("?key=");
-    expect(byProvider.get("qoder")).toContain("Authorization: Bearer");
   });
 });
 
@@ -142,11 +118,12 @@ describe("GatewayExternalCard", () => {
       />
     );
     const text = view.container.textContent ?? "";
-    expect(text).toContain("http://127.0.0.1:8787/gateway/codex/<routeId>");
+    expect(text).toContain("http://127.0.0.1:8787/codex");
     expect(text).toContain("仅监听 127.0.0.1");
-    // 认证协议说明要在：它是「怎么把令牌带上」的唯一线索。
-    expect(text).toContain("Authorization: Bearer");
-    expect(text).toContain("x-api-key");
+    expect(text).toContain("API 基地址");
+    // 凭据头列已移除（用户 2026-10-02 裁定）；地址里不能有占位符。
+    expect(view.container.querySelectorAll(".gateway-endpoint-auth")).toHaveLength(0);
+    expect(text).not.toContain("<routeId>");
   });
 
   it("端点清单与显示名都随 `providers` 走（三平台就渲染三条，名字照后端）", () => {
@@ -164,7 +141,7 @@ describe("GatewayExternalCard", () => {
       ...view.container.querySelectorAll<HTMLElement>(".gateway-endpoint-platform")
     ].map((item) => item.textContent);
     expect(names).toEqual(["Codex", "Claude Code", "Qoder"]);
-    expect(view.container.textContent).toContain(`${HOST}/gateway/qoder/<routeId>`);
+    expect(view.container.textContent).toContain(`${HOST}/qoder`);
   });
 
   it("没有可用地址时说清下一步，而不是给一份空清单", () => {
@@ -201,7 +178,7 @@ describe("GatewayExternalCard", () => {
     });
     expect(
       calls.find((item) => item.command === "clipboard:copy-text")!.args.text
-    ).toBe("http://127.0.0.1:8787/gateway/claude/<routeId>");
+    ).toBe("http://127.0.0.1:8787/claude");
   });
 
   it("每一行的复制按钮带**平台名**的可访问名（四个「复制」读屏分不出谁是谁）", () => {
@@ -244,7 +221,7 @@ describe("GatewayExternalCard", () => {
         onError={vi.fn()}
       />
     );
-    const pill = findButton(view.container, "外部网关已开启")!;
+    const pill = findButton(view.container, "外部接入已开启")!;
     await act(async () => {
       pill.click();
     });
@@ -273,7 +250,7 @@ describe("GatewayExternalCard", () => {
       />
     );
     await act(async () => {
-      findButton(view.container, "外部网关已开启")!.click();
+      findButton(view.container, "外部接入已开启")!.click();
     });
     await waitFor(() => {
       expect(calls.some((item) => item.command === "gateway:set-external-api-enabled")).toBe(true);

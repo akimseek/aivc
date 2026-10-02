@@ -85,7 +85,7 @@ describe("GatewayPanel：整页门禁", () => {
     // 退化值**必须在界面上可辨**：它看起来与真值没有任何区别，而 onError
     // 只是一条说完就没的提示。
     await waitFor(() =>
-      expect(view.container.textContent).toContain("外部网关状态读取失败")
+      expect(view.container.textContent).toContain("外部接入状态读取失败")
     );
     expect(onError).toHaveBeenCalledWith("设置读取失败");
 
@@ -94,8 +94,8 @@ describe("GatewayPanel：整页门禁", () => {
     await act(async () => {
       findButton(view.container, "重新读取")!.click();
     });
-    await waitFor(() => expect(view.container.textContent).toContain("外部网关已开启"));
-    expect(view.container.textContent).not.toContain("外部网关状态读取失败");
+    await waitFor(() => expect(view.container.textContent).toContain("外部接入已开启"));
+    expect(view.container.textContent).not.toContain("外部接入状态读取失败");
   });
 
   it("端口状态读失败时**给出重试入口**，而不是永远停在「读取网关状态…」", async () => {

@@ -11,7 +11,7 @@ import { GatewayRulesCard } from "./gateway-rules-card";
 import { SwitchPill } from "./gateway-switch-pill";
 
 /**
- * 本地网关 & 路由（demo 第 1006-1371 行）。
+ * 网关（demo 第 1006-1371 行）。
  *
  * # 这一页只做组装与取数
  *
@@ -24,7 +24,7 @@ import { SwitchPill } from "./gateway-switch-pill";
  * | 卡 | 文件 | 管什么 |
  * | --- | --- | --- |
  * | 端口与熔断韧性 | `gateway-port-card.tsx` | 端口 + 三条阈值，集中保存 |
- * | 外部网关 | `gateway-external-card.tsx` | 外部开关、共享令牌、平台端点清单 |
+ * | 外部接入 | `gateway-external-card.tsx` | 外部开关、共享令牌、平台端点清单 |
  * | 故障规则 | `gateway-rules-card.tsx` | 规则列表 + 表单 + 在线测试 |
  *
  * 下面还留着 `GatewayInsights`（用量 / 供应商健康 / 最近请求）：它的
@@ -106,7 +106,7 @@ export function GatewayPanel({
       onError(reason);
     } else {
       // 命令通了但没给状态（后端的异常形状）：同样是读不到。
-      setExternalError("后端没有返回外部网关状态。");
+      setExternalError("后端没有返回外部接入状态。");
     }
     setExternal({ enabled: false, hasToken: false });
   }, [onError]);
@@ -126,8 +126,8 @@ export function GatewayPanel({
       // 因此这里必须说清是哪一种结果。
       onNotify?.(
         next.enabled
-          ? "已启用本地网关。重启应用后开始监听。"
-          : "已关闭本地网关。使用网关的终端路由将立即停止。"
+          ? "已启用网关。重启应用后开始监听。"
+          : "已关闭网关。使用网关的终端路由将立即停止。"
       );
     } catch (error) {
       onError(errorText(error));
@@ -141,8 +141,8 @@ export function GatewayPanel({
       <>
         {/* 头部先出现：失败状态下用户至少知道自己在哪一页。 */}
         <PanelHeader
-          title="本地网关 & 路由"
-          description="控制本地反向代理端口、外部客户端接入、熔断器阈值与故障识别引擎。"
+          title="网关"
+          description="控制反向代理端口、外部接入、熔断器阈值与故障识别引擎。"
         />
         {/*
           失败与「还在读」必须长得不一样：此前两种情况都是「读取网关状态…」，
@@ -167,8 +167,8 @@ export function GatewayPanel({
       <>
         {/* 头部先出现：等待状态读回来时，用户至少知道自己在哪一页。 */}
         <PanelHeader
-          title="本地网关 & 路由"
-          description="控制本地反向代理端口、外部客户端接入、熔断器阈值与故障识别引擎。"
+          title="网关"
+          description="控制反向代理端口、外部接入、熔断器阈值与故障识别引擎。"
         />
         <EmptyState message="读取网关状态…" />
       </>
@@ -178,12 +178,12 @@ export function GatewayPanel({
   return (
     <div className="gateway-panel">
       <PanelHeader
-        title="本地网关 & 路由"
-        description="控制本地反向代理端口、外部客户端接入、熔断器阈值与故障识别引擎。"
+        title="网关"
+        description="控制反向代理端口、外部接入、熔断器阈值与故障识别引擎。"
         actions={
           <SwitchPill
             on={status.enabled}
-            label={status.enabled ? "本地网关已启用" : "本地网关已关闭"}
+            label={status.enabled ? "网关已启用" : "网关已关闭"}
             action={status.enabled ? "关闭网关" : "启用网关"}
             disabled={toggling}
             onClick={() => void toggleGateway()}

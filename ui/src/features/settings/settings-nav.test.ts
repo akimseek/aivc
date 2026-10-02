@@ -27,7 +27,7 @@ const TAB_IDS: SettingsTab[] = [
 /** 每页的标题（spec §10 的表里那十个）。 */
 const TAB_LABELS = [
   "供应商管理",
-  "本地网关 & 路由",
+  "网关",
   "用量报表",
   "异常诊断",
   "请求日志",

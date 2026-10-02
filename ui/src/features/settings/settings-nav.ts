@@ -31,7 +31,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     icon: "globe",
     tabs: [
       { id: "vendors", label: "供应商管理" },
-      { id: "gateway", label: "本地网关 & 路由" }
+      { id: "gateway", label: "网关" }
     ]
   },
   {

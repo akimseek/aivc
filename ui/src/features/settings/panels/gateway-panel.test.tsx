@@ -140,7 +140,7 @@ describe("GatewayPanel：整页门禁", () => {
     const view = render(<GatewayPanel onError={vi.fn()} />);
 
     const pill = await waitFor(() => {
-      const found = findButton(view.container, "本地网关已启用");
+      const found = findButton(view.container, "网关已启用");
       expect(found).toBeTruthy();
       return found!;
     });

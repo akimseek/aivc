@@ -225,7 +225,7 @@ export function GatewayPortCard({
             <span className="row-meta">
               {status.enabled
                 ? "已启用但还没开始监听。重启应用后这里会出现可用地址。"
-                : "尚未开启本地网关。请先在上面点「启用网关」，然后重启应用。"}
+                : "尚未开启网关。请先在上面点「启用网关」，然后重启应用。"}
             </span>
           )}
         </Field>

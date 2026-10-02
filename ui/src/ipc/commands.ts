@@ -413,7 +413,7 @@ export const deletePreset = (id: string) =>
 
 /* ── 网关 ───────────────────────────────────────────── */
 
-/** 打开/关闭本地网关。 */
+/** 打开/关闭网关。 */
 export const setGatewayEnabled = (enabled: boolean) =>
   invoke<GatewayPortStatus>("gateway:set-enabled", { enabled });
 

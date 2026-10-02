@@ -6,7 +6,7 @@ import { GatewayExternalCard, buildExternalEndpoints } from "./gateway-external-
 import type { AiProviderSummary, ExternalApiStatus } from "../../../types";
 
 /**
- * 外部网关卡：端点清单 = **网关根地址 + 平台路径**。
+ * 外部接入卡：端点清单 = **网关根地址 + 平台路径**。
  *
  * # 形制（2026-10-02 统一外部接入）
  *

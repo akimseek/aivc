@@ -203,7 +203,7 @@ export type SessionMutationRef = {
 };
 
 /**
- * 本地网关的端口与地址状态（`gateway:get-port` / `set-port` / `set-enabled`）。
+ * 网关的端口与地址状态（`gateway:get-port` / `set-port` / `set-enabled`）。
  *
  * # 三个命令返回的是**同一个形状**
  *

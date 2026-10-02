@@ -492,12 +492,6 @@ export type VendorModel = {
   name?: string;
 };
 
-/** 读取到的一份配置文件（`vendor:read-configs`）。 */
-export type VendorConfigFile = {
-  path: string;
-  content: string;
-};
-
 /** 一条用量区间选择。界面提供几个常用区间，也允许自定义。 */
 export type UsageRangeKey = "today" | "7d" | "30d" | "all" | "custom";
 

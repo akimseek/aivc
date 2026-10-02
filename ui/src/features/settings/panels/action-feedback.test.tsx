@@ -50,7 +50,7 @@ describe("VendorsPanel：供应商动作要有回音", () => {
     enabled: true
   };
 
-  it("**启用 / 禁用**会说一声，并带上是哪一家", async () => {
+  it("**启用 / 禁用**会说一声，并带上是哪一家（候选池开关）", async () => {
     const onNotify = vi.fn();
     fakeRuntime({ "vendor:list": () => [vendor], "vendor:set-enabled": () => vendor });
     const view = render(
@@ -61,15 +61,13 @@ describe("VendorsPanel：供应商动作要有回音", () => {
         onNotify={onNotify}
       />
     );
-    await waitFor(() => {
-      expect([...view.container.querySelectorAll("button")].some((b) => b.textContent === "禁用"))
-        .toBe(true);
+    const toggle = await waitFor(() => {
+      const found = view.container.querySelector<HTMLButtonElement>('[role="switch"]');
+      if (!found) throw new Error("候选池开关还没渲染出来");
+      return found;
     });
-    const button = [...view.container.querySelectorAll("button")].find(
-      (b) => b.textContent === "禁用"
-    )!;
     await act(async () => {
-      button.click();
+      toggle.click();
     });
     await waitFor(() => expect(onNotify).toHaveBeenCalled());
     expect(onNotify.mock.calls[0][0]).toContain("测试家");
@@ -110,7 +108,7 @@ describe("VendorsPanel：供应商动作要有回音", () => {
     const onNotify = vi.fn();
     const calls: string[] = [];
     // 列表要**跟着状态变**：否则停用之后重新拉列表仍然回到「已启用」，
-    // 界面上就永远看不到「启用」按钮（第一版测试就是这么失败的）。
+    // 开关会弹回原位（第一版测试就是这么失败的）。
     let enabled = true;
     fakeRuntime({
       "vendor:list": () => [{ ...vendor, enabled }],
@@ -137,27 +135,67 @@ describe("VendorsPanel：供应商动作要有回音", () => {
         onNotify={onNotify}
       />
     );
-    const button = (text: string) =>
-      [...view.container.querySelectorAll("button")].find((b) => b.textContent === text);
+    const toggle = () => view.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
 
-    await waitFor(() => expect(button("禁用")).toBeTruthy());
+    await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("true"));
     // 停用：只翻启用位，**不动用户的文件**。
     await act(async () => {
-      button("禁用")!.click();
+      toggle().click();
     });
-    await waitFor(() => expect(button("启用")).toBeTruthy());
+    await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("false"));
     expect(calls).toEqual(["set-enabled"]);
     expect(onNotify.mock.calls[0][0]).toContain("已禁用");
 
     // 启用：走 vendor:enable（写文件 + 备份）。
     await act(async () => {
-      button("启用")!.click();
+      toggle().click();
     });
-    await waitFor(() => expect(calls).toContain("enable"));
+    await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("true"));
+    expect(calls).toContain("enable");
     // 启用那条必须点名写了哪些文件、备份在哪——它动了用户 HOME 下的东西。
     await waitFor(() => {
       expect(onNotify.mock.calls.some((call) => String(call[0]).includes("备份"))).toBe(true);
     });
+  });
+
+  it("**开关在途时禁用**：第二下读到的还是切换前的状态，会把刚改完的又翻回去", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let enabled = true;
+    fakeRuntime({
+      "vendor:list": () => [{ ...vendor, enabled }],
+      "vendor:set-enabled": async () => {
+        await gate;
+        enabled = false;
+        return { ...vendor, enabled };
+      }
+    });
+    const view = render(
+      <VendorsPanel
+        providerId="codex"
+        providers={PROVIDERS}
+        onError={vi.fn()}
+        onNotify={vi.fn()}
+      />
+    );
+    const toggle = () => view.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+    await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("true"));
+
+    await act(async () => {
+      toggle().click();
+    });
+    await waitFor(() => expect(toggle().disabled).toBe(true));
+    // `disabled` 的按钮不会派发 click（第二下确实是空操作）。
+    toggle().click();
+
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("false"));
+    expect(toggle().disabled).toBe(false);
   });
 
   it("**新建默认不启用**——启用会写用户 CLI 配置，不该由「新增」顺手完成", async () => {

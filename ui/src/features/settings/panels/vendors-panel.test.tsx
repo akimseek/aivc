@@ -5,9 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   VendorsPanel,
   balanceLabel,
+  balanceText,
   parseAdvancedJson,
   parsePrice,
-  priceText
+  rateText
 } from "./vendors-panel";
 import type { AiProviderId } from "../../../types";
 
@@ -134,15 +135,15 @@ afterEach(() => {
 });
 
 describe("VendorsPanel：面板头", () => {
-  it("头部就是那四个动作，且都在面板头里", async () => {
+  it("头部就是那两个动作，且都在面板头里", async () => {
     const { view, byText } = setup({ existing: [vendor()] });
     await waitFor(() => expect(byText("查余额")).toBeTruthy());
-    for (const label of ["查余额", "测连接（列模型）", "读本地配置", "新增供应商"]) {
+    for (const label of ["查余额", "新增供应商"]) {
       expect(byText(label), label).toBeTruthy();
     }
     const header = view.container.querySelector(".panel-header")!;
     expect(header.textContent).toContain("供应商管理");
-    for (const label of ["查余额", "测连接（列模型）", "读本地配置", "新增供应商"]) {
+    for (const label of ["查余额", "新增供应商"]) {
       expect(header.textContent, label).toContain(label);
     }
   });
@@ -347,13 +348,13 @@ describe("VendorsPanel：跨平台列表与厂商过滤", () => {
 });
 
 describe("VendorsPanel：表格列", () => {
-  it("费率一格：`$输入 / $输出`，未设置的那一边是 `-`（与 0 不是一回事）", () => {
-    expect(priceText(undefined)).toBe("-");
-    expect(priceText({ inputPerMillionUsd: 0 })).toBe("$0 / -");
-    expect(priceText({ inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 })).toBe("$0.15 / $0.6");
+  it("费率值：`$0.15`；未设置是 `-`（与 0 不是一回事）", () => {
+    expect(rateText(undefined)).toBe("-");
+    expect(rateText(0)).toBe("$0");
+    expect(rateText(0.15)).toBe("$0.15");
   });
 
-  it("费率列显示真实值；未设置时是 `-` 而不是 `$0`", async () => {
+  it("**输入/输出费率各占一列**；未设置是 `-` 而不是 `$0`", async () => {
     const { view } = setup({
       existing: [
         vendor({ id: "v1", name: "带费率", pricing: { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 } }),
@@ -361,9 +362,36 @@ describe("VendorsPanel：表格列", () => {
       ]
     });
     await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
-    expect(view.container.textContent).toContain("$0.15 / $0.6");
-    // 两行都写「没费率」的那一格是 `-`。
-    expect(view.container.querySelectorAll("tbody tr")).toHaveLength(2);
+    const heads = [...view.container.querySelectorAll("thead th")].map((item) =>
+      item.textContent?.trim()
+    );
+    expect(heads).toContain("输入费率");
+    expect(heads).toContain("输出费率");
+    const rows = [...view.container.querySelectorAll("tbody tr")];
+    expect(rows).toHaveLength(2);
+    const first = [...rows[0]!.querySelectorAll("td")];
+    expect(first[3]!.textContent).toBe("$0.15");
+    expect(first[4]!.textContent).toBe("$0.6");
+    // 未设置的那两格是 `-`（0 才是 `$0`）。
+    const second = [...rows[1]!.querySelectorAll("td")];
+    expect(second[3]!.textContent).toBe("-");
+    expect(second[4]!.textContent).toBe("-");
+  });
+
+  it("**名称与端点各占一列**（2026-10-02：一个字段一列）", async () => {
+    const { view } = setup({
+      existing: [vendor({ name: "官方", apiBaseUrl: "https://api.example.com/v1" })]
+    });
+    await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
+    const heads = [...view.container.querySelectorAll("thead th")].map((item) =>
+      item.textContent?.trim()
+    );
+    expect(heads).toContain("名称");
+    expect(heads).toContain("端点");
+    expect(heads.some((text) => text?.includes("名称 / 端点"))).toBe(false);
+    const cells = [...view.container.querySelectorAll("tbody tr td")];
+    expect(cells[0]!.textContent).toBe("官方");
+    expect(cells[1]!.textContent).toContain("https://api.example.com/v1");
   });
 
   it("「余额」与「操作」分列且余额在左（2026-10-02 实机反馈：合并列拆开）", async () => {
@@ -410,12 +438,12 @@ describe("VendorsPanel：表格列", () => {
     expect(text).toContain("熔断剩余 3 分钟");
     // 延时这类后端不提供的东西**不许出现**（demo 里那 142ms 是编的）。
     expect(text).not.toMatch(/\d+\s*ms/);
-    // 没有快照的那一行，健康那一格是空的。
+    // 没有快照的那一行，健康那一格是空的（列序：名称/端点/厂商/输入费率/输出费率/健康）。
     const cells = [...view.container.querySelectorAll("tbody tr")][1]!.querySelectorAll("td");
-    expect(cells[3]!.textContent).toBe("");
+    expect(cells[5]!.textContent).toBe("");
   });
 
-  it("候选池状态：同厂商里顺位最前的那家是「已启用 · 优先」", async () => {
+  it("候选池状态是**开关**；顺位最前的那家带「优先」标记", async () => {
     const { view } = setup({
       existing: [
         vendor({ id: "v1", name: "第一顺位", sort: 1 }),
@@ -424,15 +452,19 @@ describe("VendorsPanel：表格列", () => {
       ]
     });
     await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
-    const text = view.container.textContent ?? "";
-    expect(text).toContain("已启用 · 优先");
-    expect(text).toContain("已启用");
-    expect(text).toContain("未启用");
+    const switches = [...view.container.querySelectorAll<HTMLButtonElement>('[role="switch"]')];
+    expect(switches).toHaveLength(3);
+    // 开关承载状态：无障碍语义与旧平台一致（role=switch + aria-checked + 可读名）。
+    expect(switches[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(switches[1]!.getAttribute("aria-checked")).toBe("true");
+    expect(switches[2]!.getAttribute("aria-checked")).toBe("false");
+    expect(switches[0]!.getAttribute("aria-label")).toBe("第一顺位已参与候选池");
+    expect(switches[2]!.getAttribute("aria-label")).toBe("被禁用未参与候选池");
     // 「优先」属于**启用且顺位最前**的那家：被禁用的那家排序更靠前也不算。
     const rows = [...view.container.querySelectorAll("tbody tr")];
-    expect(rows[0]!.textContent).toContain("已启用 · 优先");
+    expect(rows[0]!.textContent).toContain("优先");
     expect(rows[1]!.textContent).not.toContain("优先");
-    expect(rows[2]!.textContent).toContain("未启用");
+    expect(rows[2]!.textContent).not.toContain("优先");
   });
 });
 
@@ -606,17 +638,20 @@ describe("VendorsPanel：编辑中点「新增」先问一次", () => {
 });
 
 describe("VendorsPanel：启用与禁用的区别必须是说得出的话", () => {
-  it("两个动作各自的后果写在按钮提示里（一个写文件、一个只翻位）", async () => {
-    const { byText } = setup({
+  it("两个动作各自的后果写在**开关提示**里（一个写文件、一个只翻位）", async () => {
+    const { view } = setup({
       existing: [
         vendor({ id: "v1", name: "开着的" }),
         vendor({ id: "v2", name: "关着的", enabled: false })
       ]
     });
-    await waitFor(() => expect(byText("禁用")).toBeTruthy());
+    await waitFor(() => {
+      expect(view.container.querySelectorAll('[role="switch"]')).toHaveLength(2);
+    });
+    const switches = [...view.container.querySelectorAll<HTMLButtonElement>('[role="switch"]')];
     // 禁用只翻数据库标志位；启用会**写用户的 CLI 配置文件**（写前备份）。
-    expect(byText("禁用")!.getAttribute("title")).toContain("只翻启用位");
-    expect(byText("启用")!.getAttribute("title")).toContain("写进 CLI 配置文件");
+    expect(switches[0]!.getAttribute("title")).toContain("只翻启用位");
+    expect(switches[1]!.getAttribute("title")).toContain("写进 CLI 配置文件");
   });
 
   it("表单底部的说明同样如实分开说（那句话此前与实现相反）", async () => {
@@ -628,48 +663,6 @@ describe("VendorsPanel：启用与禁用的区别必须是说得出的话", () =
     const note = view.container.querySelector(".editor .row-meta")!.textContent ?? "";
     expect(note).toContain("写进你的 CLI 配置文件");
     expect(note).toContain("只翻启用位");
-  });
-});
-
-describe("VendorsPanel：工具区块在表下方，按需展开", () => {  it("「测连接（列模型）」展开测连接卡片，再点一次收起", async () => {
-    const { view, byText } = setup({ existing: [vendor()] });
-    /*
-      等的是**可点**的那一份，而不是「按钮在不在」：这个按钮在取数落地之前就已经
-      渲染出来了（只是 `disabled`），而点一个 `disabled` 的按钮是**空操作**
-      （浏览器不派发 click）。取数一旦落在点击之后，这次点击就什么都没做，
-      随后就会去等一个永远不会出现的「查询模型」——这正是此前并发下的偶发失败。
-      `disabled` 解除 ⇒ 供应商列表已落地 ⇒ 探活卡片会带出「查询模型」。
-    */
-    const probe = await waitFor(() => {
-      const found = byText("测连接（列模型）");
-      if (!found || found.disabled) throw new Error("「测连接」按钮还不能点");
-      return found;
-    });
-    expect(view.container.textContent).not.toContain("查询模型");
-
-    await act(async () => {
-      probe.click();
-    });
-    await waitFor(() => expect(byText("查询模型")).toBeTruthy());
-
-    await act(async () => {
-      probe.click();
-    });
-    expect(byText("查询模型")).toBeFalsy();
-  });
-
-  it("「读本地配置」展开白名单里的三个入口", async () => {
-    const { view, byText } = setup({ existing: [vendor()] });
-    await waitFor(() => expect(byText("读本地配置")).toBeTruthy());
-    await act(async () => {
-      byText("读本地配置")!.click();
-    });
-    await waitFor(() => {
-      expect(view.container.textContent).toContain("CLI 实际读到的配置");
-      expect(byText("Codex 配置")).toBeTruthy();
-      expect(byText("Claude 配置")).toBeTruthy();
-      expect(byText("Gemini 配置")).toBeTruthy();
-    });
   });
 });
 
@@ -844,6 +837,26 @@ describe("VendorsPanel：费率与高级 JSON 接线", () => {
       (item.placeholder ?? "").includes("endpoint")
     ) as HTMLTextAreaElement;
     expect(area.value).toContain("/balance");
+  });
+});
+
+describe("balanceText：余额的一句话", () => {
+  it("有剩余额度时显示数字与单位", () => {
+    expect(balanceText({ remaining: 12.5, unit: "USD" })).toBe("12.5 USD");
+  });
+
+  it("只有已用量时显示已用", () => {
+    expect(balanceText({ used: 3, unit: "USD" })).toBe("已用 3 USD");
+  });
+
+  it("只有套餐名时显示套餐名", () => {
+    expect(balanceText({ planName: "Pro" })).toBe("Pro");
+  });
+
+  it("**上游没提供余额时说「未提供」，不是 0**", () => {
+    // 显示 `0` 会让用户以为钱用完了，而事实是那家中转站根本不返回余额。
+    expect(balanceText({})).toBe("未提供");
+    expect(balanceText(undefined)).toBe("未提供");
   });
 });
 

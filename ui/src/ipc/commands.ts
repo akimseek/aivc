@@ -23,7 +23,6 @@ import type {
   UsageReport,
   UsageSummary,
   VendorBalanceResult,
-  VendorConfigFile,
   VendorModel,
   WorkspacePreset
 } from "../types";
@@ -333,15 +332,6 @@ export const refreshVendorBalance = (vendorId: string) =>
 
 export const refreshAllVendorBalances = () =>
   invoke<VendorBalanceResult[]>("vendor:refresh-balances");
-
-/**
- * 读取若干配置文件的内容。
- *
- * **路径白名单在后端强制**：不加限制的话这条命令就成了「读取任意文件」的入口，
- * 而配置文件里通常有 API Key。界面只应传后端已知的那几个路径。
- */
-export const readVendorConfigs = (paths: string[]) =>
-  invoke<VendorConfigFile[]>("vendor:read-configs", { paths });
 
 /* ── 技能 ───────────────────────────────────────────── */
 

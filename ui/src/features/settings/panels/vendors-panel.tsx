@@ -25,7 +25,6 @@ import type {
   VendorBalance
 } from "../../../types";
 import { formatWhen } from "../../../app/session-display";
-import { VendorConfigReader, VendorModelProbe, balanceText } from "./vendor-probe-panel";
 
 /**
  * 供应商管理。
@@ -46,18 +45,23 @@ import { VendorConfigReader, VendorModelProbe, balanceText } from "./vendor-prob
  * 但**必须是可改的**——中转站常常一家同时提供多家模型，
  * 而用户当前正在看的是哪个平台与他此刻要加哪一家的供应商毫无关系。
  *
- * # 批次二重排后的信息架构
+ * # 批次二重排后的信息架构（2026-10-02 二次收口）
  *
- * 主表在上、工具与调试信息在下：面板头四个按钮（查余额 / 测连接 / 读本地配置 /
- * 新增供应商），下面是厂商过滤 chips 与主表；「测连接」与「读本地配置」按需在
- * 表格下方展开卡片，不再各占一张常驻卡片——它们是偶尔用一次的动作，
- * 常驻会把主表挤到屏幕外。余额则**回到它属于的地方**：供应商自己那一行。
+ * 面板头两个按钮（查余额 / 新增供应商），下面是厂商过滤 chips 与主表。
+ * 「测连接（列模型）」与「读本地配置」两个按需展开的工具**已移除**（用户裁定，
+ * 2026-10-02）：前者的能力与终端输入区的模型选择重复（底层 `vendor:list-models`
+ * 仍被那里使用），后者读的是 HOME 下的 CLI 配置文件、用编辑器便能看。
+ * 余额则**回到它属于的地方**：供应商自己那一行。
  *
- * # 2026-10-02 实机反馈后的三处
+ * # 2026-10-02 实机反馈后的收口清单
  *
  * 1. 表单**分区两列**（基本信息 / 计费）+ 必填红 * + 点「创建」就地校验
- *    （此前靠禁用按钮，点了没反应也没提示）；2. 余额与操作**拆成两列**；
- * 3. 操作列新增「复制」＝克隆为新供应商（id 留空、密钥重填）。
+ *    （此前靠禁用按钮，点了没反应也没提示）；
+ * 2. **一个字段一列**：名称 / 端点分列、输入费率 / 输出费率分列；
+ * 3. 余额与操作拆成两列；
+ * 4. 操作列新增「复制」＝克隆为新供应商（id 留空、密钥重填）；
+ * 5. 候选池状态改为**开关**（`role="switch"`，旧平台同形），操作列的
+ *    启用/禁用按钮随之移除。
  */
 
 /** 供应商编辑草稿。数字字段用字符串存——输入框里「空」与「0」不是一回事。 */
@@ -181,17 +185,14 @@ export function formatPrice(value: number | undefined): string {
 }
 
 /**
- * 表格里的费率一格：`$0.15 / $0.60`。
+ * 表格里的一个费率值：`$0.15`。
  *
- * 未设置的那一边用 `-`：**0 是免费，未设置是「不知道」**，两者在成本估算里
- * 是完全不同的两件事，因此不能都显示成 `$0`。
+ * 未设置用 `-`：**0 是免费，未设置是「不知道」**，两者在成本估算里是完全
+ * 不同的两件事，因此不能都显示成 `$0`。输入/输出**各占一列**（2026-10-02
+ * 实机反馈：一个字段一列），不再拼成 `$输入 / $输出` 一格。
  */
-export function priceText(pricing: ApiVendor["pricing"]): string {
-  const input = pricing?.inputPerMillionUsd;
-  const output = pricing?.outputPerMillionUsd;
-  if (input === undefined && output === undefined) return "-";
-  const part = (value: number | undefined) => (value === undefined ? "-" : `$${formatPrice(value)}`);
-  return `${part(input)} / ${part(output)}`;
+export function rateText(value: number | undefined): string {
+  return value === undefined ? "-" : `$${formatPrice(value)}`;
 }
 
 /**
@@ -208,6 +209,24 @@ export function formatJson(value: Record<string, unknown> | undefined): string {
     // 循环引用之类：回填不了就留空，总比让表单炸掉好。
     return "";
   }
+}
+
+/**
+ * 余额的一句话。
+ *
+ * 行内状态与它共用同一套文案，不能有两份：**「上游没提供余额」必须说成
+ * 「未提供」而不是 0**——显示 `0` 会让用户以为钱用完了，而事实是那家中转站
+ * 根本不返回余额，两者的下一步动作完全不同。
+ */
+export function balanceText(balance: VendorBalance | undefined): string {
+  if (!balance) return "未提供";
+  if (balance.remaining !== undefined) {
+    return `${balance.remaining}${balance.unit ? ` ${balance.unit}` : ""}`;
+  }
+  if (balance.used !== undefined) return `已用 ${balance.used}${balance.unit ? ` ${balance.unit}` : ""}`;
+  if (balance.planName) return balance.planName;
+  // 上游返回了结构但没有任何数字——那不是 0，是「没这个信息」。
+  return "未提供";
 }
 
 /**
@@ -287,8 +306,13 @@ export function VendorsPanel({
   const [draft, setDraft] = useState<VendorDraft | null>(null);
   /** 字段级报错（名称/地址/Key）。提交时给出；改哪个字段就消掉它那条。 */
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<VendorFieldKey, string>>>({});
-  /** 下方展开的工具：测连接 / 读本地配置。空串表示都收起。 */
-  const [tool, setTool] = useState<"" | "probe" | "config">("");
+  /**
+   * 正在切换启用状态的供应商编号。
+   *
+   * 在途时那一行的开关禁用：`toggle` 读的是**点击前**的 `vendor.enabled`，
+   * 状态还没回来时连点两下，第二次会把它又翻回去。
+   */
+  const [togglingId, setTogglingId] = useState("");
   /** 批量刷余额是否在跑。单家的进行中状态在 `balance` 里逐行记。 */
   const [busy, setBusy] = useState(false);
   /** 每一行的余额状态。不在表里的行就是「未获取」。 */
@@ -326,6 +350,9 @@ export function VendorsPanel({
   }, [load]);
 
   const toggle = async (vendor: ApiVendor) => {
+    // 在途时不再接第二次：`disabled` 已经挡在界面上，这里是同一件事的第二道闸。
+    if (togglingId) return;
+    setTogglingId(vendor.id);
     try {
       if (vendor.enabled) {
         // 停用：只翻启用位，**不动文件**——把用户 CLI 里的配置改回去不是
@@ -346,6 +373,8 @@ export function VendorsPanel({
       );
     } catch (error) {
       onError(errorText(error));
+    } finally {
+      setTogglingId("");
     }
   };
 
@@ -608,23 +637,6 @@ export function VendorsPanel({
             >
               查余额
             </Button>
-            <Button
-              small
-              disabled={vendors.length === 0 || editing}
-              title="选一家供应商，查它现在能列出哪些模型"
-              // 再点一次收起：这个按钮是「展开/收起」，不是一次性动作。
-              onClick={() => setTool((current) => (current === "probe" ? "" : "probe"))}
-            >
-              测连接（列模型）
-            </Button>
-            <Button
-              small
-              disabled={editing}
-              title="读取 CLI 实际读到的配置文件（只读白名单里的三个路径）"
-              onClick={() => setTool((current) => (current === "config" ? "" : "config"))}
-            >
-              读本地配置
-            </Button>
             <Button small variant="primary" onClick={startNew} title="打开新增表单">
               {/* 图标而不是文字「＋」：按钮的可读名称要正好是「新增供应商」，
                   多一个符号会让按名字找它的读屏用户与测试都对不上。 */}
@@ -849,10 +861,13 @@ export function VendorsPanel({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>名称 / 端点</th>
+                  {/* 一个字段一列（2026-10-02 实机反馈）：名称 / 端点分列、费率分列。 */}
+                  <th>名称</th>
+                  <th>端点</th>
                   {/* 厂商列非有不可：列表是跨平台的，不标出来同名供应商分不清。 */}
                   <th>厂商</th>
-                  <th>费率 (输入/输出/M)</th>
+                  <th>输入费率</th>
+                  <th>输出费率</th>
                   <th>健康</th>
                   <th>候选池状态</th>
                   {/* 余额与操作**分列**（2026-10-02 实机反馈：合并成一格读不清）。 */}
@@ -882,14 +897,17 @@ export function VendorsPanel({
                   return (
                     <tr key={vendor.id}>
                       <td>
-                        <div className="vendor-identity">
-                          <span className="vendor-identity-name">{vendor.name}</span>
-                          {/* 地址可能很长，用等宽字体——截断会让同名中转商分不出来。 */}
-                          <span className="mono">{vendor.apiBaseUrl}</span>
-                        </div>
+                        <span className="vendor-identity-name">{vendor.name}</span>
+                      </td>
+                      <td className="vendor-endpoint-cell">
+                        {/* 地址可能很长，用等宽字体——截断会让同名中转商分不出来。 */}
+                        <span className="mono vendor-endpoint" title={vendor.apiBaseUrl}>
+                          {vendor.apiBaseUrl}
+                        </span>
                       </td>
                       <td>{labelOf(vendor.providerId)}</td>
-                      <td className="mono">{priceText(vendor.pricing)}</td>
+                      <td className="mono">{rateText(vendor.pricing?.inputPerMillionUsd)}</td>
+                      <td className="mono">{rateText(vendor.pricing?.outputPerMillionUsd)}</td>
                       <td>
                         {snapshot && (
                           <div className="vendor-health">
@@ -903,13 +921,35 @@ export function VendorsPanel({
                         )}
                       </td>
                       <td>
-                        <Badge tone={vendor.enabled ? "accent" : "neutral"}>
-                          {vendor.enabled
-                            ? isFirstInPool(vendor)
-                              ? "已启用 · 优先"
-                              : "已启用"
-                            : "未启用"}
-                        </Badge>
+                        {/*
+                          **开关而不是徽章**（2026-10-02 实机反馈，旧平台同形）：
+                          「参不参与候选池」本来就是可以直接操作的状态，再让用户跑到
+                          操作列点「启用/禁用」是两处操作的同一件事。
+                          无障碍语义与旧平台一致：`role="switch"` + `aria-checked` +
+                          「X 已参与候选池/未参与候选池」的可读名。
+                        */}
+                        <div className="vendor-pool-cell">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={vendor.enabled}
+                            aria-label={`${vendor.name}${vendor.enabled ? "已参与候选池" : "未参与候选池"}`}
+                            className={`vendor-pool-switch${vendor.enabled ? " active" : ""}`}
+                            title={
+                              vendor.enabled
+                                ? "禁用：只翻启用位，不改动你的 CLI 配置文件"
+                                : "启用：先把配置模板写进 CLI 配置文件（写前备份），再翻启用位"
+                            }
+                            disabled={togglingId === vendor.id}
+                            onClick={() => void toggle(vendor)}
+                          >
+                            <span />
+                          </button>
+                          {/* 「优先」是**启用且顺位最前**的那家：网关没有既有绑定时先试它。 */}
+                          {vendor.enabled && isFirstInPool(vendor) && (
+                            <span className="row-meta">优先</span>
+                          )}
+                        </div>
                       </td>
                       <td>
                         <div className="vendor-balance-line">
@@ -983,17 +1023,6 @@ export function VendorsPanel({
                           >
                             复制
                           </Button>
-                          <Button
-                            small
-                            title={
-                              vendor.enabled
-                                ? "禁用：只翻启用位，不改动你的 CLI 配置文件"
-                                : "启用：先把配置模板写进 CLI 配置文件（写前备份），再翻启用位"
-                            }
-                            onClick={() => void toggle(vendor)}
-                          >
-                            {vendor.enabled ? "禁用" : "启用"}
-                          </Button>
                           <Button small variant="danger" onClick={() => void remove(vendor)}>
                             删除
                           </Button>
@@ -1005,11 +1034,6 @@ export function VendorsPanel({
               </tbody>
             </table>
           )}
-
-          {/* 工具与调试信息在主表**下方**：它们是偶尔用一次的动作，
-              放上面会把「这十几家现在什么样」挤出首屏。 */}
-          {tool === "probe" && <VendorModelProbe vendors={vendors} onError={onError} />}
-          {tool === "config" && <VendorConfigReader />}
         </>
       )}
     </div>

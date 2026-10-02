@@ -66,4 +66,26 @@
 ## 五、未纳入本批
 
 - 第 4 项「网关统一外部接入」（外部路径 `/<平台>` 直达候选池 + 本地/外部概念合一）
-  → 设计文档：`docs/superpowers/specs/2026-10-02-gateway-unified-external-design.md`（待用户审阅）。
+  → 已落地：设计见 `docs/superpowers/specs/2026-10-02-gateway-unified-external-design.md`，
+  记录见 `49-gateway-unified-external.md`。
+
+## 六、供应商面板二轮反馈（2026-10-02 晚，48 号续）
+
+四项（前两项为移除）：
+
+1. **一个字段一列**：「名称 / 端点」拆成 名称、端点 两列；「费率 (输入/输出/M)」拆成
+   输入费率、输出费率 两列（值 `$0.15` / `-`）。名称列加粗、端点列省略号 + title 保全量。
+2. **移除「读本地配置」**（用户裁定）：读 HOME 下三个 CLI 配置文件的功能从设置页移除
+   ——那些文件用编辑器即可查看。前端不再调用 `vendor:read-configs`（后端命令保留）。
+3. **移除「测连接（列模型）」入口**：其能力与终端输入区的模型选择重复，且底层
+   `vendor:list-models` 仍被那里使用——只删设置页入口与卡片，后端 / composer 不动；
+   表单里的「模型查询配置」字段保留（composer 列模型仍需要它）。
+4. **候选池状态改为开关**（旧平台同形）：单元格内 `role="switch"` 胶囊开关
+   （`aria-checked` + 「X 已参与候选池/未参与候选池」可读名），点击即启用/禁用；
+   操作列移除启用/禁用按钮（只留 编辑/复制/删除）；「优先」小标记保留在开关旁；
+   开关在途禁用（防连点把刚改的状态又翻回去）。
+
+验证：`tsc` / `vitest`（**87 文件 / 876 项全绿**：删 9 项探活用例、增 6 项）/
+`npm run build` / `verify -Quick` 八段。删件：`vendor-probe-panel.tsx(.test)`、
+`readVendorConfigs` 包装、`VendorConfigFile` 类型；`balanceText` 迁入 `vendors-panel.tsx`。
+

@@ -2929,15 +2929,59 @@ select {
   gap: var(--ui-space-4);
   align-content: start;
 }
-/* 名称与端点叠成两行：同名中转商靠地址区分，地址因此不能被挤到看不见。 */
-.vendor-identity {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
+/* 名称与端点各占一列（2026-10-02：一个字段一列），名字加粗便于横扫。 */
 .vendor-identity-name {
   font-weight: 620;
   font-size: var(--ui-text-md);
+}
+/* 端点可能很长：列内省略号 + title 保全量——截断会让同名中转商分不出来。 */
+.vendor-endpoint-cell {
+  max-width: 260px;
+}
+.vendor-endpoint {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 候选池开关：旧平台同形的胶囊开关（38×22，滑块 16；无障碍语义见 JSX）。 */
+.vendor-pool-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+.vendor-pool-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 999px;
+  background: var(--ui-bg-activity);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.vendor-pool-switch > span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(28, 39, 56, 0.18);
+  transition: transform 160ms ease;
+}
+.vendor-pool-switch.active {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+}
+.vendor-pool-switch.active > span {
+  transform: translateX(16px);
+}
+.vendor-pool-switch:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 /* 健康：徽章一行、细节一行。没有快照时这一格是**空的**——不拿「未知」填满它。 */
 .vendor-health {

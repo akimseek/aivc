@@ -54,7 +54,10 @@ window.__p = (() => {
     const state = { text: "", dsr: 0, chunks: 0 };
     await window.__TAURI__.event.listen("terminal:data", (event) => {
       if (event.payload.terminalId !== terminalId) return;
-      const text = new TextDecoder().decode(Uint8Array.from(event.payload.data));
+      // 载荷是 base64 文本（Rust 侧 `emit_terminal_data` 的契约）。
+      const binary = atob(event.payload.data);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      const text = new TextDecoder().decode(bytes);
       state.chunks += 1;
       state.text += text;
       if (text.includes("\u001b[6n")) {

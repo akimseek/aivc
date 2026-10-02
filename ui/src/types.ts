@@ -272,10 +272,13 @@ export type TerminalStatusPayload = {
   attention?: TerminalAttention;
 };
 
-/** `terminal:data` 事件的载荷：**原始字节**，不是文本。 */
+/** `terminal:data` 事件的载荷：**原始字节**（base64 文本），不是文本。解码见 `app/terminal-data.ts`。 */
 export type TerminalDataPayload = {
   terminalId: string;
-  data: number[];
+  /** 载荷编码标签；当前恒为 `"base64"`。不认识的值应当整条丢弃。 */
+  encoding: "base64";
+  /** base64 编码的字节。 */
+  data: string;
 };
 
 /* ── 快捷访问 ─────────────────────────────────────────── */

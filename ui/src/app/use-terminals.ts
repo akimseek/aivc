@@ -9,6 +9,7 @@ import {
 } from "../features/workspace/composer/composer-text";
 import { TerminalOutputRouter } from "./terminal-output";
 import type { TerminalSink } from "./terminal-output";
+import { decodeTerminalData } from "./terminal-data";
 
 export type { TerminalSink } from "./terminal-output";
 
@@ -149,6 +150,8 @@ export function useTerminals() {
     let unlisten: (() => void) | undefined;
     void api
       .listen<TerminalDataPayload>(api.CHANNEL_TERMINAL_DATA, (payload) => {
+        // 先解码（base64 → 字节），「有没有输出」看的是**解码后**的字节数。
+        const bytes = decodeTerminalData(payload);
         // **「启动提示词」在这一刻才发出去。**
         //
         // 为什么不能更早：这个项目的终端是 ConPTY，**必须等 CLI 回完 DSR
@@ -159,12 +162,12 @@ export function useTerminals() {
         // 「收到第一段输出」是这里拿得到的最可靠的「它活了」信号。
         // 发出一次即从队里删掉，绝不重复发送。
         const pending = pendingPrompts.current.get(payload.terminalId);
-        if (pending !== undefined && payload.data.length > 0) {
+        if (pending !== undefined && bytes.length > 0) {
           pendingPrompts.current.delete(payload.terminalId);
           void api.writeTerminal(payload.terminalId, `${pending}\r`).catch(() => undefined);
         }
         // 接收端还没挂上时由 router 缓冲，`registerSink` 时补发——见它的文档。
-        router.push(payload.terminalId, Uint8Array.from(payload.data));
+        router.push(payload.terminalId, bytes);
       })
       .then((fn) => {
         if (cancelled) fn();

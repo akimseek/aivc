@@ -756,8 +756,8 @@ export const setGatewayCircuitDurationSeconds = (value: number) =>
  *
  * 后端的事件通道名与命令名一样是**契约**，因此也放在这一层：
  *
- * - `terminal:data` 载荷 `{ terminalId, data: number[] }`——**原始字节**，
- *   交互式程序会发出光标控制序列，不能当作文本处理；
+ * - `terminal:data` 载荷 `{ terminalId, encoding: "base64", data: string }`——**原始字节**
+ *   （base64 文本），交互式程序会发出光标控制序列，不能当作文本处理；
  * - `terminal:exit` 载荷 `{ terminalId, exitCode }`——`exitCode` 为 `null` 表示
  *   **不是进程自己结束的**（用户主动关闭了终端），此时按「正常结束」处理。
  */

@@ -30,6 +30,13 @@ import type { AiTarget } from "../types";
 
 type Handler = (event: { payload: unknown }) => void;
 
+/** 构造 `terminal:data` 载荷：字节 → base64 + `encoding` 标签（与 Rust 侧实发形状一致）。 */
+const dataPayload = (terminalId: string, bytes: number[]) => ({
+  terminalId,
+  encoding: "base64",
+  data: btoa(String.fromCharCode(...bytes))
+});
+
 /** 装一个假的 Tauri 运行时，并给出「推事件」与「观察订阅」的入口。 */
 function fakeRuntime() {
   const handlers = new Map<string, Handler[]>();
@@ -194,8 +201,8 @@ describe("useTerminals 的事件装配", () => {
     const id = await openTerminal(view.result);
 
     await act(async () => {
-      runtime.emit("terminal:data", { terminalId: id, data: [80, 83, 62] });
-      runtime.emit("terminal:data", { terminalId: id, data: [32, 32] });
+      runtime.emit("terminal:data", dataPayload(id, [80, 83, 62]));
+      runtime.emit("terminal:data", dataPayload(id, [32, 32]));
     });
 
     const received: Uint8Array[] = [];
@@ -215,7 +222,7 @@ describe("useTerminals 的事件装配", () => {
       view.result.current.registerSink(id, (bytes) => received.push(bytes));
     });
     await act(async () => {
-      runtime.emit("terminal:data", { terminalId: id, data: [104, 105] });
+      runtime.emit("terminal:data", dataPayload(id, [104, 105]));
     });
 
     expect(new TextDecoder().decode(received[0])).toBe("hi");
@@ -251,7 +258,7 @@ describe("useTerminals 的事件装配", () => {
       await view.result.current.closeTerminal(id);
     });
     await act(async () => {
-      runtime.emit("terminal:data", { terminalId: id, data: [120] });
+      runtime.emit("terminal:data", dataPayload(id, [120]));
     });
 
     expect(received).toHaveLength(0);
@@ -513,7 +520,7 @@ describe("useTerminals 的事件装配", () => {
       view.result.current.registerSink(id, () => view.result.current.noteOutput(id));
     });
     await act(async () => {
-      runtime.emit("terminal:data", { terminalId: id, data: [104, 105] });
+      runtime.emit("terminal:data", dataPayload(id, [104, 105]));
     });
 
     expect(view.result.current.uiStates[id]!.composerVisible).toBe(true);
@@ -612,7 +619,7 @@ describe("useTerminals 的事件装配", () => {
       view.result.current.registerSink(id, () => view.result.current.noteOutput(id));
     });
     await act(async () => {
-      runtime.emit("terminal:data", { terminalId: id, data: [104] });
+      runtime.emit("terminal:data", dataPayload(id, [104]));
     });
     expect(view.result.current.uiStates[id]!.composerVisible).toBe(true);
 
@@ -644,7 +651,10 @@ describe("useTerminals 的事件装配", () => {
     expect(writesBefore, "还没输出就不该写").toHaveLength(0);
 
     await act(async () => {
-      runtime.emit("terminal:data", { terminalId: id, data: Array.from(new TextEncoder().encode("ready\r\n")) });
+      runtime.emit(
+        "terminal:data",
+        dataPayload(id, Array.from(new TextEncoder().encode("ready\r\n")))
+      );
     });
 
     const writes = runtime
@@ -666,10 +676,10 @@ describe("useTerminals 的事件装配", () => {
 
     for (const chunk of ["a", "b", "c"]) {
       await act(async () => {
-        runtime.emit("terminal:data", {
-          terminalId: id,
-          data: Array.from(new TextEncoder().encode(chunk))
-        });
+        runtime.emit(
+          "terminal:data",
+          dataPayload(id, Array.from(new TextEncoder().encode(chunk)))
+        );
       });
     }
 
@@ -688,7 +698,7 @@ describe("useTerminals 的事件装配", () => {
     const id = view.result.current.terminals.at(-1)!.id;
 
     await act(async () => {
-      runtime.emit("terminal:data", { terminalId: id, data: [104, 105] });
+      runtime.emit("terminal:data", dataPayload(id, [104, 105]));
     });
 
     const writes = runtime

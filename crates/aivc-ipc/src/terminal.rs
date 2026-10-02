@@ -86,10 +86,12 @@ impl EventEmitter for NullEmitter {
         //
         // 正常情况下不该看到这条日志：真实运行时发射器会被换成 `TauriEmitter`。
         // 如果它出现了，说明**发射器没有被换掉**。
-        let bytes = payload
-            .get("data")
-            .and_then(Value::as_array)
-            .map_or(0, Vec::len);
+        let bytes = payload.get("data").map_or(0, |data| match data {
+            // base64 的近似字节数：4 个字符 = 3 字节。
+            Value::String(text) => text.len() * 3 / 4,
+            Value::Array(items) => items.len(),
+            _ => 0,
+        });
         tracing::debug!(channel, bytes, "事件被 NullEmitter 丢弃");
     }
 }
@@ -461,6 +463,60 @@ struct Composed {
 /// 取到码就喂 [`TerminalStatusDetector::mark_exit`]：非零退出才报「会话异常停止」。
 /// 取不到码说明这不是「进程自己结束」（用户主动关闭了终端），按 0 处理——正常结束，
 /// 静默。**这不是拿 0 糊弄**：`None` 在这里有确切含义，而主动关闭本就不该报异常。
+/**
+ * 合批窗口：16 ms ≈ 一帧。
+ *
+ * # 为什么合批、为什么是「前沿发送 + 窗口」
+ *
+ * 高频输出（构建日志、`yes` 这类）此前是**每个 8 KiB 读块一条事件**——事件数
+ * 与载荷的序列化成本一起堆在 webview 的 IPC 上（P1-L 评估）。合批把窗口内的
+ * 后续块攒成一条，事件数按窗口摊薄；**第一条立即发**（前沿发送）——孤立的一次
+ * 输出（命令回显、按键响应）与改动前**完全同延迟**，只有「连着来」的才被攒。
+ *
+ * 上限 64 KiB：连续大输出时不把单条事件的延迟堆到窗口之外。检测
+ * （`inspect_output`）仍**逐块**进行，语义不变；攒下的块在窗口到点或通道关闭时
+ * 一次发出（关闭时必发——**一条不丢**）。
+ */
+const OUTPUT_BATCH_WINDOW: std::time::Duration = std::time::Duration::from_millis(16);
+const OUTPUT_BATCH_MAX_BYTES: usize = 64 * 1024;
+
+/// 发一条 `terminal:data` 事件：base64 文本 + 自描述的 `encoding` 标签。
+///
+/// # 为什么是 base64 而不是数字数组
+///
+/// 数字数组（`[27,91,50,74,…]`）每个字节最多占 4 个字符；base64 是 4/3 比率
+/// ——同一条事件在 IPC 上少搬一半以上的字符，webview 侧也不必再逐元素 parse。
+/// 这与合批是同一件事的两半：合批压**事件数**，base64 压**单条体积**。
+///
+/// `encoding` 标签让载荷自描述：接收端按标签解码，不认识就丢弃（宁可少一段
+/// 输出，不可把未解码文本当字节喂给 xterm——见 `ui/src/app/terminal-output.ts`）。
+fn emit_terminal_data(
+    emitter: &Arc<std::sync::RwLock<Arc<dyn EventEmitter>>>,
+    terminal_id: &str,
+    bytes: &[u8],
+) {
+    use base64::Engine as _;
+    let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+    emit(
+        emitter,
+        CHANNEL_DATA,
+        json!({ "terminalId": terminal_id, "encoding": "base64", "data": data }),
+    );
+}
+
+/// 把攒下的块合成一条事件发出去；没有攒下任何东西时是空操作。
+fn flush_output_batch(
+    emitter: &Arc<std::sync::RwLock<Arc<dyn EventEmitter>>>,
+    terminal_id: &str,
+    pending: &mut Vec<u8>,
+) {
+    if pending.is_empty() {
+        return;
+    }
+    let data = std::mem::take(pending);
+    emit_terminal_data(emitter, terminal_id, &data);
+}
+
 async fn pump_output(
     emitter: Arc<std::sync::RwLock<Arc<dyn EventEmitter>>>,
     registry: Arc<SessionRegistry>,
@@ -470,29 +526,57 @@ async fn pump_output(
     detector: DetectorHandle,
     mut output: mpsc::Receiver<Vec<u8>>,
 ) {
-    while let Some(chunk) = output.recv().await {
-        // 检测要用**文本**，因此先解一份出来。用有损解码：交互式输出含光标控制
-        // 序列，它们本来就不是合法 UTF-8，严格解码会直接失败。
-        let text = String::from_utf8_lossy(&chunk).into_owned();
-        // 原始字节照旧原样送出——xterm 的 `write` 接受 `Uint8Array`。
-        emit(
-            &emitter,
-            CHANNEL_DATA,
-            json!({ "terminalId": terminal_id, "data": chunk }),
-        );
-        // 锁只在这一小块里持有：写回路径要能随时插进来标记输入。
-        let event = detector
-            .lock()
-            .ok()
-            .and_then(|mut d| d.inspect_output(&text));
-        if let Some(event) = event {
-            emit(
-                &emitter,
-                CHANNEL_STATUS,
-                status_payload(&terminal_id, &event),
-            );
+    let mut pending: Vec<u8> = Vec::new();
+    let mut deadline: Option<tokio::time::Instant> = None;
+    loop {
+        tokio::select! {
+            chunk = output.recv() => {
+                let Some(chunk) = chunk else {
+                    break;
+                };
+                // 前沿：没有在攒批——这一段立即发（孤立输出零额外延迟），窗口从它起算。
+                // 攒批中则先攒着；到上限就立即发，不等窗口。
+                if deadline.is_none() {
+                    emit_terminal_data(&emitter, &terminal_id, &chunk);
+                    deadline = Some(tokio::time::Instant::now() + OUTPUT_BATCH_WINDOW);
+                } else {
+                    pending.extend_from_slice(&chunk);
+                    if pending.len() >= OUTPUT_BATCH_MAX_BYTES {
+                        flush_output_batch(&emitter, &terminal_id, &mut pending);
+                        deadline = None;
+                    }
+                }
+                // 检测逐块进行，位置与原实现一致（数据事件之后）。用有损解码：
+                // 交互式输出含光标控制序列，它们本来就不是合法 UTF-8。
+                let text = String::from_utf8_lossy(&chunk).into_owned();
+                // 锁只在这一小块里持有：写回路径要能随时插进来标记输入。
+                let event = detector
+                    .lock()
+                    .ok()
+                    .and_then(|mut d| d.inspect_output(&text));
+                if let Some(event) = event {
+                    emit(
+                        &emitter,
+                        CHANNEL_STATUS,
+                        status_payload(&terminal_id, &event),
+                    );
+                }
+            }
+            // 窗口到点：把攒下的块发出去。没有在攒批时这一支永远不就绪——
+            // 窗口只由「前沿发送」开启。
+            () = async {
+                match deadline {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                flush_output_batch(&emitter, &terminal_id, &mut pending);
+                deadline = None;
+            }
         }
     }
+    // 收尾排空：窗口没到点也要把攒下的发完——**一条不丢**。
+    flush_output_batch(&emitter, &terminal_id, &mut pending);
 
     let exit_code = registry.take_exit_code(&terminal_id).await;
     let event = detector
@@ -1272,12 +1356,7 @@ mod tests {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut answered = false;
         while std::time::Instant::now() < deadline {
-            let mut collected = Vec::new();
-            for payload in recording.payloads(CHANNEL_DATA) {
-                if let Some(bytes) = payload.get("data").and_then(Value::as_array) {
-                    collected.extend(bytes.iter().filter_map(Value::as_u64).map(|v| v as u8));
-                }
-            }
+            let collected = collect_data_bytes(&recording);
             if !answered && collected.windows(4).any(|w| w == b"\x1b[6n") {
                 answered = true;
                 session.write("\u{1b}[1;1R").expect("应答 DSR");
@@ -1291,12 +1370,7 @@ mod tests {
         drop(session);
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), pump).await;
 
-        let mut collected = Vec::new();
-        for payload in recording.payloads(CHANNEL_DATA) {
-            if let Some(bytes) = payload.get("data").and_then(Value::as_array) {
-                collected.extend(bytes.iter().filter_map(Value::as_u64).map(|v| v as u8));
-            }
-        }
+        let collected = collect_data_bytes(&recording);
         assert!(
             String::from_utf8_lossy(&collected).contains("aivc-pump-probe"),
             "输出应当被推成事件：{:?}",
@@ -1356,17 +1430,8 @@ mod tests {
             tokio::spawn(async move {
                 for _ in 0..100 {
                     let seen = recording.payloads(CHANNEL_DATA).iter().any(|payload| {
-                        payload
-                            .get("data")
-                            .and_then(Value::as_array)
-                            .is_some_and(|bytes| {
-                                let raw: Vec<u8> = bytes
-                                    .iter()
-                                    .filter_map(Value::as_u64)
-                                    .map(|v| v as u8)
-                                    .collect();
-                                raw.windows(4).any(|w| w == b"\x1b[6n")
-                            })
+                        let raw = decoded_data(payload);
+                        raw.windows(4).any(|w| w == b"\x1b[6n")
                     });
                     if seen {
                         let _ = registry.write("t1", "\u{1b}[1;1R").await;
@@ -1402,6 +1467,104 @@ mod tests {
         assert_eq!(
             exits[0]["exitCode"], 0,
             "`cmd /c echo` 正常结束，退出码应当是 0：{exits:?}"
+        );
+    }
+
+    /// 解一条 `terminal:data` 载荷（base64 文本 + `encoding` 标签）成字节。
+    /// 顺带钉住标签：接收端按标签解码，标签丢了这条契约就断了。
+    fn decoded_data(payload: &Value) -> Vec<u8> {
+        use base64::Engine as _;
+        assert_eq!(
+            payload.get("encoding").and_then(Value::as_str),
+            Some("base64"),
+            "数据载荷应带 base64 标签：{payload:?}"
+        );
+        base64::engine::general_purpose::STANDARD
+            .decode(
+                payload
+                    .get("data")
+                    .and_then(Value::as_str)
+                    .expect("data 应为 base64 字符串"),
+            )
+            .expect("data 应是合法 base64")
+    }
+
+    /// 把全部数据事件拼成一段连续字节流。
+    fn collect_data_bytes(recording: &Recording) -> Vec<u8> {
+        recording
+            .payloads(CHANNEL_DATA)
+            .iter()
+            .flat_map(decoded_data)
+            .collect()
+    }
+
+    /// 收集每条 `terminal:data` 的字节——合批断言要看「分了几条、每条是什么」。
+    fn data_batches(recording: &Recording) -> Vec<Vec<u8>> {
+        recording
+            .payloads(CHANNEL_DATA)
+            .iter()
+            .map(decoded_data)
+            .collect()
+    }
+
+    /// 直接喂 `mpsc` 启动泵（不经 PTY）：合批只关心「读块怎么变成事件」。
+    fn pump_with(
+        recording: Arc<Recording>,
+        output: mpsc::Receiver<Vec<u8>>,
+    ) -> tokio::task::JoinHandle<()> {
+        let emitter: Arc<dyn EventEmitter> = recording;
+        tokio::spawn(pump_output(
+            Arc::new(std::sync::RwLock::new(emitter)),
+            Arc::new(SessionRegistry::new()),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(NullRouteSource),
+            "t1".to_owned(),
+            Arc::new(Mutex::new(TerminalStatusDetector::new(ProviderId::Codex))),
+            output,
+        ))
+    }
+
+    /// **合批**：预缓冲的三段里，第一段前沿立即发，窗口内其余攒成一条；
+    /// 关闭时排空——「一条不丢」也由这条一起钉住。
+    #[tokio::test]
+    async fn output_is_coalesced_within_the_batch_window() {
+        let recording = Arc::new(Recording::default());
+        let (tx, rx) = mpsc::channel::<Vec<u8>>(8);
+        // 先把三段全部放好再启动泵：不存在「发送间隔超过窗口」的时序歧义，
+        // 泵对已排队的块只会走「前沿 → 攒批 → 关闭排空」这一条路径。
+        tx.send(b"alpha".to_vec()).await.expect("send alpha");
+        tx.send(b"beta".to_vec()).await.expect("send beta");
+        tx.send(b"gamma".to_vec()).await.expect("send gamma");
+        drop(tx);
+        let pump = pump_with(Arc::clone(&recording), rx);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), pump).await;
+
+        let batches = data_batches(&recording);
+        assert_eq!(
+            batches,
+            vec![b"alpha".to_vec(), b"betagamma".to_vec()],
+            "应恰好两条：前沿一条 + 窗口内合批一条"
+        );
+    }
+
+    /// 孤立输出保持**前沿**语义：间隔超过窗口的两段各自立即发，不会被攒。
+    #[tokio::test]
+    async fn chunks_outside_the_window_keep_leading_emit() {
+        let recording = Arc::new(Recording::default());
+        let (tx, rx) = mpsc::channel::<Vec<u8>>(8);
+        let pump = pump_with(Arc::clone(&recording), rx);
+        tx.send(b"one".to_vec()).await.expect("send one");
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        tx.send(b"two".to_vec()).await.expect("send two");
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        drop(tx);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), pump).await;
+
+        let batches = data_batches(&recording);
+        assert_eq!(
+            batches,
+            vec![b"one".to_vec(), b"two".to_vec()],
+            "间隔大于窗口的两段应各自成批"
         );
     }
 

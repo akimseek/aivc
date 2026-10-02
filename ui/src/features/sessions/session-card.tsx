@@ -30,11 +30,12 @@ import {
  * 列表看起来一直在闪。触屏与键盘（`:focus-within`）下常显——藏起来的按钮
  * 点不到也看不到。
  *
- * # 单击打开历史，双击在终端中恢复
+ * # 单击进入终端，详情走「消息与分支」
  *
- * 单击的语义由上层决定（`onOpen` = 打开/激活标签，不看就只显示历史）；
- * 双击是**显式恢复**的手势，与标签栏的「继续会话」同一个动作。它不放在按钮里
- * 是因为卡片上已经有三个动作了，第四个按钮会把标题挤掉。
+ * 单击的语义由上层决定：**进入这条会话的终端**（在跑切过去、没跑起 `--resume`，
+ * 见 `app.tsx` 的 `openSessionById`）。卡片本身不再绑双击——双击就是两次单击，
+ * 第二次由 app 层的在途守卫收敛成「只切选中」。详情走下面那枚
+ * 「消息与分支」按钮，不占单击。
  *
  * # 为什么 `memo`，以及回调为什么要「回传会话」
  *
@@ -56,7 +57,6 @@ export const SessionCard = memo(function SessionCard({
   /** 这条会话此刻有终端在跑（卡片左上角那个点会亮起来）。 */
   running = false,
   onOpen,
-  onResume,
   onToggle,
   onFavorite,
   onBranch,
@@ -67,10 +67,8 @@ export const SessionCard = memo(function SessionCard({
   checked: boolean;
   selectable?: boolean;
   running?: boolean;
-  /** 单击：打开/激活。会话由卡片回传（见上面的说明）。 */
+  /** 单击：进入这条会话的终端（切过去或起 `--resume`）。会话由卡片回传（见上面的说明）。 */
   onOpen: (session: AiSession) => void;
-  /** 双击：在终端中恢复。没给（例如这条会话的终端正在跑）时双击什么都不做。 */
-  onResume?: (session: AiSession) => void;
   onToggle: (session: AiSession) => void;
   onFavorite: (session: AiSession) => void;
   /** 「消息与分支」：打开详情（消息列表 + 分支关系都在那里）。 */
@@ -111,7 +109,6 @@ export const SessionCard = memo(function SessionCard({
         event.preventDefault();
         onOpen(session);
       }}
-      onDoubleClick={onResume ? () => onResume(session) : undefined}
       onContextMenu={(event) => {
         event.preventDefault();
         onMenu(session, event.clientX, event.clientY);
@@ -126,9 +123,8 @@ export const SessionCard = memo(function SessionCard({
             className="session-card-check"
             checked={checked}
             aria-label={`选择 ${title}`}
-            // 勾选 / 双击都不该顺带打开会话或恢复终端——那是三件事。
+            // 勾选不该顺带打开会话——那是两件事。
             onClick={(event) => event.stopPropagation()}
-            onDoubleClick={(event) => event.stopPropagation()}
             onChange={() => onToggle(session)}
           />
         )}
@@ -151,13 +147,11 @@ export const SessionCard = memo(function SessionCard({
             className={favorite ? "on" : undefined}
             title={favorite ? "取消收藏" : "标记收藏"}
             aria-label={favorite ? "取消收藏" : "标记收藏"}
-            // 动作按钮在卡片内部，点它们不该把卡片一起点开（`stopPropagation`）；
-            // 双击同理——`dblclick` 是独立事件，光挡 `click` 挡不住它。
+            // 动作按钮在卡片内部，点它们不该把卡片一起点开（`stopPropagation`）。
             onClick={(event) => {
               event.stopPropagation();
               onFavorite(session);
             }}
-            onDoubleClick={(event) => event.stopPropagation()}
           >
             <Icon name="star" size={13} />
           </button>
@@ -169,7 +163,6 @@ export const SessionCard = memo(function SessionCard({
               event.stopPropagation();
               onBranch(session);
             }}
-            onDoubleClick={(event) => event.stopPropagation()}
           >
             <Icon name="branch" size={13} />
           </button>
@@ -182,7 +175,6 @@ export const SessionCard = memo(function SessionCard({
               event.stopPropagation();
               onMenu(session, event.clientX, event.clientY);
             }}
-            onDoubleClick={(event) => event.stopPropagation()}
           >
             <Icon name="chevron-down" size={13} />
           </button>

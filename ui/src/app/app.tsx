@@ -397,6 +397,14 @@ export function App() {
   });
 
   /**
+   * 正在恢复中的会话编号。
+   *
+   * 恢复是异步的（探原目录要走一次 IPC），连点/双击的后续点击若不拦住，会起
+   * 第二路 CLI——`attachTerminal` 的替换语义把刚起的那路收掉重开，等于白开两次。
+   */
+  const resumingRef = useRef<Set<string>>(new Set());
+
+  /**
    * 起一路 Codex 终端。
    *
    * `options` 是新会话对话框确认后传来的：**工作目录与 CLI 参数**。
@@ -452,8 +460,9 @@ export function App() {
   /**
    * **恢复一条历史会话并进入终端**（旧平台 `openResumeWithDirectory`）。
    *
-   * 这是**显式动作**（标签栏的「继续会话」、右键菜单与详情里的分支跳转），
-   * 不再由「点一下会话行」触发——单击只打开标签看历史。
+   * 入口：**单击会话行**（`openSessionById`）、标签栏的「继续会话」与详情里的
+   * 分支跳转。连点/双击的重复触发由 `resumingRef` 守卫吸收——第二次点击只把
+   * 选中切过去，不再起第二路进程（见 `openSessionById`）。
    *
    * 不必再事先清掉这条会话上已经死掉的终端标签：`attachTerminal` 会把新终端挂到
    * 那张标签上并回报被替换的旧终端，由 `attachTerminalTab` 把它 `closeTerminal`
@@ -472,45 +481,53 @@ export function App() {
    */
   const beginResumeSession = useCallback(
     async (target: AiTarget, session: AiSession) => {
-      /*
-        先把选中态切过去（列表高亮、标签）。
+      // **防重入**：见 `resumingRef` 的说明。第二次触发只当没发生——
+      // 它落在「两次点击之间、终端还没登记」的窗口里，若放行会起第二路进程。
+      if (resumingRef.current.has(session.id)) return;
+      resumingRef.current.add(session.id);
+      try {
+        /*
+          先把选中态切过去（列表高亮、标签）。
 
-        **标签要显式切**，不能只靠 `openAt` 写选中编号——理由与 `openSessionById`
-        那句注释一样：编号没变时（这条会话本来就是选中项，而活动标签是另一路终端）
-        标签的 effect 不会重跑，「原目录丢失」这一支尤其明显——它会弹出一个对话框，
-        而对话框背后的画布还停在**别的**会话上，用户填工作目录时看不出这是给谁填的。
-      */
-      console.openAt(target, session);
-      workspace.selectSession(session);
+          **标签要显式切**，不能只靠 `openAt` 写选中编号——理由与 `openSessionById`
+          那句注释一样：编号没变时（这条会话本来就是选中项，而活动标签是另一路终端）
+          标签的 effect 不会重跑，「原目录丢失」这一支尤其明显——它会弹出一个对话框，
+          而对话框背后的画布还停在**别的**会话上，用户填工作目录时看不出这是给谁填的。
+        */
+        console.openAt(target, session);
+        workspace.selectSession(session);
 
-      const cwd = session.cwd ?? "";
-      /*
-        决策本身在 `resume-session.ts` 里，**有四条分支**且逐条有测试。
+        const cwd = session.cwd ?? "";
+        /*
+          决策本身在 `resume-session.ts` 里，**有四条分支**且逐条有测试。
 
-        `target.id` **必须带上**：后端按目标分流，不带时 `shell:path-exists`
-        按本机路径判断——WSL 会话的 `/home/...` 在本机看来不存在，用户每次恢复
-        都被弹「原目录丢失」。带上之后 WSL 目标会显式报错，由 `planResume`
-        的 catch 落进「按还在」（`resume-session.ts` 的最后一条分支）。
-      */
-      const plan = await planResume(cwd || undefined, (path) =>
-        api.pathExists(path, target.id)
-      );
-      if (plan.kind === "dialog") {
-        setNewSession({
+          `target.id` **必须带上**：后端按目标分流，不带时 `shell:path-exists`
+          按本机路径判断——WSL 会话的 `/home/...` 在本机看来不存在，用户每次恢复
+          都被弹「原目录丢失」。带上之后 WSL 目标会显式报错，由 `planResume`
+          的 catch 落进「按还在」（`resume-session.ts` 的最后一条分支）。
+        */
+        const plan = await planResume(cwd || undefined, (path) =>
+          api.pathExists(path, target.id)
+        );
+        if (plan.kind === "dialog") {
+          setNewSession({
+            cwd: plan.cwd,
+            title: session.title ?? "",
+            prompt: "",
+            cliArgs: "",
+            resume: { sessionId: session.id, missingCwd: plan.missingCwd }
+          });
+          return;
+        }
+        await openTerminal({
           cwd: plan.cwd,
-          title: session.title ?? "",
-          prompt: "",
-          cliArgs: "",
-          resume: { sessionId: session.id, missingCwd: plan.missingCwd }
+          sessionId: session.id,
+          // 标签直接叫这条会话的名字：用户点的是「会话甲」，标签上却写「终端」会很怪。
+          title: displayTitle(session)
         });
-        return;
+      } finally {
+        resumingRef.current.delete(session.id);
       }
-      void openTerminal({
-        cwd: plan.cwd,
-        sessionId: session.id,
-        // 标签直接叫这条会话的名字：用户点的是「会话甲」，标签上却写「终端」会很怪。
-        title: displayTitle(session)
-      });
     },
     // 只列用到的成员（`console.openAt`），不列整个 `console`——它每次渲染都换身份
     // （use-console 的返回对象），列整对象会让 `resumeById` 及侧栏卡片回调随之换
@@ -549,24 +566,46 @@ export function App() {
   );
 
   /**
-   * 侧栏点会话行：**只打开/激活它的标签**，不再顺带起终端。
+   * 侧栏点会话行：**直接进入这条会话的终端**（用户口径，2026-10-02 修正）。
    *
-   * 本批次的一处行为变化：单击的意图多半是「看一下这条会话」，而起一路 CLI
-   * 进程既慢又意外；恢复终端改成显式动作（标签栏的「继续会话」）。
+   * 批次一曾把单击改成「打开/激活标签、未运行显示历史」——详情先于终端；用户
+   * 裁定这与预期相反：**单击就进入会话终端**，详情走卡片与标签栏的「消息与分支」。
    *
-   * 这里**显式**激活一次（`selectSession`），不再只依赖「选中项编号变了」那个
-   * effect：点一条**本来就被选中**的会话（活动标签是一路没有会话编号的新会话
-   * 终端）时，编号没变、effect 不跑，只写选中态的话标签不会被切过来——点击
-   * 看起来毫无反应。effect 仍然保留，供列表刷新、搜索跳转等其它路径。
+   * 三种情形：
+   * - 该会话的终端**已在跑** → 切到它的标签（就是「进入终端」，不重启进程）；
+   * - 终端不在（没开过、或异常退出留下的残场）→ 走 [`beginResumeSession`]：
+   *   探原目录 → 在就带 `--resume` 直起，不在就弹「设置工作目录」；
+   * - 恢复**在途**（连点/双击的后续点击）→ `beginResumeSession` 的 `resumingRef`
+   *   守卫把它收成空操作（第一次点击已经切过选中，不需要再做什么）。
+   *
+   * 注意「新建会话」的终端标签还没有会话编号（编号要等 CLI 落盘才知道），因此
+   * 点它列表里的行会另起一路 `--resume`——与旧平台同形，已知并接受。
    */
   const openSessionById = useCallback(
     (target: AiTarget, sessionId: string) => {
       const session = sessionForAction(sessionId);
       if (!session) return;
-      console.openAt(target, session);
-      workspace.selectSession(session);
+
+      const tab = workspace.tabs.find((item) => item.sessionId === session.id);
+      const resident = tab?.terminalId
+        ? terminals.terminals.find((item) => item.id === tab.terminalId)
+        : undefined;
+      if (resident?.running) {
+        console.openAt(target, session);
+        workspace.selectSession(session);
+        return;
+      }
+
+      void beginResumeSession(target, session);
     },
-    [sessionForAction, console.openAt, workspace.selectSession]
+    [
+      sessionForAction,
+      workspace.tabs,
+      workspace.selectSession,
+      terminals.terminals,
+      console.openAt,
+      beginResumeSession
+    ]
   );
 
   /**
@@ -786,7 +825,6 @@ export function App() {
               console={console}
               selectedTarget={selectedTarget}
               onOpen={openSessionById}
-              onResume={resumeById}
               onMenu={openSessionMenu}
               /*
                 「新建会话」与工作区那个 +Codex 同一个入口；

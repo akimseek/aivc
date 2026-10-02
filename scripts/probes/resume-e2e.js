@@ -101,9 +101,9 @@
     rows.find((item) => (item.getAttribute("title") || "").trim() === (pick.title || "").trim()) ||
     rows[0];
   if (!row) return { ...out, verdict: "FAIL：列表里没有会话行" };
-  // **双击**才是「在终端中恢复」：单击只打开历史正文（`session-card.tsx`）。
-  row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-  out.steps.push("已双击会话卡片");
+  // 单击 = 进入终端（2026-10-02 口径）：在跑切过去、没跑起 `--resume`。
+  row.click();
+  out.steps.push("已单击会话卡片");
 
   for (let index = 0; index < 40 && !terminalId; index += 1) await p.sleep(500);
   out.terminalId = terminalId;

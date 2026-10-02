@@ -155,9 +155,9 @@
     if (!terminalId) terminalId = event.payload.terminalId;
   });
 
-  // **双击**才是「在终端中恢复」（单击只打开历史正文，起不了终端）。
-  row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-  out.steps.push("第一次双击会话卡片");
+  // 单击 = 进入终端（2026-10-02 口径）：在跑切过去、没跑起 `--resume`。
+  row.click();
+  out.steps.push("第一次单击会话卡片");
   for (let index = 0; index < 40 && !terminalId; index += 1) await p.sleep(500);
   out.terminalId = terminalId;
   if (!terminalId) return { ...out, verdict: "FAIL：点了会话但没有终端产出，拿不到终端编号" };
@@ -249,8 +249,8 @@
     }
   });
 
-  row2.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-  out.steps.push("第二次双击会话卡片");
+  row2.click();
+  out.steps.push("第二次单击会话卡片");
   for (let index = 0; index < 40 && !newTerminalId; index += 1) await p.sleep(500);
   await p.sleep(3000);
 

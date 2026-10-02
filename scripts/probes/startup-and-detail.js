@@ -139,16 +139,16 @@
       JSON.stringify(out.inventedPresent)
     );
 
-    // ── 2. 双击一条历史会话 → 恢复并进入终端 ──────────────
+    // ── 2. 单击一条历史会话 → 进入终端（在跑切过去、没跑起 `--resume`） ──
     //
-    // 批次一改了手势：**单击**是打开历史正文（`onOpen`），**双击**才是恢复终端
-    // （`onResume`，`features/sessions/session-card.tsx`）。单击在这里什么终端都起不来。
+    // 2026-10-02 口径：**单击**就进入终端（`onOpen` → `openSessionById`）；
+    // 详情走「消息与分支」，不经历史正文。
     const row = document.querySelector(".sidebar .rows .session-card");
     if (!row) {
       out.verdict = "FAIL：没有可点的会话行，无法验证第 2、3 条";
       return out;
     }
-    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    row.click();
     // 终端要起来（xterm 挂上）。
     for (let index = 0; index < 40 && !document.querySelector(".xterm"); index += 1) {
       await p.sleep(500);

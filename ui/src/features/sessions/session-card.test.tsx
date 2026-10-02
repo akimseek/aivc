@@ -58,8 +58,7 @@ function setup(overrides: Partial<Parameters<typeof SessionCard>[0]> = {}) {
     onToggle: vi.fn(),
     onFavorite: vi.fn(),
     onBranch: vi.fn(),
-    onMenu: vi.fn(),
-    onResume: vi.fn()
+    onMenu: vi.fn()
   };
   const props = {
     session: session(),
@@ -149,13 +148,16 @@ describe("点击的归属", () => {
     expect(handlers.onMenu).toHaveBeenCalledWith(cardSession, 123, 45);
   });
 
-  it("双击卡片 → 在终端中恢复（显式手势，不是单击顺带起终端）", () => {
+  it("`dblclick` 不再有独立动作——单击进入终端的语义由上层承担，双击即两次单击", () => {
+    // 2026-10-02 口径修正：单击 = 进入终端；卡片不再绑 `onResume`。
+    // 真实的双击序列（click → click → dblclick）里，后两次由 app 层的在途
+    // 守卫收敛；这里只钉「`dblclick` 事件本身不再触发任何动作」。
     const { view, handlers } = setup();
     const card = view.container.querySelector(".session-card") as HTMLElement;
     act(() => {
       card.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     });
-    expect(handlers.onResume).toHaveBeenCalledTimes(1);
+    expect(handlers.onOpen).not.toHaveBeenCalled();
   });
 
   it("右键回传坐标，并阻止浏览器默认菜单", () => {

@@ -20,7 +20,7 @@ import { App } from "./app";
  * WSL 会话的 `/home/...` 在本机看来不存在，用户每次恢复 WSL 会话都被弹
  * 「原目录丢失」。`resume-session.ts` 的单测只能证明「抛错 → 按还在」，
  * 证明不了这个闭包有没有把目标递下去；那个调用点也没有别的渲染入口。
- * 因此这里渲染整个 `App`，像用户一样操作（选平台 → 选目标 → 双击卡片），
+ * 因此这里渲染整个 `App`，像用户一样操作（选平台 → 选目标 → 单击卡片），
  * 断言**命令参数**。
  *
  * # 假后端**忠实复刻** `require_local` 的判据
@@ -205,7 +205,7 @@ function fakeRuntime(options: {
   };
 }
 
-/** 像用户一样走到「双击卡片恢复」：选平台 → 选目标 → 双击会话卡片。 */
+/** 像用户一样走到「单击卡片进入终端」：选平台 → 选目标 → 单击会话卡片。 */
 async function resumeViaSidebar(container: HTMLElement, target: AiTarget) {
   const providerSelect = (await screen.findByLabelText("平台")) as HTMLSelectElement;
   await waitFor(() =>
@@ -225,7 +225,7 @@ async function resumeViaSidebar(container: HTMLElement, target: AiTarget) {
     if (!found) throw new Error("会话卡片还没渲染出来");
     return found as HTMLElement;
   });
-  fireEvent.doubleClick(card);
+  fireEvent.click(card);
 }
 
 /** 排空剩余的异步落地（懒加载 chunk、promise 尾），免得它在断言之后才更新。 */

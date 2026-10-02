@@ -125,18 +125,20 @@ function matchesQuickQuery(session: AiSession, query: string): boolean {
  * 自上而下：头部（网关胶囊 / 新建 / 折叠）→ 平台与目标 → 目标不可用告警 →
  * 搜索 → 过滤 chips → 列表区 → 批量条 → 底部摘要。
  *
- * # 单击与双击是两件事
+ * # 单击 = 进入这条会话的终端（2026-10-02 用户口径修正）
  *
- * 单击 `onOpen` = 打开/激活标签（终端没在跑就显示历史）；**双击** `onResume` =
- * 在终端中恢复。旧侧栏单击就起终端，那正是用户抱怨的「既慢又意外」——
- * 看一眼不该付一个进程的代价。恢复仍然显式（双击、或标签栏的「继续会话」），
- * 而且这条会话的终端正在跑时双击不接任何动作。
+ * 单击 `onOpen` 直接进入终端：该会话的终端在跑就切过去，没跑就带 `--resume`
+ * 起一路（原目录不在时弹「设置工作目录」——决策在 `app.tsx` 的
+ * `beginResumeSession` 里，四条分支逐条有测试）。详情走卡片上的「消息与分支」
+ * 按钮或标签栏同名按钮。
+ *
+ * 批次一曾把单击改成「打开标签看历史、恢复另行显式」，用户裁定那与预期相反。
+ * 连点/双击的重复触发由 app 层的在途守卫吸收：第二次点击只切选中，不再起第二路。
  */
 export function SessionsSidebar({
   console: state,
   selectedTarget,
   onOpen,
-  onResume,
   onMenu,
   onNewSession,
   onDetail,
@@ -149,10 +151,8 @@ export function SessionsSidebar({
 }: {
   console: SessionsSidebarConsole;
   selectedTarget: AiTarget | null;
-  /** 打开一条会话的标签（历史）。**只回传编号**：侧栏不持有会话内容。 */
+  /** **进入这条会话的终端**（在跑切过去，没跑起 `--resume`）。只回传编号：侧栏不持有会话内容。 */
   onOpen: (target: AiTarget, sessionId: string) => void;
-  /** 在终端中恢复这条会话（双击卡片）。与标签栏的「继续会话」同一个动作。 */
-  onResume: (target: AiTarget, sessionId: string) => void;
   /** 右键菜单：坐标由侧栏回传，菜单开着鼠标的位置。 */
   onMenu: (x: number, y: number, sessionId: string) => void;
   /** 「新建会话」：打开新会话对话框（与工作区那个 +Codex 同一个入口）。 */
@@ -228,12 +228,6 @@ export function SessionsSidebar({
       if (selectedTarget) onOpen(selectedTarget, session.id);
     },
     [selectedTarget, onOpen]
-  );
-  const handleResume = useCallback(
-    (session: AiSession) => {
-      if (selectedTarget) onResume(selectedTarget, session.id);
-    },
-    [selectedTarget, onResume]
   );
   const handleToggleSelected = useCallback(
     (session: AiSession) => state.toggleSelected(session.id),
@@ -628,8 +622,6 @@ export function SessionsSidebar({
                 selectable={canBatch}
                 running={running}
                 onOpen={handleOpen}
-                // 终端已经在跑就不接双击：再起一路只会把它替换掉。
-                onResume={running ? undefined : handleResume}
                 onToggle={handleToggleSelected}
                 onFavorite={handleFavorite}
                 onBranch={handleBranch}

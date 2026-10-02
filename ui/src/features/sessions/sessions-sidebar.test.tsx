@@ -132,7 +132,6 @@ function setup(
   const state = consoleState(consoleOverrides);
   const handlers = {
     onOpen: vi.fn(),
-    onResume: vi.fn(),
     onMenu: vi.fn(),
     onNewSession: vi.fn(),
     onDetail: vi.fn(),
@@ -498,7 +497,6 @@ describe("列表重渲面（P1-I）", () => {
     });
     const handlers = {
       onOpen: vi.fn(),
-      onResume: vi.fn(),
       onMenu: vi.fn(),
       onNewSession: vi.fn(),
       onDetail: vi.fn(),

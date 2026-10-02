@@ -65,6 +65,7 @@ const root = path.resolve(__dirname, "..");
 const ALLOW = new Map([
   ["xterm", "xterm.js 自己渲染的根节点（第三方库，不在 ui/src）"],
   ["xterm-rows", "xterm.js 的屏幕行容器（第三方库）"],
+  ["xterm-screen", "xterm.js 的画布层容器（第三方库；terminal-layout 探针量它的几何）"],
   ["xterm-helper-textarea", "xterm.js 的隐藏输入框（第三方库，聚焦与按键都靠它）"]
 ]);
 

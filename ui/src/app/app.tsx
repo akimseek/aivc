@@ -668,22 +668,6 @@ export function App() {
     sessionById(workspace.activeTab?.sessionId ?? "") ?? console.selectedSession;
 
   /**
-   * **终端信息条**要用的会话：活动标签自己挂着的那条。
-   *
-   * 判据是**这张标签自己有没有会话编号**：全新会话的标签还没有编号（`sessionId` 缺席），
-   * 此刻传给画布的必须是 `null`——信息条于是退回显示这一路终端自己的标题与编号。
-   *
-   * 这里**不能**直接用 `activeSession`（它带「找不到就回退到选中项」）：信息条讲的是
-   * **这一路终端属于谁**，读选中项会让它顶到另一条会话的标题与编号上（T9 要修的场景）。
-   *
-   * 历史视图**不**吃这个值——它吃 `console.selectedSession`，与消息列表同源：
-   * 两者一旦分叉（右键菜单的导出 / 打开目录 / 重命名 / 复制只改选中项、不动标签），
-   * 历史视图就会出现「S 的标题 + R 的消息」。**口径已裁定（R32）：画布跟列表选中项走**，
-   * 标签自己的会话只喂信息条——分叉的两个动作都只改选中项，画布跟选中才不会错位。
-   */
-  const tabSession = workspace.activeTab?.sessionId ? activeSession : null;
-
-  /**
    * 「消息与分支」：打开这条会话的详情（消息列表 + 分支关系都在那里）。
    *
    * 没有会话可看时传 `undefined`——按钮显示为禁用，而不是「点得动但什么都不发生」。
@@ -895,28 +879,19 @@ export function App() {
               findSignal={findSignal}
               // xterm 的主题跟解析后的明暗走（它读不到 CSS 变量）。
               resolvedTheme={theme.resolved}
-              target={selectedTarget}
-              gateway={console.gateway}
-              // 供应商编号 → 名字要一份清单；它已经为工作台取过了，复用同一份。
-              vendors={sidebarVendors}
               /*
-                「继续会话」：点会话行不再起终端之后，这是**显式的**恢复入口
-                （`beginResumeSession` 原样保留：本目录还在就直接进终端，
-                不在就弹「设置工作目录」）。`undefined` = 这一刻没有可恢复的东西。
+                「继续会话」：标签栏的**显式**恢复入口（点在跑的终端不重启；
+                没在跑的走 `beginResumeSession` 同一套决策）。
+                `undefined` = 这一刻没有可恢复的东西。
               */
               onResumeSession={canResumeSession ? resumeActiveSession : undefined}
               /*
-                会话有两个来源，**不能像从前那样合成一个**：
-
-                - 历史视图（含它下面的消息列表）跟**选中项**走——标题与正文必须同源，
-                  否则右键菜单那几条只改选中项的动作会让画布出「S 的标题 + R 的消息」；
-                - 终端信息条跟**标签**走（`tabSession`）——它讲的是这一路终端属于谁。
-
+                历史视图（含它下面的消息列表）跟列表的**选中项**走——标题与正文必须
+                同源，否则右键菜单那几条只改选中项的动作会让画布出「S 的标题 + R 的消息」。
                 消息类 props（`messageTotal` / `messages` / `hasEarlier` / …）在
                 `use-console` 里就是按选中项取的，因此与 `session` 天然同源。
               */
               session={console.selectedSession}
-              infoSession={tabSession}
               messageTotal={console.messageTotal}
               messages={console.messages}
               hasEarlier={console.hasEarlier}

@@ -96,7 +96,7 @@ export function TerminalPane({
   vendorId?: string;
   targetId?: string;
 }) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
+  const mountRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   // 尺寸回调挂在 ResizeObserver 里，拿不到最新的 prop，因此用一个 ref 镜像它。
@@ -214,7 +214,7 @@ export function TerminalPane({
   }, []);
 
   useEffect(() => {
-    const host = hostRef.current;
+    const host = mountRef.current;
     if (!host) return;
 
     const term = new Terminal({
@@ -466,7 +466,21 @@ export function TerminalPane({
       // 用户切回来会发现中间断了一截。
       aria-hidden={!active}
     >
-      <div className="terminal-host" ref={hostRef} />
+      {/*
+        挂载点**不带 padding**，外框的留白在 `.terminal-host` 上。
+
+        # 为什么必须分两层（真机实测的缺陷：最后一行被裁）
+
+        `FitAddon` 量的是 `term.open(el)` 那个元素的**父元素**，且只减
+        xterm 自身的 padding——而全站 `box-sizing: border-box` 下
+        `getComputedStyle(host).height` 返回的是**含 padding 的框高**。
+        挂载点若直接带 `padding: 8px 10px 10px`，可用高度就被多算 18px
+        （横向多算 20px），行/列各多出一档：最后一行落在宿主框外，被
+        `overflow: hidden` 裁掉——看起来就像「底部被自管输入框挡住」。
+      */}
+      <div className="terminal-host">
+        <div className="terminal-mount" ref={mountRef} />
+      </div>
       {active && searchOpen && (
         <TerminalSearchBar
           open={searchOpen}

@@ -2043,39 +2043,6 @@ select {
   display: none;
 }
 
-/* 会话信息条：常驻一行，回答「这条终端在看哪条会话、连的什么」。 */
-.terminal-info-strip {
-  display: flex;
-  align-items: center;
-  gap: var(--ui-space-3);
-  flex: 0 0 auto;
-  padding: 6px var(--ui-space-3);
-  border-bottom: 1px solid var(--term-border);
-  background: var(--term-bg);
-  color: var(--ui-muted);
-  font-size: var(--ui-text-xs);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.terminal-info-strip .strip-title {
-  overflow: hidden;
-  color: var(--term-text);
-  font-weight: 640;
-  text-overflow: ellipsis;
-  max-width: 40ch;
-}
-
-.terminal-info-strip .strip-id {
-  color: var(--ui-faint);
-  font-size: var(--ui-text-xs);
-}
-
-.terminal-info-strip .strip-item b {
-  color: var(--term-text);
-  font-weight: 600;
-}
-
 /* 所有终端**同时挂载**、叠在同一个位置上，非前台的只隐藏不卸载——
    卸载会让 PTY 的输出无人接收而丢失（见 `terminal-pane.tsx` 的注释）。
    用 `visibility` 而不是 `display:none`：后者会让容器尺寸归零，xterm 无法测量，
@@ -2114,6 +2081,15 @@ select {
   padding: 8px 10px 10px;
   background: var(--term-bg);
   overflow: hidden;
+  /* xterm 挂在里面那层 `.terminal-mount` 上；这里给的是**留白**，
+     不能带在挂载点上（FitAddon 按挂载点的父元素量尺寸且不减它的 padding）。 */
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-mount {
+  flex: 1;
+  min-height: 0;
 }
 
 /* ── 自管输入 ────────────────────────────────────────── */

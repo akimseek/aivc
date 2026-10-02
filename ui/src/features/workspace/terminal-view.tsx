@@ -1,8 +1,6 @@
 import { lazy, Suspense } from "react";
 
-import type { AiSession, AiTarget, ApiVendor, GatewayPortStatus } from "../../types";
 import { ErrorBoundary } from "../../app/error-boundary";
-import { displayTitle } from "../../app/session-display";
 import type { TerminalUiState, TerminalSession } from "../../app/use-terminals";
 
 /**
@@ -16,7 +14,12 @@ const TerminalPane = lazy(() =>
 );
 
 /**
- * 终端视图：会话信息条 + 终端栈。
+ * 终端视图：终端栈。
+ *
+ * # 会话信息条（标题 · 编号 · 目标 · 供应商 · 网关）为什么没了
+ *
+ * 2026-10-02 用户裁定：进入终端后不需要常驻那一行。信息不丢——供应商与网关在
+ * **状态栏**（底部）与设置中心里都有，会话标题在标签与侧栏上。
  *
  * # 所有终端**同时挂载**，非前台的只隐藏不卸载
  *
@@ -37,10 +40,6 @@ export function TerminalView({
   activeTerminalId,
   /** 非终端阶段：整块收起来，但**不卸载**（见文件头）。 */
   hidden,
-  session,
-  target,
-  gateway,
-  vendors,
   uiStates,
   onOutput,
   registerSink,
@@ -52,12 +51,6 @@ export function TerminalView({
   terminals: TerminalSession[];
   activeTerminalId: string;
   hidden: boolean;
-  session: AiSession | null;
-  target: AiTarget | null;
-  /** 网关状态。还没取到时是 `null`——那一项就不渲染（不写「未知」）。 */
-  gateway: GatewayPortStatus | null;
-  /** 供应商清单：把 `vendor-3f2a` 这样的编号翻成名字。还没取到就是空数组。 */
-  vendors: ApiVendor[];
   uiStates: Record<string, TerminalUiState>;
   onOutput: (terminalId: string) => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
@@ -70,60 +63,12 @@ export function TerminalView({
    */
   findSignal: number;
 }) {
-  const activeTerminal = terminals.find((item) => item.id === activeTerminalId);
-
-  /**
-   * 信息条上的每一项**数据不可得就不渲染**。
-   *
-   * 它是常驻的一行，宁可短一点也不要出现「目标 -」这种占位：那既没信息，
-   * 又让人怀疑是不是加载失败了。
-   */
-  const title = session ? displayTitle(session) : activeTerminal?.title;
-  const shortId = (session?.id ?? activeTerminal?.id)?.slice(0, 8);
-  /*
-    供应商这一项**先要有这一路终端**：没有终端就没有路由可说，写「直连」也是编的
-    （宁可短一项）。终端在、但没有供应商编号 = 这一路没走网关，CLI 用自己的凭据
-    直连上游（见 `use-terminals`）——那是**数据**，如实标出来，不是占位。
-  */
-  const vendor = !activeTerminal
-    ? null
-    : activeTerminal.vendorId
-      ? `${vendorName(vendors, activeTerminal.vendorId)}（${
-          activeTerminal.vendorMode === "locked" ? "锁定" : "动态"
-        }）`
-      : "直连（用自己的密钥）";
-  const gatewayUrl = gateway?.baseUrl?.trim();
-
   return (
     <div className={`terminal-view${hidden ? " hidden" : ""}`}>
-      <div className="terminal-info-strip">
-        {title && (
-          <span className="strip-title" title={title}>
-            {title}
-          </span>
-        )}
-        {shortId && <span className="strip-id ui-mono">{shortId}</span>}
-        {target && (
-          <span className="strip-item">
-            目标 <b>{target.label}</b>
-          </span>
-        )}
-        {vendor && (
-          <span className="strip-item">
-            供应商 <b>{vendor}</b>
-          </span>
-        )}
-        {gatewayUrl && (
-          <span className="strip-item">
-            网关 <b className="ui-mono">{gatewayUrl}</b>
-          </span>
-        )}
-      </div>
-
       <div className="terminal-stack">
         {/*
           边界**只包终端这一段**：懒加载的 xterm chunk 取不到、或某一路终端渲染崩了，
-          换掉的只是终端区——信息条与整个界面保持可用。把整页包进来等于用
+          换掉的只是终端区——整个界面保持可用。把整页包进来等于用
           「终端坏了」赔上「标签栏、侧栏一起没了」，正是这条边界要避免的事。
         */}
         <ErrorBoundary label="终端加载失败">
@@ -169,9 +114,4 @@ export function TerminalView({
       </div>
     </div>
   );
-}
-
-/** 供应商编号 → 名字。列表还没取到时退回编号——认得出总比空一块强。 */
-function vendorName(vendors: ApiVendor[], vendorId: string): string {
-  return vendors.find((item) => item.id === vendorId)?.name ?? vendorId;
 }

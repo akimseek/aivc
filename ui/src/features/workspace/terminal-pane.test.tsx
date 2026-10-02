@@ -7,6 +7,9 @@ import { TerminalPane } from "./terminal-pane";
 /** 假 xterm 的 `focus()` 调用次数——焦点落点只有它能作证。 */
 const focusSpy = vi.hoisted(() => vi.fn());
 
+/** `term.open(el)` 收到的挂载点——它必须是**不带 padding** 的内层（见修复用例）。 */
+const openSpy = vi.hoisted(() => vi.fn());
+
 /**
  * `TerminalPane` 的两条**消费式信号**：查找（`findSignal`）与焦点（`focusRequest`）。
  *
@@ -33,7 +36,9 @@ vi.mock("@xterm/xterm", () => {
     options: { theme?: unknown } = {};
     buffer = { active: { length: 0, getLine: () => null } };
     loadAddon() {}
-    open() {}
+    open(element: unknown) {
+      openSpy(element);
+    }
     focus() {
       focusSpy();
     }
@@ -109,6 +114,31 @@ beforeAll(() => {
 });
 
 afterEach(cleanup);
+
+/**
+ * 挂载点的结构（2026-10-02 真机缺陷的回归）。
+ *
+ * `FitAddon` 按 `term.open(el)` 那个元素的**父元素**量尺寸，且只减 xterm 自身的
+ * padding；全站 `box-sizing: border-box` 下父元素的 computed height 是**含 padding
+ * 的框高**。挂载点若直接带 `padding: 8px 10px 10px`（原来的 `.terminal-host`），
+ * 可用高度被多算 18px → 行数多一档 → 最后一行落在宿主外被 `overflow: hidden` 裁掉
+ * ——真机上表现为「终端底部被自管输入框挡住」。
+ *
+ * 结构固定为：`.terminal-host`（带留白）＞ `.terminal-mount`（无 padding，交给 xterm）。
+ * 真实几何由真机探针 `scripts/probes/terminal-layout.js` 钉（jsdom 没有排版）。
+ */
+describe("终端挂载点结构", () => {
+  beforeEach(() => openSpy.mockClear());
+
+  it("xterm 挂在不带 padding 的内层挂载点上", () => {
+    render(<TerminalPane {...props()} />);
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const mount = openSpy.mock.calls[0]![0] as HTMLElement;
+    expect(mount.className).toContain("terminal-mount");
+    // 留白那一层在**外面**：挂载点的父元素才是 `.terminal-host`。
+    expect(mount.parentElement?.className).toContain("terminal-host");
+  });
+});
 
 /**
  * 焦点交给终端的那条通路（状态栏胶囊切到「终端原生输入」时发）。

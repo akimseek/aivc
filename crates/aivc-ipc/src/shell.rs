@@ -103,6 +103,9 @@ const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "gif", "webp", "bmp",
 /// 继续读只会在 IPC 上搬一个几十兆的 base64 串，界面照样显示不出来。
 const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 
+/// 粘贴图片落盘的进程内序号，见 `save_image` 的文件名说明。
+static PASTE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 impl ShellCommands {
     /// 构造。
     #[must_use]
@@ -223,13 +226,16 @@ impl ShellCommands {
         }
         std::fs::create_dir_all(&self.scratch_dir)
             .map_err(|error| failed(format!("创建暂存目录失败：{error}")))?;
-        // 文件名带上时间戳与一个随机数：同一秒里粘两张不能互相覆盖。
+        // 文件名带上毫秒时间戳、进程号与一个进程内序号：同一毫秒里粘两张不能
+        // 互相覆盖。**序号是必须的**——毫秒时间戳 + 进程号仍会在同毫秒内相撞
+        // （测试在并行负载下真的撞到过），而第二次 `write` 会静默覆盖第一张图。
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |value| value.as_millis());
+        let seq = PASTE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = self
             .scratch_dir
-            .join(format!("pasted-{stamp}-{}.png", std::process::id()));
+            .join(format!("pasted-{stamp}-{}-{seq}.png", std::process::id()));
         std::fs::write(&path, &bytes).map_err(|error| failed(format!("写盘失败：{error}")))?;
         Ok(json!({
             "path": path.to_string_lossy(),
@@ -650,7 +656,8 @@ mod tests {
 
     #[test]
     fn two_saves_in_the_same_millisecond_do_not_overwrite_each_other() {
-        // 同一秒里粘两张图不能互相覆盖——文件名里带了进程号与毫秒。
+        // 同一毫秒里粘两张图不能互相覆盖——光有进程号与毫秒还不够（并行负载
+        // 下真的撞到过），文件名里的进程内序号才是判据。
         use base64::Engine as _;
         let (commands, _dir) = commands_with_dir();
         let encoded = base64::engine::general_purpose::STANDARD.encode(TINY_PNG);

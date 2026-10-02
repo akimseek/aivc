@@ -17,7 +17,7 @@ import type { ApiVendor, VendorBalance, VendorConfigFile, VendorModel } from "..
  * | 读配置 | CLI 那边**实际读到的**是什么——界面里的表和它可能不一致 |
  *
  * 两件都**不再是常驻卡片**：批次二把供应商页重排成「上面是主表、下面是工具」，
- * 由面板头的两个按钮把这里切出来（见 `config/vendors-panel.tsx`）。
+ * 由面板头的两个按钮把这里切出来（见 `./vendors-panel.tsx`）。
  *
  * # 余额去哪了
  *

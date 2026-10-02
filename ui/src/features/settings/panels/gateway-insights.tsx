@@ -239,7 +239,7 @@ export function GatewayInsights({ onError }: { onError: (message: string) => voi
 
       <Card
         title="最近请求"
-        description="按上面的时间区间筛选。"
+        description={`按上面的时间区间筛选。最多显示最近 ${RECENT_REQUESTS_PAGE_SIZE} 条；要看全部去「请求日志」页。`}
         actions={
           <Toolbar>
             <Button small onClick={() => void load()}>

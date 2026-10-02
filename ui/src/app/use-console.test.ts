@@ -342,7 +342,7 @@ describe("branchFromMessage 分给哪条会话", () => {
   });
 });
 
-describe("历史消息累计上限（P1-J）", () => {
+describe("历史消息窗口：上限与两个边界（P1-J + 42 §五）", () => {
   /**
    * 分页假运行时：`total` 条消息、页大小 80（与 `MESSAGE_PAGE_SIZE` 一致），
    * 记下每次 `get-session-messages-page` 的 offset/limit。
@@ -388,6 +388,58 @@ describe("历史消息累计上限（P1-J）", () => {
     return calls;
   }
 
+  /**
+   * 可挂起的假运行时：首屏（offset<0）立即返回，**往前翻的那一页先挂起**，
+   * 由测试调用 `release()` 决定何时放行——这样才能构造「放行前切了会话」。
+   */
+  function heldPageRuntime(total: number) {
+    const all = Array.from({ length: total }, (_, index) => ({
+      role: "assistant",
+      text: `m${index}`
+    }));
+    const pageAt = (start: number, limit: number) => ({
+      messages: all.slice(start, start + limit),
+      offset: start,
+      messageCount: total,
+      hasMore: start > 0
+    });
+    let release: (() => void) | undefined;
+    window.__TAURI__ = {
+      core: {
+        invoke: async (_command: string, payload?: unknown) => {
+          const { command = "", args = {} } = (payload ?? {}) as {
+            command?: string;
+            args?: Record<string, unknown>;
+          };
+          switch (command) {
+            case "codex:get-session-messages-page": {
+              const offset = Number(args.offset ?? 0);
+              const limit = Number(args.limit ?? 0);
+              if (offset < 0) return pageAt(Math.max(0, total - limit), limit);
+              return new Promise((resolve) => {
+                release = () => resolve(pageAt(offset, limit));
+              });
+            }
+            case "codex:list-targets":
+              return [target("codex:local", true)];
+            case "codex:list-sessions":
+              return [session("s1")];
+            case "codex:list-session-quick-access":
+              return { favorites: [], recent: [] };
+            default:
+              return [];
+          }
+        }
+      }
+    };
+    return {
+      release: () => {
+        if (!release) throw new Error("没有挂起中的翻页请求");
+        release();
+      }
+    };
+  }
+
   it("翻到上限后不再发请求——累计不再增长", async () => {
     // 不封顶的话，几万条的老会话一路往前翻会把 DOM 与内存推到无界（P1-J）。
     const pageCalls = pagedRuntime(1000);
@@ -413,5 +465,53 @@ describe("历史消息累计上限（P1-J）", () => {
     });
     expect(pageCalls.length).toBe(requests);
     expect(result.current.messages).toHaveLength(HISTORY_MESSAGE_LIMIT);
+  });
+
+  it("翻到头（0 < messageStart < 页大小）不出现重复消息（42 §五.1）", async () => {
+    // total=125：首屏从 45 起；再往前翻时 offset 被钳到 0，后端回的是**整页**
+    // `[0,80)`——其中 45..79 已经在窗口里，直接前置会把它们插两遍。
+    pagedRuntime(125);
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1));
+    act(() => result.current.openAt(target("codex:local", true), session("s1")));
+    await waitFor(() => expect(result.current.messages).toHaveLength(80));
+
+    await act(async () => {
+      await result.current.loadEarlierMessages();
+    });
+
+    const texts = result.current.messages.map((item) => item.text);
+    expect(texts).toHaveLength(125);
+    expect(new Set(texts).size).toBe(125); // 无重复
+    expect(texts[0]).toBe("m0");
+    expect(result.current.hasEarlier).toBe(false);
+  });
+
+  it("翻页途中切会话：旧页不许插进新窗口（42 §五.2）", async () => {
+    const held = heldPageRuntime(1000);
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1));
+    act(() => result.current.openAt(target("codex:local", true), session("s1")));
+    await waitFor(() => expect(result.current.messages).toHaveLength(80));
+
+    // 翻页请求被挂起（放行时机由测试决定）。
+    let loading: Promise<void> | undefined;
+    act(() => {
+      loading = result.current.loadEarlierMessages();
+    });
+
+    // 中途切到另一条会话——它的最新页立即返回。
+    act(() => result.current.setSelectedId("s2"));
+    await waitFor(() => expect(result.current.messages).toHaveLength(80));
+    const after = result.current.messages.map((item) => item.text);
+
+    // 现在才放行旧会话那一页：它必须被整个丢弃。
+    await act(async () => {
+      held.release();
+      await loading;
+    });
+    expect(result.current.messages.map((item) => item.text)).toEqual(after);
   });
 });

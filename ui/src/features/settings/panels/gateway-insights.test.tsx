@@ -285,7 +285,7 @@ describe("GatewayInsights", () => {
     // 一次请求画完整张表，不需要翻页控件；审计要看全量时去日志页（那里本就有分页）。
     // 参数也决定返回形状：不带宽度的裸数组是全量，payload 没有上界。
     const runtime = fakeRuntime();
-    await renderInsights(runtime);
+    const { view } = await renderInsights(runtime);
 
     const call = runtime.callsWithArgs.find((item) => item.command === "gateway:query-logs");
     expect(call).toBeTruthy();
@@ -294,6 +294,8 @@ describe("GatewayInsights", () => {
     expect(args.pageSize).toBe(50);
     expect(typeof args.periodStart).toBe("string");
     expect(typeof args.periodEnd).toBe("string");
+    // 上限要在界面上说出来——否则用户会以为这 50 条就是「全部」。
+    expect(view.container.textContent).toContain("最多显示最近 50 条");
   });
 
   it("旧响应晚到不覆盖新结果：刷新按请求序号丢弃过期响应", async () => {

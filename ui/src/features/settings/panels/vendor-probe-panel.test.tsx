@@ -12,7 +12,7 @@ import { VendorConfigReader, VendorModelProbe, balanceText } from "./vendor-prob
  * 「接线真的接上了」与**余额的三态**——把「上游没提供余额」显示成 `0`
  * 会让用户以为该充值了。
  *
- * 余额的行内状态与单家刷新入口在 `config/vendors-panel.test.tsx`：
+ * 余额的行内状态与单家刷新入口在 `./vendors-panel.test.tsx`：
  * 它已经不在这一层渲染（每个供应商行自己显示），探活这一层只剩上面两块。
  */
 

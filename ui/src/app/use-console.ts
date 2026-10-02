@@ -198,6 +198,14 @@ export function useConsole(options: { notify?: Notify } = {}) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [messages, setMessages] = useState<AiMessage[]>([]);
+  /**
+   * 消息窗口的**代际**。
+   *
+   * 选中会话/目标一变就 +1；在途的「往前翻」请求带着快照，回来时不等于当前值
+   * 就把整页丢掉——否则旧会话的页会插进新会话的窗口（P0-B 的 seq 模式，
+   * 42 §五.2 记的正是这里没覆盖）。
+   */
+  const messagesSeqRef = useRef(0);
   /** 当前已加载消息的**起始绝对序号**；> 0 说明前面还有。 */
   const [messageStart, setMessageStart] = useState(0);
   /**
@@ -391,6 +399,8 @@ export function useConsole(options: { notify?: Notify } = {}) {
 
   /* ── 消息：选中会话后取**最后一页**，再按需往前翻 ── */
   useEffect(() => {
+    // 换会话/目标即作废在途的翻页（见 `messagesSeqRef` 的说明）。
+    messagesSeqRef.current += 1;
     if (!targetId || !selectedId) {
       setMessages([]);
       setMessageStart(0);
@@ -426,16 +436,26 @@ export function useConsole(options: { notify?: Notify } = {}) {
     ) {
       return;
     }
+    const seq = messagesSeqRef.current;
     setLoadingMore(true);
     try {
       const offset = Math.max(0, messageStart - MESSAGE_PAGE_SIZE);
       const page = await api.getSessionMessagesPage(targetId, selectedId, offset, MESSAGE_PAGE_SIZE);
+      // 会话/目标已经切走：这一页属于**上一个窗口**，整个丢掉。
+      if (seq !== messagesSeqRef.current) return;
+      /*
+        页尾可能与已加载的窗口**重叠**：`0 < messageStart < 页大小` 时请求从 0 起，
+        后端回的整页里 `[messageStart, …)` 那段已经在窗口里——直接前置会把它们插
+        两遍（列表里同一条出现两次、同 `sourceLine` 撞 key）。只保留真正更早的部分。
+      */
+      const fresh = page.messages.slice(0, Math.max(0, messageStart - page.offset));
       // **插到前面**——往前翻的是更早的消息，追加到末尾就全乱了。
-      setMessages((current) => [...page.messages, ...current]);
+      setMessages((current) => [...fresh, ...current]);
       setMessageStart(page.offset);
       setError("");
     } catch (problem) {
-      setError(errorText(problem));
+      // 旧会话的失败也不许盖到新窗口的错误位上。
+      if (seq === messagesSeqRef.current) setError(errorText(problem));
     } finally {
       setLoadingMore(false);
     }

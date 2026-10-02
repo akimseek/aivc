@@ -18,8 +18,8 @@ import type { ReactNode } from "react";
  * 而那条 `background: rgb(255 255 255 / 72%)` 在暗色下是一块白板——留着比删掉更危险。
  */
 
-/** 转圈。`label` 会同时进 `aria-label`，屏幕阅读器才读得出。 */
-export function Spinner({ size = 14, label = "加载中" }: { size?: number; label?: string }) {
+/** 转圈。`label` 会同时进 `aria-label`，屏幕阅读器才读得出。**模块私有**：对外只出 `LoadingBlock`。 */
+function Spinner({ size = 14, label = "加载中" }: { size?: number; label?: string }) {
   return (
     <span
       className="spinner"

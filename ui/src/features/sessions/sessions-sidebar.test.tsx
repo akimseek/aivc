@@ -33,13 +33,18 @@ const PROVIDERS: AiProviderSummary[] = [
     label: "Codex",
     capabilities: { trash: true, batchActions: true, sessionSettings: true }
   },
-  // claude 因「不可用 WSL 目标」的会话目录门控而加入；`sessionSettings` 三者与
-  // 后端矩阵一致（仅 codex 为真），其余键按各自用例需要。
-  { id: "claude", label: "Claude Code", capabilities: { sessionSettings: false } },
+  // claude / qoder 的 `sessionSettings` 与后端矩阵一致（仅 codex 为真）；trash 与
+  // batchActions **刻意反配**（qoder 禁回收站、claude 禁批量）——两把键取值不同，
+  // 「读错键」才会翻红；两个都为 false 时，把两个能力函数写反也照样全绿。
+  {
+    id: "claude",
+    label: "Claude Code",
+    capabilities: { trash: true, batchActions: false, sessionSettings: false }
+  },
   {
     id: "qoder",
     label: "Qoder CN",
-    capabilities: { trash: false, batchActions: false, sessionSettings: false }
+    capabilities: { trash: false, batchActions: true, sessionSettings: false }
   }
 ];
 
@@ -289,7 +294,9 @@ describe("平台能力门控", () => {
   });
 
   it("不支持批量操作的平台：勾选框与批量条都不出现", () => {
-    const { view } = setup({ providerId: "qoder", selectedIds: ["s1"] });
+    // claude 的 `batchActions` 为假而 `trash` 为真：若「有没有勾选框」误读了
+    // trash，这条会翻红（qoder 两个键同值时做不到这件事）。
+    const { view } = setup({ providerId: "claude", selectedIds: ["s1"] });
     expect(view.container.querySelector(".session-card-check")).toBeNull();
     expect(view.container.querySelector(".batchbar")).toBeNull();
   });

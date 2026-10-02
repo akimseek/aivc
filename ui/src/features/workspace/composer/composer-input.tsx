@@ -370,7 +370,7 @@ export function ComposerInput({
                   onClick={() => setPreview(item)}
                   title={`预览 ${item.path}`}
                 >
-                  🖼 {item.name}
+                  <Icon name="image" size={12} /> {item.name}
                 </button>
               ) : (
                 <span className="composer-attachment-file">@ {item.path}</span>
@@ -382,7 +382,7 @@ export function ComposerInput({
                   setAttachments((current) => current.filter((at) => at.id !== item.id))
                 }
               >
-                ✕
+                <Icon name="close" size={12} />
               </button>
             </span>
           ))}

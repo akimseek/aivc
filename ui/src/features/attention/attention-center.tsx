@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { hasLayerAbove } from "../../components";
+import { Icon, hasLayerAbove, type IconName } from "../../components";
 
 /**
  * 会话提醒中心。
@@ -43,11 +43,16 @@ export type AttentionCenterProps = {
   onDismiss: (terminalId: string) => void;
 };
 
-/** 按 kind 给一个标记；三类分别对应「等确认 / 出错 / 已完成」。 */
-function markerOf(kind: string): string {
-  if (kind === "awaiting-confirmation") return "⏳";
-  if (kind === "error") return "⚠";
-  return "✓";
+/**
+ * 按 kind 给一个标记图标；三类分别对应「等确认 / 出错 / 已完成」。
+ *
+ * 用 `Icon` 而不是 emoji：emoji 的字形由系统字体决定，Windows / macOS 上长得
+ * 完全不同，还会把行高和基线带偏（E1 走查截图里一排提醒行高参差）。
+ */
+function markerOf(kind: string): IconName {
+  if (kind === "awaiting-confirmation") return "clock";
+  if (kind === "error") return "alert";
+  return "check";
 }
 
 export function AttentionCenter({ entries, onSelect, onDismiss }: AttentionCenterProps) {
@@ -93,7 +98,7 @@ export function AttentionCenter({ entries, onSelect, onDismiss }: AttentionCente
         title="会话提醒"
         onClick={() => setOpen((current) => !current)}
       >
-        <span aria-hidden="true">🔔</span>
+        <Icon name="bell" size={16} />
         {entries.length > 0 && (
           <span className="attention-count">{entries.length > 99 ? "99+" : entries.length}</span>
         )}
@@ -113,14 +118,14 @@ export function AttentionCenter({ entries, onSelect, onDismiss }: AttentionCente
               title="关闭"
               onClick={() => setOpen(false)}
             >
-              ✕
+              <Icon name="close" size={14} />
             </button>
           </div>
 
           <div className="attention-list">
             {sorted.map((entry) => (
               <div key={entry.terminalId} className={`attention-item ${entry.kind}`}>
-                <span aria-hidden="true">{markerOf(entry.kind)}</span>
+                <Icon name={markerOf(entry.kind)} size={14} />
                 <button
                   type="button"
                   className="attention-open"
@@ -147,7 +152,7 @@ export function AttentionCenter({ entries, onSelect, onDismiss }: AttentionCente
                   aria-label={`移除 ${entry.title} 提醒`}
                   onClick={() => onDismiss(entry.terminalId)}
                 >
-                  ✕
+                  <Icon name="close" size={12} />
                 </button>
               </div>
             ))}

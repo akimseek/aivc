@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button, TextInput } from "../../components";
+import { Button, Icon, TextInput } from "../../components";
 import {
   findMatches,
   matchLabel,
@@ -167,7 +167,7 @@ export function TerminalSearchBar({
         ↓
       </Button>
       <Button small aria-label="关闭搜索" title="关闭搜索" onClick={onClose}>
-        ✕
+        <Icon name="close" size={12} />
       </Button>
 
       {/* 范围必须说出来：回滚区之外的输出搜不到，而用户会以为「日志里没有」。 */}

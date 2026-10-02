@@ -56,7 +56,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             std::path::Path::to_path_buf,
         );
     // 显式覆盖优先（探针用它把数据挪到临时目录，见 `RUNTIME_ROOT_ENV` 的文档）。
-    let root = aivc_infra::config::overridden_root(
+    let resolved = aivc_infra::config::overridden_root(
         std::env::var(aivc_infra::config::RUNTIME_ROOT_ENV)
             .ok()
             .as_deref(),
@@ -70,6 +70,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Platform::current(),
         )
     });
+    /*
+      **打包形态下运行根可能不可写**：per-machine MSI 会把应用装进
+      `C:\Program Files`（普通用户写不进去），macOS 的 `.app` 包内部同理。
+      实测过：普通用户启动即报「创建目录失败：…\data」，应用起不来（44 号 §八）。
+      这里探测一次（真的写一个临时文件），不可写且有用户级目录可用就回退过去；
+      两处路径都记进日志——回退不是无声的。
+    */
+    let requested = resolved.root.clone();
+    let root = aivc_infra::config::effective_root(
+        resolved,
+        aivc_infra::config::root_is_writable,
+        aivc_infra::config::fallback_user_root(Platform::current(), |key| std::env::var(key).ok()),
+    );
+    if root.shape == aivc_infra::config::RuntimeShape::Fallback {
+        tracing::warn!(
+            requested = %requested.display(),
+            fallback = %root.root.display(),
+            "运行根不可写，已回退到用户数据目录"
+        );
+    }
     tracing::info!(
         root = %root.root.display(),
         shape = ?root.shape,

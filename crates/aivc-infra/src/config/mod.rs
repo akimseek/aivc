@@ -16,7 +16,8 @@ pub mod settings;
 
 pub use paths::AppPaths;
 pub use runtime_root::{
-    RUNTIME_ROOT_ENV, RuntimeRoot, RuntimeShape, is_unpacked_build_directory, overridden_root,
-    resolve_runtime_storage_root,
+    FALLBACK_DIR_NAME, RUNTIME_ROOT_ENV, RuntimeRoot, RuntimeShape, effective_root,
+    fallback_user_root, is_unpacked_build_directory, overridden_root, resolve_runtime_storage_root,
+    root_is_writable,
 };
 pub use settings::{AppSettings, RawSettings, SettingsStore};

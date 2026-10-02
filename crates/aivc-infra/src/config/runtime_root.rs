@@ -37,11 +37,19 @@
 //! 界面探针必须在一个临时目录里跑，否则它会碰用户真实的数据目录
 //! （这一点也是事故换来的，见 `scripts/app-probe.ps1` 的说明）。
 //!
-//! # 已知限制（刻意保留现网行为）
+//! # 不可写回退（2026-10-02 决策）
 //!
-//! macOS 打包形态下运行根等于 `…/App.app/Contents/MacOS`，即数据目录落在 `.app`
-//! 包内部。已签名的应用包不可写，这会失败。现网即如此，此处不擅自改变行为；
-//! 若需修正，应作为独立决策并同步更新 parity 矩阵。
+//! 打包形态（[`RuntimeShape::Installed`] / [`RuntimeShape::UnpackedBuild`]）下运行根
+//! 可能落在**不可写**的位置——per-machine MSI 装进 `C:\Program Files`、macOS 的
+//! `.app` 包内部都是这样。实测（`docs/rust-rewrite/44-p8-packaging.md` §八）：
+//! 普通用户启动即报「创建目录失败：…\data」，应用根本起不来。
+//!
+//! 现在启动时探测运行根可写性（[`root_is_writable`]），不可写且有用户级目录可用
+//! （[`fallback_user_root`]：Windows `%LOCALAPPDATA%\aivc`、macOS
+//! `~/Library/Application Support/aivc`、Linux `$XDG_DATA_HOME`（缺省
+//! `~/.local/share`）`/aivc`）时回退过去（[`RuntimeShape::Fallback`]），并以
+//! warn 日志同时记下两个路径。**开发根与显式覆盖不参与回退**：前者该大声失败
+//! （那是开发机的配置问题），后者是探针的隔离手段，不许被静默挪走。
 
 use std::path::{Path, PathBuf};
 
@@ -51,6 +59,12 @@ use aivc_core::target::Platform;
 ///
 /// 设了它就以它的值为运行根，`is_packaged` 与可执行文件位置都不再参与判断。
 pub const RUNTIME_ROOT_ENV: &str = "AIVC_RUNTIME_ROOT";
+
+/// 回退目录名（用户数据目录下的子目录）。
+///
+/// 用 `aivc` 而不是产品名（`AI 可视化控制台`）：回退路径要跨终端与脚本好写，
+/// 避免中文路径在旧编码工具链里的各种坑；`AIVC_` 前缀的环境变量已开了先例。
+pub const FALLBACK_DIR_NAME: &str = "aivc";
 
 /// 运行根形态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +79,8 @@ pub enum RuntimeShape {
     Installed,
     /// 由 [`RUNTIME_ROOT_ENV`] 显式指定。
     Overridden,
+    /// 打包形态的原始运行根不可写，已回退到用户级目录（见 [`effective_root`]）。
+    Fallback,
 }
 
 /// 运行根解析结果。
@@ -150,6 +166,81 @@ pub fn is_unpacked_build_directory(directory: &Path, platform: Platform) -> bool
         Platform::Linux => name == "linux-unpacked",
         // macOS 的打包产物是 `.app` 包，没有对应的 unpacked 目录约定。
         Platform::Darwin => false,
+    }
+}
+
+/// 运行根可写性探测：**真的写一次**再删掉。
+///
+/// 不用「目录是否存在」「只读属性」这类间接判据——「目录已存在但不可写」
+/// （Program Files 的典型状态）才是要抓的那种。探测文件写在根目录下，
+/// 与 `data/`、`logs/` 同级；任何一步失败都算不可写。
+///
+/// 探测有副作用（在可写的根里瞬时创建一个文件），因此只在打包形态下使用
+/// （见 [`effective_root`]：开发根与显式覆盖根本不走探测）。
+#[must_use]
+pub fn root_is_writable(root: &Path) -> bool {
+    let probe = root.join(".aivc-write-probe");
+    if std::fs::write(&probe, b"probe").is_err() {
+        return false;
+    }
+    let _ = std::fs::remove_file(&probe);
+    true
+}
+
+/// 打包形态运行根不可写时的用户级回退目录。
+///
+/// - Windows：`%LOCALAPPDATA%\aivc`（机器本地数据；与 NSIS per-user 安装落点同层）；
+/// - macOS：`$HOME/Library/Application Support/aivc`；
+/// - Linux：`$XDG_DATA_HOME/aivc`，未设时 `$HOME/.local/share/aivc`。
+///
+/// 环境变量经参数注入（与 [`overridden_root`] 同一理由）：测试不碰进程环境。
+/// 空串与全空白视为「没设」。
+#[must_use]
+pub fn fallback_user_root(
+    platform: Platform,
+    env: impl Fn(&str) -> Option<String>,
+) -> Option<PathBuf> {
+    let non_empty = |key: &str| env(key).filter(|value| !value.trim().is_empty());
+    let base = match platform {
+        Platform::Win32 => PathBuf::from(non_empty("LOCALAPPDATA")?),
+        Platform::Darwin => PathBuf::from(non_empty("HOME")?).join("Library/Application Support"),
+        Platform::Linux => match non_empty("XDG_DATA_HOME") {
+            Some(xdg) => PathBuf::from(xdg),
+            None => PathBuf::from(non_empty("HOME")?).join(".local/share"),
+        },
+    };
+    Some(base.join(FALLBACK_DIR_NAME))
+}
+
+/// 打包形态下运行根不可写时的最终决策（纯函数，探测与回退目录都由参数注入）。
+///
+/// - **只处理打包形态**（`Installed` / `UnpackedBuild`）：开发根不可写该大声失败
+///   （开发机的配置问题），显式覆盖是探针的隔离手段、不许被静默挪走——这两类
+///   形态原样返回，**连探测都不做**；
+/// - 可写 → 原样返回；
+/// - 不可写且有回退目录 → `Fallback`；
+/// - 不可写且拿不到回退目录（环境变量缺失）→ 原样返回，让「创建目录失败」如实浮出。
+#[must_use]
+pub fn effective_root(
+    resolved: RuntimeRoot,
+    is_writable: impl Fn(&Path) -> bool,
+    fallback: Option<PathBuf>,
+) -> RuntimeRoot {
+    if !matches!(
+        resolved.shape,
+        RuntimeShape::Installed | RuntimeShape::UnpackedBuild
+    ) {
+        return resolved;
+    }
+    if is_writable(&resolved.root) {
+        return resolved;
+    }
+    match fallback {
+        Some(root) => RuntimeRoot {
+            root,
+            shape: RuntimeShape::Fallback,
+        },
+        None => resolved,
     }
 }
 
@@ -304,5 +395,145 @@ mod tests {
         // 环境变量里带尾随空格是常见的（尤其从脚本里设），不该变成路径的一部分。
         let overridden = overridden_root(Some("  C:/tmp/probe  ")).expect("应当生效");
         assert_eq!(overridden.root, p("C:/tmp/probe"));
+    }
+
+    // ── 不可写回退（2026-10-02）────────────────────────────
+
+    /// 只认识这几个键的假环境。
+    fn env_from(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let owned: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        move |key: &str| owned.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    }
+
+    #[test]
+    fn fallback_on_windows_is_local_app_data() {
+        let root = fallback_user_root(
+            Platform::Win32,
+            env_from(&[("LOCALAPPDATA", "C:/Users/x/AppData/Local")]),
+        )
+        .expect("应当有回退目录");
+        assert_eq!(root, p("C:/Users/x/AppData/Local/aivc"));
+    }
+
+    #[test]
+    fn fallback_on_macos_is_application_support() {
+        let root = fallback_user_root(Platform::Darwin, env_from(&[("HOME", "/Users/x")]))
+            .expect("应当有回退目录");
+        assert_eq!(root, p("/Users/x/Library/Application Support/aivc"));
+    }
+
+    #[test]
+    fn fallback_on_linux_prefers_xdg_then_home() {
+        let xdg = fallback_user_root(
+            Platform::Linux,
+            env_from(&[("XDG_DATA_HOME", "/home/x/.data"), ("HOME", "/home/x")]),
+        )
+        .expect("应当有回退目录");
+        assert_eq!(xdg, p("/home/x/.data/aivc"));
+
+        let home = fallback_user_root(Platform::Linux, env_from(&[("HOME", "/home/x")]))
+            .expect("应当有回退目录");
+        assert_eq!(home, p("/home/x/.local/share/aivc"));
+
+        // XDG_DATA_HOME 是空串时按「没设」处理（空串当路径会得到比不设更难查的故障）。
+        let blank = fallback_user_root(
+            Platform::Linux,
+            env_from(&[("XDG_DATA_HOME", "  "), ("HOME", "/home/x")]),
+        )
+        .expect("应当有回退目录");
+        assert_eq!(blank, p("/home/x/.local/share/aivc"));
+    }
+
+    #[test]
+    fn fallback_is_none_without_environment() {
+        assert!(fallback_user_root(Platform::Win32, env_from(&[])).is_none());
+        assert!(fallback_user_root(Platform::Darwin, env_from(&[])).is_none());
+        assert!(fallback_user_root(Platform::Linux, env_from(&[])).is_none());
+    }
+
+    #[test]
+    fn an_unwritable_installed_root_falls_back() {
+        // MSI 装进 Program Files 的场景：探测为不可写 → 回退到用户目录。
+        let resolved = RuntimeRoot {
+            root: p("C:/Program Files/AIVC"),
+            shape: RuntimeShape::Installed,
+        };
+        let effective = effective_root(
+            resolved,
+            |_| false,
+            Some(p("C:/Users/x/AppData/Local/aivc")),
+        );
+        assert_eq!(effective.shape, RuntimeShape::Fallback);
+        assert_eq!(effective.root, p("C:/Users/x/AppData/Local/aivc"));
+    }
+
+    #[test]
+    fn a_writable_root_is_kept_as_is() {
+        // NSIS per-user 的场景：可写 → 原样，不回退。
+        let resolved = RuntimeRoot {
+            root: p("C:/Users/x/AppData/Local/AIVC"),
+            shape: RuntimeShape::Installed,
+        };
+        let effective = effective_root(resolved.clone(), |_| true, Some(p("X:/unused")));
+        assert_eq!(effective, resolved);
+    }
+
+    #[test]
+    fn without_a_fallback_directory_the_original_root_is_kept() {
+        // 环境变量缺失时原样返回——让「创建目录失败」如实浮出，而不是挪到一个
+        // 凭空拼出来的路径上。
+        let resolved = RuntimeRoot {
+            root: p("C:/Program Files/AIVC"),
+            shape: RuntimeShape::Installed,
+        };
+        let effective = effective_root(resolved.clone(), |_| false, None);
+        assert_eq!(effective, resolved);
+    }
+
+    #[test]
+    fn development_and_overridden_roots_are_neither_probed_nor_moved() {
+        // 判别力：探测闭包一旦被调用就 panic——实现若把形态闸门去掉，此用例红。
+        let development = RuntimeRoot {
+            root: p("D:/code/ai/aivc-rs"),
+            shape: RuntimeShape::Development,
+        };
+        let kept = effective_root(
+            development.clone(),
+            |_| panic!("开发形态不该被探测"),
+            Some(p("X:/should/not/be/used")),
+        );
+        assert_eq!(kept, development);
+
+        let overridden = RuntimeRoot {
+            root: p("C:/tmp/aivc-probe-1"),
+            shape: RuntimeShape::Overridden,
+        };
+        let kept = effective_root(
+            overridden.clone(),
+            |_| panic!("显式覆盖不该被探测"),
+            Some(p("X:/should/not/be/used")),
+        );
+        assert_eq!(kept, overridden);
+    }
+
+    #[test]
+    fn root_is_writable_says_yes_for_a_writable_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(root_is_writable(dir.path()));
+        // 探测文件不留痕。
+        assert!(!dir.path().join(".aivc-write-probe").exists());
+    }
+
+    #[test]
+    fn root_is_writable_says_no_when_the_root_is_a_file() {
+        // 便携模拟「不可写」：根路径其实是个文件，写入必然失败。
+        // （真实的权限拒绝在测试里没法可移植地造，交给装机实测——见 44 号 §八。）
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("blocked");
+        std::fs::write(&file, b"x").expect("写文件");
+        assert!(!root_is_writable(&file));
     }
 }

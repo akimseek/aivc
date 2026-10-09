@@ -166,13 +166,14 @@ export function GatewayExternalCard({
     async (key: string, text: string) => {
       try {
         await api.copyText(text);
+        onNotify?.(key === "token" ? "外部 API 令牌已复制。" : "外部 API 地址已复制。");
         setCopied(key);
         window.setTimeout(() => setCopied(""), 2000);
       } catch (error) {
         onError(errorText(error));
       }
     },
-    [onError]
+    [onError, onNotify]
   );
 
   const toggle = async () => {
@@ -316,7 +317,7 @@ export function GatewayExternalCard({
         </div>
         {endpoints.length === 0 ? (
           <p className="field-hint">
-            网关没有在监听（或还没选端口），因此还没有可用地址。先在上面保存并重启应用。
+            网关尚未监听，因此还没有可用地址。请先在上面启用网关并保存端口配置。
           </p>
         ) : (
           <div className="gateway-endpoint-list">

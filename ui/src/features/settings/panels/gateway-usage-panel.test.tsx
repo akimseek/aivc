@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, waitFor, within, type RenderResult } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { GatewayUsagePanel } from "./gateway-usage-panel";
 import { rangeBounds } from "../../../app/gateway-range";
@@ -69,6 +69,66 @@ function setup(answers: Record<string, unknown>) {
   const view = render(<GatewayUsagePanel onError={() => undefined} />);
   return { view, invocations };
 }
+
+afterEach(cleanup);
+
+function dimensions(count: number, prefix: string) {
+  return Array.from({ length: count }, (_, index) => ({
+    key: `${prefix}-${index + 1}`, label: `${prefix} ${index + 1}`, providerId: "codex",
+    requestCount: index + 1, failureCount: 0, switchedCount: 0,
+    inputTokens: 100, outputTokens: 20, totalTokens: 120, costUsd: 0.01
+  }));
+}
+
+describe("GatewayUsagePanel：维度列表分页", () => {
+  it("供应商和模型独立翻页及选择页长，翻页只切片而不重新汇总", async () => {
+    const data = { ...report({ requestCount: 900, successCount: 900 }), vendors: dimensions(23, "供应商"), models: dimensions(31, "模型") };
+    const { view, invocations } = setup({ "gateway:get-usage-report": data });
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(20));
+    const vendors = within(view.getByRole("heading", { name: "按供应商" }).closest(".card") as HTMLElement);
+    const models = within(view.getByRole("heading", { name: "按模型" }).closest(".card") as HTMLElement);
+    expect(vendors.getByRole("navigation", { name: "按供应商分页" })).toBeTruthy();
+    expect(models.getByRole("navigation", { name: "按模型分页" })).toBeTruthy();
+    await act(async () => { fireEvent.click(vendors.getByRole("button", { name: "最后一页" })); });
+    expect(vendors.getAllByRole("row")).toHaveLength(4);
+    expect(vendors.getByText("供应商 21")).toBeTruthy();
+    expect(models.getByText("模型 1")).toBeTruthy();
+    await act(async () => { fireEvent.click(models.getByRole("button", { name: "下一页" })); });
+    expect(models.getByText("模型 11")).toBeTruthy();
+    expect(vendors.getByText("供应商 21")).toBeTruthy();
+    await act(async () => { fireEvent.change(vendors.getByRole("combobox", { name: "每页数量" }), { target: { value: "20" } }); });
+    expect(vendors.getAllByRole("row")).toHaveLength(21);
+    expect(vendors.getByText("供应商 1")).toBeTruthy();
+    expect(models.getByText("模型 11")).toBeTruthy();
+    fireEvent.change(models.getByRole("combobox", { name: "每页数量" }), { target: { value: "50" } });
+    expect(models.getAllByRole("row")).toHaveLength(32);
+    expect(invocations).toHaveLength(1);
+    expect(cards(view)[0]!.value).toBe("900");
+  });
+
+  it("切换时间范围让两张表回首页，重查后记录减少也自动修正页码", async () => {
+    let data = { ...report({ requestCount: 900, successCount: 900 }), vendors: dimensions(23, "供应商"), models: dimensions(31, "模型") };
+    const invocations = fakeRuntime(() => data);
+    const view = render(<GatewayUsagePanel onError={() => {}} />);
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(20));
+    const vendors = within(view.getByRole("heading", { name: "按供应商" }).closest(".card") as HTMLElement);
+    const models = within(view.getByRole("heading", { name: "按模型" }).closest(".card") as HTMLElement);
+    fireEvent.click(vendors.getByRole("button", { name: "最后一页" }));
+    fireEvent.click(models.getByRole("button", { name: "最后一页" }));
+    fireEvent.change(view.getByRole("combobox", { name: "时间范围" }), { target: { value: "today" } });
+    await waitFor(() => expect(invocations).toHaveLength(2));
+    expect(vendors.getByText("供应商 1")).toBeTruthy();
+    expect(models.getByText("模型 1")).toBeTruthy();
+    fireEvent.click(vendors.getByRole("button", { name: "最后一页" }));
+    fireEvent.click(models.getByRole("button", { name: "最后一页" }));
+    data = { ...data, vendors: dimensions(3, "供应商"), models: [] };
+    fireEvent.click(view.getByRole("button", { name: "重新查询" }));
+    await waitFor(() => expect(vendors.getAllByRole("row")).toHaveLength(4));
+    expect(vendors.getByRole("navigation").textContent).toContain("第 1 / 1 页");
+    expect(models.getByRole("navigation").textContent).toContain("共 0 条 · 0–0");
+    expect(models.queryAllByRole("row")).toHaveLength(0);
+  });
+});
 
 describe("GatewayUsagePanel：三张汇总卡", () => {
   it("请求数（含成功率）、累计 Tokens、预估费用各一张", async () => {

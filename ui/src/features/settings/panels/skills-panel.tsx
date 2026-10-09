@@ -53,8 +53,8 @@ export function SkillsPanel({
       await action();
       // 停用会**改目录名**（加 `.disabled` 后缀），因此必须重新拉列表——
       // 拿旧名字再操作会找不到。
-      await load();
       onNotify?.(label);
+      await load();
     } catch (error) {
       onError(errorText(error));
     }
@@ -71,8 +71,8 @@ export function SkillsPanel({
       await api.importSkill(targetId, source, overwrite);
       setConflict("");
       setMode("installed");
-      await load();
       onNotify?.(`Skill 已导入：${source}`);
+      await load();
     } catch (error) {
       // 重名是**预期内**的结果，不是异常：把它转成「要不要覆盖」的提问，
       // 而不是一句无从下手的错误。

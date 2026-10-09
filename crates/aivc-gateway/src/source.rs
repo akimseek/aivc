@@ -21,10 +21,10 @@
 
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use arc_swap::ArcSwap;
 
 use aivc_core::error::Result;
-use aivc_core::gateway::{FailoverRule, GatewayRequestRecord};
+use aivc_core::gateway::{FailoverRule, GatewayAttempt, GatewayRequestRecord};
 use aivc_core::ports::BoxFuture;
 use aivc_core::vendor::ApiVendor;
 use aivc_infra::config::SettingsStore;
@@ -50,7 +50,7 @@ pub struct RepositorySource {
     failover_rule: FailoverRuleRepo,
     request_log: GatewayRequestLogRepo,
     settings_store: SettingsStore,
-    settings: Arc<RwLock<GatewaySettings>>,
+    settings: ArcSwap<GatewaySettings>,
 }
 
 impl std::fmt::Debug for RepositorySource {
@@ -78,7 +78,7 @@ impl RepositorySource {
             failover_rule,
             request_log,
             settings_store,
-            settings: Arc::new(RwLock::new(settings)),
+            settings: ArcSwap::from_pointee(settings),
             // 默认不通知：无界面场合（测试、CLI）不需要事件。
             record_hook: None,
         })
@@ -99,7 +99,7 @@ impl RepositorySource {
     /// 设置变更后由上层调用；不必每请求刷新，见模块文档。
     pub async fn refresh_settings(&self) {
         let next = read_settings(&self.settings_store).await;
-        *self.settings.write().await = next;
+        self.settings.store(Arc::new(next));
     }
 }
 
@@ -121,6 +121,7 @@ async fn read_settings(store: &SettingsStore) -> GatewaySettings {
         external_token_hash: (!raw.gateway_external_api_token_hash.is_empty())
             .then_some(raw.gateway_external_api_token_hash),
         upstream_timeout: std::time::Duration::from_millis(crate::proxy::upstream_timeout_ms()),
+        request_timeout: std::time::Duration::from_millis(crate::proxy::upstream_timeout_ms()),
     }
 }
 
@@ -153,23 +154,32 @@ impl GatewaySource for RepositorySource {
     }
 
     fn settings(&self) -> GatewaySettings {
-        // 读锁不可用时退回默认值：设置读取不该让转发挂住。
-        self.settings
-            .try_read()
-            .map_or_else(|_| GatewaySettings::default(), |guard| guard.clone())
+        self.settings.load().as_ref().clone()
     }
 
     fn refresh_settings(&self) -> BoxFuture<'_, ()> {
         Box::pin(async move {
             let next = read_settings(&self.settings_store).await;
-            *self.settings.write().await = next;
+            self.settings.store(Arc::new(next));
         })
     }
 
     fn record(&self, record: GatewayRequestRecord) -> BoxFuture<'_, ()> {
+        self.record_with_attempts(record, Vec::new())
+    }
+
+    fn record_with_attempts(
+        &self,
+        record: GatewayRequestRecord,
+        attempts: Vec<GatewayAttempt>,
+    ) -> BoxFuture<'_, ()> {
         Box::pin(async move {
             // 记录失败不影响已经完成的转发，因此只记日志。
-            if !self.request_log.record(&record).await {
+            if !self
+                .request_log
+                .record_with_attempts(&record, &attempts)
+                .await
+            {
                 tracing::warn!(
                     request_id = record.request_id.as_str(),
                     "写入网关请求记录失败"
@@ -377,6 +387,31 @@ mod tests {
         assert_eq!(report.vendors.len(), 1);
         // 报表按维度聚合，供应商标识在 `key` 上。
         assert_eq!(report.vendors[0].key, "v1");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn attempts_and_summary_are_saved_as_one_usage_record() {
+        let (source, _dir) = source().await;
+        let attempt = GatewayAttempt {
+            number: 1,
+            vendor_id: VendorId::from("v1"),
+            vendor_name: "mock supplier".into(),
+            upstream_status: Some(200),
+            duration_ms: 120,
+            error_message: None,
+        };
+        source
+            .record_with_attempts(sample_record(), vec![attempt.clone()])
+            .await;
+        let page = source
+            .request_log
+            .cleanup_entries_page(&aivc_infra::db::LogFilter::default(), 1, 20)
+            .await
+            .expect("page");
+        assert_eq!(page.total, 1);
+        assert_eq!(page.items[0].attempts, vec![attempt]);
+        assert_eq!(page.items[0].retry_count, 0);
+        assert!(!page.items[0].switched);
     }
 
     #[tokio::test(flavor = "multi_thread")]

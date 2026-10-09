@@ -24,7 +24,8 @@
 
 use aivc_core::error::Result;
 use aivc_core::gateway::{
-    GatewayOutcome, GatewayRequestRecord, REQUEST_PATH_MAX_LENGTH, sanitize_error_message,
+    GatewayAttempt, GatewayOutcome, GatewayRequestRecord, REQUEST_PATH_MAX_LENGTH,
+    sanitize_error_message,
 };
 use aivc_core::gateway_usage::{
     FailureDiagnostic, FailureDiagnosticsPage, FailureOutcomeFilter, RecentFailure, UsageRow,
@@ -67,6 +68,12 @@ pub struct LogFilter {
 /// 清理候选项（供界面「先查询、再勾选、后删除」）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogEntry {
+    /// 首次尝试之后的上游重试次数。
+    pub retry_count: u32,
+    /// 本次请求是否切换了供应商。
+    pub switched: bool,
+    /// 上游尝试明细；历史记录为空。
+    pub attempts: Vec<GatewayAttempt>,
     /// 请求编号。
     pub request_id: String,
     /// 记录时间。
@@ -126,9 +133,19 @@ impl GatewayRequestLogRepo {
     /// 返回 `false` 表示写入失败。**统计持久化失败不能影响上游响应**——现网同样
     /// 吞掉错误，只保留文本日志。
     pub async fn record(&self, entry: &GatewayRequestRecord) -> bool {
+        self.record_with_attempts(entry, &[]).await
+    }
+
+    /// 与请求汇总原子保存的尝试明细，不额外增加用量记录。
+    pub async fn record_with_attempts(
+        &self,
+        entry: &GatewayRequestRecord,
+        attempts: &[GatewayAttempt],
+    ) -> bool {
         let entry = entry.clone();
+        let attempts = attempts.to_vec();
         self.db
-            .write(move |connection| insert_request(connection, &entry))
+            .write(move |connection| insert_request(connection, &entry, &attempts))
             .await
             .is_ok()
     }
@@ -160,7 +177,7 @@ impl GatewayRequestLogRepo {
                 let mut statement = connection
                     .prepare(&format!(
                         "SELECT request_id, provider_id, vendor_id, method, path, upstream_status,
-                                outcome, duration_ms, error_code, error_message, created_at
+                                outcome, duration_ms, error_code, error_message, created_at, retry_count, switched, attempts_json
                          FROM gateway_request_logs
                          WHERE {where_clause}
                          ORDER BY created_at DESC"
@@ -216,7 +233,7 @@ impl GatewayRequestLogRepo {
                 let mut statement = connection
                     .prepare(&format!(
                         "SELECT request_id, provider_id, vendor_id, method, path, upstream_status,
-                                outcome, duration_ms, error_code, error_message, created_at
+                                outcome, duration_ms, error_code, error_message, created_at, retry_count, switched, attempts_json
                          FROM gateway_request_logs
                          WHERE {where_clause}
                          ORDER BY created_at DESC
@@ -593,14 +610,18 @@ impl GatewayRequestLogRepo {
 }
 
 /// 写入一条请求记录（截断与清洗在此完成）。
-fn insert_request(connection: &Connection, entry: &GatewayRequestRecord) -> Result<()> {
+fn insert_request(
+    connection: &Connection,
+    entry: &GatewayRequestRecord,
+    attempts: &[GatewayAttempt],
+) -> Result<()> {
     connection
         .execute(
             "INSERT OR REPLACE INTO gateway_request_logs
                (request_id, route_id, provider_id, vendor_id, method, path, model,
                 upstream_status, outcome, duration_ms, bytes_in, bytes_out, retry_count,
-                switched, error_code, error_message, usage_json, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                switched, error_code, error_message, usage_json, created_at, attempts_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
                 entry.request_id.as_str(),
                 entry.route_id,
@@ -628,6 +649,7 @@ fn insert_request(connection: &Connection, entry: &GatewayRequestRecord) -> Resu
                     .as_ref()
                     .and_then(|usage| serde_json::to_string(usage).ok()),
                 entry.created_at.as_str(),
+                serde_json::to_string(attempts).unwrap_or_else(|_| "[]".to_owned()),
             ],
         )
         .map_err(sqlite_error)?;
@@ -666,6 +688,9 @@ fn build_filter(filter: &LogFilter) -> (String, Vec<String>) {
 fn row_to_log_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<LogEntry> {
     let outcome: String = row.get(6)?;
     Ok(LogEntry {
+        retry_count: row.get(11)?,
+        switched: row.get(12)?,
+        attempts: serde_json::from_str(&row.get::<_, String>(13)?).unwrap_or_default(),
         request_id: row.get(0)?,
         provider_id: provider_from_sql(&row.get::<_, String>(1)?),
         vendor_id: row.get(2)?,

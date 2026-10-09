@@ -208,12 +208,19 @@ impl WslAdapter {
         Ok(raw.into_command_output())
     }
 
-    /// 判断发行版内是否存在某命令。
-    ///
-    /// 用**登录 shell** 探测：`nvm` / `fnm` 按 profile 注入 PATH，非登录 shell 看不到。
+    /// 在与 CLI 终端一致的交互 shell 中执行探测，加载 `.bashrc` 中的 nvm 等配置。
+    pub async fn run_cli_shell(&self, distro: &str, script: &str) -> Result<CommandOutput> {
+        let wrapped = super::script_transfer::wrap_script_preserving_stdin(script);
+        self.run_shell_raw(distro, &format!("bash -ic {}", posix_shell_quote(&wrapped)))
+            .await
+    }
+
+    /// 判断发行版内是否存在某命令，使用与终端启动一致的 shell 环境。
     pub async fn command_exists(&self, distro: &str, command: &str) -> bool {
         let script = format!("command -v {} >/dev/null 2>&1", posix_shell_quote(command));
-        self.run_shell(distro, &script).await.is_ok()
+        self.run_cli_shell(distro, &script)
+            .await
+            .is_ok_and(|output| output.is_success())
     }
 
     /// 读取发行版内的环境变量。读取失败视为目标环境异常，向上抛错。
@@ -763,11 +770,11 @@ struct RawOutput {
 }
 
 impl RawOutput {
-    /// 转为按 UTF-8 解码的命令输出。
+    /// 发行版输出为 UTF-8，WSL 系统错误可能为 UTF-16LE。
     fn into_command_output(self) -> CommandOutput {
         CommandOutput {
-            stdout: String::from_utf8_lossy(&self.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&self.stderr).into_owned(),
+            stdout: decode_wsl_output(&self.stdout),
+            stderr: decode_wsl_output(&self.stderr),
             exit_code: self.exit_code,
         }
     }
@@ -1096,6 +1103,21 @@ impl SessionStore for WslSessionStore {
 mod tests {
     use super::*;
     use crate::wsl::launcher::LocalBashLauncher;
+
+    #[test]
+    fn wsl_system_errors_are_decoded_and_preserved() {
+        let message = "拒绝访问：Wsl/Service/CreateInstance/MountDisk/HCS/E_ACCESSDENIED";
+        let raw = RawOutput {
+            stdout: message.encode_utf16().flat_map(u16::to_le_bytes).collect(),
+            stderr: Vec::new(),
+            exit_code: -1,
+        };
+        let error = raw
+            .into_command_output()
+            .into_success("探测")
+            .expect_err("系统错误");
+        assert_eq!(error.to_string(), message);
+    }
 
     #[test]
     fn default_config_matches_the_existing_limits() {

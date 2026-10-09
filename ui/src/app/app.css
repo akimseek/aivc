@@ -2359,6 +2359,9 @@ select {
 .status-session code {
   color: var(--ui-text-soft);
   font-weight: 600;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 目录可能很长。不设上限时它会把右边的网关信息整个挤出屏幕。 */
@@ -2413,6 +2416,7 @@ select {
   gap: var(--ui-space-2);
   /* 自动切换的提示可能很长，但状态栏是单行——长了要省略而不是换行。 */
   min-width: 0;
+  flex-shrink: 0;
 }
 
 /* 「没走网关」必须看得出来。
@@ -2938,26 +2942,42 @@ select {
   gap: var(--ui-space-4);
   align-content: start;
 }
-/* 名称与端点各占一列（2026-10-02：一个字段一列），名字加粗便于横扫。 */
+/* 供应商列表：列宽稳定，小窗口只滚动表格，分页始终留在表格外。 */
+.vendor-table-scroll {
+  overflow-x: auto;
+}
+.vendor-table {
+  table-layout: fixed;
+  min-width: 44rem;
+}
+.vendor-table th:nth-child(1) { width: 20%; }
+.vendor-table th:nth-child(2) { width: 10%; }
+.vendor-table th:nth-child(3) { width: 9%; }
+.vendor-table th:nth-child(4) { width: 25%; }
+.vendor-table th:nth-child(5) { width: 12%; }
+.vendor-table th:nth-child(6) { width: 14%; }
+.vendor-table th:nth-child(7) { width: 10%; }
+.vendor-table th,
+.vendor-table td:nth-child(3),
+.vendor-pool-cell .row-meta,
+.vendor-row-actions .btn {
+  white-space: nowrap;
+}
+.vendor-table td {
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+/* 名称加粗便于横扫。 */
 .vendor-identity-name {
   font-weight: 620;
   font-size: var(--ui-text-md);
-}
-/* 端点可能很长：列内省略号 + title 保全量——截断会让同名中转商分不出来。 */
-.vendor-endpoint-cell {
-  max-width: 260px;
-}
-.vendor-endpoint {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 /* 候选池开关：旧平台同形的胶囊开关（38×22，滑块 16；无障碍语义见 JSX）。 */
 .vendor-pool-cell {
   display: flex;
   align-items: center;
   gap: var(--ui-space-2);
+  flex-wrap: wrap;
 }
 .vendor-pool-switch {
   position: relative;
@@ -3003,16 +3023,29 @@ select {
 .vendor-balance-line {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: var(--ui-space-2);
+  gap: var(--ui-space-1);
 }
-/* 操作列：编辑 / 复制 / 启用禁用 / 删除。独立成列后不再叠在余额下面。 */
+/* 操作列：编辑与更多菜单。 */
 .vendor-row-actions {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: var(--ui-space-2);
+  flex-wrap: nowrap;
 }
+.vendor-icon-button.btn { padding: 5px; min-width: 28px; border: 0; background: transparent; }
+.vendor-more-button.btn { border-radius: 50%; background: var(--ui-bg-card-hover); }
+.vendor-action-menu { width: 160px; padding: 4px; }
+.vendor-action-menu > button {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 9px 10px; border: 0; border-radius: var(--ui-radius-sm);
+  background: transparent; color: var(--ui-text); font: inherit; cursor: pointer;
+}
+.vendor-action-menu > button:hover { background: var(--ui-bg-card-hover); }
+.vendor-action-menu > button.danger { color: var(--ui-danger); border-top: 1px solid var(--ui-border); }
+.vendor-config-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.vendor-config-heading .vendor-write-toggle { margin: 0; }
+.vendor-config-editor textarea.control { height: auto; min-height: 140px; resize: vertical; }
 
 /* ── 故障规则的「试规则」区 ──────────────────────────────
    与规则本体分开：试的输入**不是规则的一部分**，视觉上就不该混在一起。 */

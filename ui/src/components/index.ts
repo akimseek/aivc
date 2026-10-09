@@ -29,6 +29,8 @@ export { Card, DescriptionList } from "./card";
 export { List, ListRow, MetaItem } from "./list";
 export type { ListRowProps } from "./list";
 export { Pager } from "./pager";
+export { Pagination } from "./pagination";
+export { useListPagination } from "./use-list-pagination";
 export { ContextMenu, ContextMenuItem } from "./context-menu";
 export { IconButton } from "./icon-button";
 export { FoldableText, FOLD_CHARS } from "./foldable-text";

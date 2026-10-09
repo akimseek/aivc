@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -41,6 +41,7 @@ function fakeRuntime(
     allBalances?: unknown[];
     /** `"fail"` 表示写配置文件抛错（`vendor:write-configs`）。 */
     writeConfigs?: "fail";
+    templates?: Record<string, unknown[]>;
   } = {}
 ) {
   const calls: Invoke[] = [];
@@ -52,6 +53,7 @@ function fakeRuntime(
         calls.push({ command: name, args: payload?.args ?? {} });
         if (name === "vendor:list") return existing;
         if (name === "gateway:get-vendor-health") return extra.health ?? [];
+        if (name === "vendor:default-configs") return extra.templates?.[String(payload?.args?.providerId)] ?? [];
         if (name === "vendor:save") return { id: "new" };
         if (name === "vendor:set-enabled") return {};
         if (name === "vendor:delete") return true;
@@ -102,8 +104,11 @@ function setup(
     />
   );
   const byText = (label: string) => {
+    if ((label === "复制" || label === "删除") && !view.container.querySelector(".vendor-action-menu")) {
+      fireEvent.click(view.container.querySelector<HTMLButtonElement>(".vendor-more-button")!);
+    }
     const found = [...view.container.querySelectorAll("button")].find(
-      (item) => item.textContent?.trim() === label
+      (item) => item.textContent?.trim() === label || item.getAttribute("aria-label") === label || (label === "刷新" && item.getAttribute("aria-label")?.startsWith("刷新 "))
     );
     return found as HTMLButtonElement | undefined;
   };
@@ -141,7 +146,120 @@ function vendor(over: Partial<Record<string, unknown>> = {}) {
 }
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
+});
+
+describe("VendorsPanel：配置模板", () => {
+  const custom = { providerId: "codex", enabled: true, targetPath: "~/.codex/config.toml", content: 'model = "custom-model"\nbase_url = "{{BASE_URL}}"' };
+
+  it("新增加载所选厂商模板，勾选候选池和修改模板后完整提交，默认不写文件", async () => {
+    const { view, byText, runtime, typeInto, inputsByPlaceholder } = setup({}, { templates: { codex: [custom] } });
+    fireEvent.click(byText("新增供应商")!);
+    const textarea = await view.findByRole("textbox", { name: "~/.codex/config.toml 配置模板" });
+    fireEvent.change(textarea, { target: { value: 'model = "another-model"' } });
+    fireEvent.click(view.getByRole("checkbox", { name: "参与候选池" }));
+    await typeInto(inputsByPlaceholder("官方")!, "新供应商");
+    await typeInto(inputsByPlaceholder("https://")!, "https://mock.example");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
+    fireEvent.click(byText("创建")!);
+    await waitFor(() => expect(runtime.calls.some((call) => call.command === "vendor:save")).toBe(true));
+    const saved = runtime.calls.find((call) => call.command === "vendor:save")!.args;
+    expect(saved.enabled).toBe(true);
+    expect(saved.configs).toEqual([{ ...custom, content: 'model = "another-model"' }]);
+    expect(runtime.calls.some((call) => call.command === "vendor:write-configs")).toBe(false);
+  });
+
+  it("编辑和复制都保留自定义模板，复制仍要求重新填写密钥", async () => {
+    const { view, byText, runtime, typeInto, inputsByPlaceholder } = setup({ existing: [vendor({ configs: [custom] })] });
+    await waitFor(() => expect(byText("编辑")).toBeTruthy());
+    fireEvent.click(byText("编辑")!);
+    expect((view.getByRole("textbox", { name: "~/.codex/config.toml 配置模板" }) as HTMLTextAreaElement).value).toBe(custom.content);
+    fireEvent.click(byText("保存修改")!);
+    await waitFor(() => expect(runtime.calls.find((call) => call.command === "vendor:save")?.args.configs).toEqual([custom]));
+    await waitFor(() => expect(view.container.querySelector(".vendor-more-button")).toBeTruthy());
+    expect(view.queryByRole("button", { name: "复制" })).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "测试家 更多操作" }));
+    fireEvent.click(view.getByRole("button", { name: "复制" }));
+    expect((view.getByRole("textbox", { name: "~/.codex/config.toml 配置模板" }) as HTMLTextAreaElement).value).toBe(custom.content);
+    expect(inputsByPlaceholder("sk-")!.value).toBe("");
+    await typeInto(inputsByPlaceholder("sk-")!, "sk-copy");
+    fireEvent.click(byText("创建")!);
+    await waitFor(() => expect(runtime.calls.filter((call) => call.command === "vendor:save")).toHaveLength(2));
+    const copied = runtime.calls.filter((call) => call.command === "vendor:save")[1]!.args;
+    expect(copied.id).toBeUndefined();
+    expect(copied.configs).toEqual([custom]);
+    expect(copied.enabled).toBe(false);
+  });
+
+  it("更换厂商时换用对应模板，Qoder 明确显示无模板", async () => {
+    const claude = { ...custom, providerId: "claude", targetPath: "~/.claude/settings.json", content: '{"env":{"ANTHROPIC_MODEL":"custom"}}' };
+    const { view, byText, chip } = setup({}, { templates: { codex: [custom], claude: [claude] } });
+    fireEvent.click(byText("新增供应商")!);
+    await view.findByRole("textbox", { name: "~/.codex/config.toml 配置模板" });
+    fireEvent.click(chip("Claude")!);
+    await view.findByDisplayValue(claude.content);
+    expect(view.queryByRole("textbox", { name: "~/.codex/config.toml 配置模板" })).toBeNull();
+    fireEvent.click(chip("Qoder")!);
+    await view.findByText("当前平台没有可用的兼容配置模板。");
+    expect(view.queryByDisplayValue(claude.content)).toBeNull();
+  });
+});
+
+describe("VendorsPanel：分页", () => {
+  it("默认每页 10 条，支持首末页、上一页和下一页", async () => {
+    const { view, rows } = setup({
+      existing: Array.from({ length: 23 }, (_, index) => vendor({ id: `v${index}`, name: `供应商 ${index + 1}` }))
+    });
+    await waitFor(() => expect(rows()).toHaveLength(10));
+    const pager = view.getByRole("navigation", { name: "供应商分页" });
+    expect(pager.textContent).toContain("共 23 条");
+    expect((view.getByRole("button", { name: "上一页" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole("button", { name: "下一页" }));
+    expect(rows()[0]!.textContent).toContain("供应商 11");
+    fireEvent.click(view.getByRole("button", { name: "最后一页" }));
+    expect(rows()).toHaveLength(3);
+    expect(rows()[0]!.textContent).toContain("供应商 21");
+    expect((view.getByRole("button", { name: "下一页" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole("button", { name: "上一页" }));
+    expect(rows()[0]!.textContent).toContain("供应商 11");
+    fireEvent.click(view.getByRole("button", { name: "第一页" }));
+    expect(rows()[0]!.textContent).toContain("供应商 1");
+  });
+
+  it("切换每页数量和厂商筛选都回到第一页，统计仍按完整筛选结果计算", async () => {
+    const { view, rows, chip } = setup({
+      existing: Array.from({ length: 26 }, (_, index) => vendor({
+        id: `v${index}`, name: `供应商 ${index + 1}`, providerId: index < 23 ? "codex" : "claude"
+      }))
+    });
+    await waitFor(() => expect(rows()).toHaveLength(10));
+    fireEvent.click(view.getByRole("button", { name: "最后一页" }));
+    fireEvent.change(view.getByRole("combobox", { name: "每页数量" }), { target: { value: "20" } });
+    expect(rows()).toHaveLength(20);
+    expect(view.container.textContent).toContain("第 1 / 2 页");
+    fireEvent.click(view.getByRole("button", { name: "下一页" }));
+    fireEvent.click(chip("Claude")!);
+    expect(rows()).toHaveLength(3);
+    expect(view.container.textContent).toContain("第 1 / 1 页");
+    expect(view.container.textContent).toContain("3 个 · 3 个启用");
+    expect(chip("Codex")!.textContent).toBe("Codex (23)");
+  });
+
+  it("删除最后一页的唯一记录后回到仍存在的末页", async () => {
+    const existing = Array.from({ length: 11 }, (_, index) => vendor({ id: `v${index}`, name: `供应商 ${index + 1}` }));
+    const { view, rows } = setup({ existing });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await waitFor(() => expect(rows()).toHaveLength(10));
+    fireEvent.click(view.getByRole("button", { name: "下一页" }));
+    expect(rows()).toHaveLength(1);
+    // 下一次读取模拟后端删除后的清单。
+    existing.pop();
+    fireEvent.click(view.getByRole("button", { name: /更多操作/ }));
+    fireEvent.click(view.getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(rows()).toHaveLength(10));
+    expect(view.container.textContent).toContain("第 1 / 1 页");
+  });
 });
 
 describe("VendorsPanel：面板头", () => {
@@ -364,31 +482,18 @@ describe("VendorsPanel：表格列", () => {
     expect(rateText(0.15)).toBe("$0.15");
   });
 
-  it("**输入/输出费率各占一列**；未设置是 `-` 而不是 `$0`", async () => {
-    const { view } = setup({
-      existing: [
-        vendor({ id: "v1", name: "带费率", pricing: { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 } }),
-        vendor({ id: "v2", name: "没费率" })
-      ]
-    });
-    await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
-    const heads = [...view.container.querySelectorAll("thead th")].map((item) =>
-      item.textContent?.trim()
-    );
-    expect(heads).toContain("输入费率");
-    expect(heads).toContain("输出费率");
-    const rows = [...view.container.querySelectorAll("tbody tr")];
-    expect(rows).toHaveLength(2);
-    const first = [...rows[0]!.querySelectorAll("td")];
-    expect(first[3]!.textContent).toBe("$0.15");
-    expect(first[4]!.textContent).toBe("$0.6");
-    // 未设置的那两格是 `-`（0 才是 `$0`）。
-    const second = [...rows[1]!.querySelectorAll("td")];
-    expect(second[3]!.textContent).toBe("-");
-    expect(second[4]!.textContent).toBe("-");
+  it("列表移除费率列，计费设置仍在编辑表单", async () => {
+    const { view, byText } = setup({ existing: [vendor({ pricing: { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 } })] });
+    await waitFor(() => expect(view.container.querySelector("table")).toBeTruthy());
+    const heads = [...view.container.querySelectorAll("thead th")].map((item) => item.textContent);
+    expect(heads).not.toContain("输入费率");
+    expect(heads).not.toContain("输出费率");
+    fireEvent.click(byText("编辑")!);
+    expect(view.getByDisplayValue("0.15")).toBeTruthy();
+    expect(view.getByDisplayValue("0.6")).toBeTruthy();
   });
 
-  it("**名称与端点各占一列**（2026-10-02：一个字段一列）", async () => {
+  it("列表保留名称和厂商，移除端点列；编辑仍能查看 API 地址", async () => {
     const { view } = setup({
       existing: [vendor({ name: "官方", apiBaseUrl: "https://api.example.com/v1" })]
     });
@@ -397,11 +502,13 @@ describe("VendorsPanel：表格列", () => {
       item.textContent?.trim()
     );
     expect(heads).toContain("名称");
-    expect(heads).toContain("端点");
-    expect(heads.some((text) => text?.includes("名称 / 端点"))).toBe(false);
+    expect(heads).not.toContain("端点");
     const cells = [...view.container.querySelectorAll("tbody tr td")];
     expect(cells[0]!.textContent).toBe("官方");
-    expect(cells[1]!.textContent).toContain("https://api.example.com/v1");
+    expect(cells[1]!.textContent).toBe("Codex");
+    expect(view.container.querySelector("table")!.textContent).not.toContain("https://api.example.com/v1");
+    fireEvent.click(view.getByRole("button", { name: "编辑" }));
+    expect(view.getByDisplayValue("https://api.example.com/v1")).toBeTruthy();
   });
 
   it("「余额」与「操作」分列且余额在左（2026-10-02 实机反馈：合并列拆开）", async () => {
@@ -448,9 +555,9 @@ describe("VendorsPanel：表格列", () => {
     expect(text).toContain("熔断剩余 3 分钟");
     // 延时这类后端不提供的东西**不许出现**（demo 里那 142ms 是编的）。
     expect(text).not.toMatch(/\d+\s*ms/);
-    // 没有快照的那一行，健康那一格是空的（列序：名称/端点/厂商/输入费率/输出费率/健康）。
+    // 没有快照的那一行，健康那一格是空的（列序：名称/厂商/健康/健康状况）。
     const cells = [...view.container.querySelectorAll("tbody tr")][1]!.querySelectorAll("td");
-    expect(cells[5]!.textContent).toBe("");
+    expect(cells[2]!.textContent).toBe("");
   });
 
   it("候选池状态是**开关**；顺位最前的那家带「优先」标记", async () => {
@@ -482,7 +589,8 @@ describe("VendorsPanel：余额行内状态", () => {
   it("没查过时说「未获取」，不是 0 也不是空白", async () => {
     const { view } = setup({ existing: [vendor()] });
     await waitFor(() => expect(view.container.querySelector("table.data-table")).toBeTruthy());
-    expect(view.container.textContent).toContain("余额 未获取");
+    expect(view.container.textContent).toContain("未获取");
+    expect(view.container.textContent).not.toContain("余额 未获取");
   });
 
   it("`balanceLabel` 的三态与「已过期」", () => {
@@ -514,7 +622,7 @@ describe("VendorsPanel：余额行内状态", () => {
   });
 
   it("单家刷新：点「刷新」拿到金额", async () => {
-    const { view, byText } = setup(
+    const { view, byText, onNotify } = setup(
       { existing: [vendor()] },
       { balance: { remaining: 12.5, unit: "USD" } }
     );
@@ -524,6 +632,7 @@ describe("VendorsPanel：余额行内状态", () => {
     });
     await waitFor(() => {
       expect(view.container.textContent).toContain("余额 12.5 USD");
+      expect(onNotify).toHaveBeenCalledWith(expect.stringContaining("余额查询成功"));
     });
   });
 
@@ -555,7 +664,7 @@ describe("VendorsPanel：余额行内状态", () => {
   });
 
   it("「查余额」刷全部，并把每一家的结果落到它自己那一行", async () => {
-    const { view, byText } = setup(
+    const { view, byText, onNotify } = setup(
       {
         existing: [
           vendor({ id: "v1", name: "第一家" }),
@@ -577,7 +686,9 @@ describe("VendorsPanel：余额行内状态", () => {
       const rows = [...view.container.querySelectorAll("tbody tr")];
       expect(rows[0]!.textContent).toContain("余额 5 USD");
       expect(rows[1]!.textContent).toContain("余额 查询失败");
+      expect(onNotify).toHaveBeenCalledWith("1 家成功，1 家未提供或查询失败。");
     });
+    expect(view.container.querySelector(".export-hint")).toBeNull();
   });
 });
 
@@ -877,7 +988,7 @@ describe("VendorsPanel：保存时写入 CLI 配置文件（二轮：写文件�
     await typeInto(inputsByPlaceholder("官方")!, "要写文件");
     await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
     await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
-    const box = view.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const box = (view.getByRole("checkbox", { name: "保存时写入 CLI 配置文件（写前备份）" }) as HTMLInputElement)!;
     expect(box.checked).toBe(false);
     await act(async () => {
       box.click();
@@ -898,7 +1009,7 @@ describe("VendorsPanel：保存时写入 CLI 配置文件（二轮：写文件�
     );
   });
 
-  it("**写文件失败不掩盖「已保存」**：分开报错，通知照常", async () => {
+  it("写文件失败说明记录已保存，且不被成功提示覆盖", async () => {
     const { byText, view, onError, onNotify, inputsByPlaceholder, typeInto } = setup({}, {
       writeConfigs: "fail"
     });
@@ -909,7 +1020,7 @@ describe("VendorsPanel：保存时写入 CLI 配置文件（二轮：写文件�
     await typeInto(inputsByPlaceholder("https://")!, "https://a/v1");
     await typeInto(inputsByPlaceholder("sk-")!, "sk-test");
     await act(async () => {
-      view.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+      (view.getByRole("checkbox", { name: "保存时写入 CLI 配置文件（写前备份）" }) as HTMLInputElement)!.click();
     });
     await act(async () => {
       byText("创建")!.click();
@@ -919,7 +1030,7 @@ describe("VendorsPanel：保存时写入 CLI 配置文件（二轮：写文件�
         expect.stringContaining("供应商已保存，但写入配置文件失败")
       );
     });
-    expect(onNotify.mock.calls.some((call) => String(call[0]).includes("已新增"))).toBe(true);
+    expect(onNotify).not.toHaveBeenCalled();
   });
 });
 

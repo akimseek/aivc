@@ -145,9 +145,9 @@ export function VendorRoutePicker({
     [onSetMode, terminalId]
   );
 
-  if (!terminal) return null;
+  if (!terminal) return <span className="status-vendor" title="打开终端后显示当前路由供应商">当前供应商 <b>未启动终端</b></span>;
   // 终端都不知道自己属于哪个平台时，供应商列表无从谈起。
-  if (!provider) return null;
+  if (!provider) return <span className="status-vendor">当前供应商 <b>未绑定平台</b></span>;
 
   // 没有绑定：说明后端没有可用供应商（没配、被禁用、或配置不全），
   // 于是**这一次终端根本没走网关**，CLI 会用它自己的登录 / 配置文件直连上游。
@@ -162,7 +162,7 @@ export function VendorRoutePicker({
         title="没有可用供应商，本次终端没有接入网关：CLI 会直连它自己配置的上游，并使用你自己的凭据"
       >
         <Icon name="alert" size={12} />
-        未走网关 · <b>直连</b>（用自己的密钥）
+        当前供应商 <b>直连</b> · 未走网关（用自己的密钥）
       </span>
     );
   }
@@ -214,7 +214,7 @@ export function VendorRoutePicker({
         title={error || "切换本终端使用的供应商"}
         onClick={() => setOpen((value) => !value)}
       >
-        供应商 <b>{currentName}</b>
+        当前供应商 <b>{currentName}</b>
         {/* 锁定时给一个徽章：锁定与动态的行为差别很大（不会自动故障转移），
             只在浮层里说得清，但状态栏上也要看得出来。 */}
         {terminal.vendorMode === "locked" && <Badge tone="warn">锁定</Badge>}

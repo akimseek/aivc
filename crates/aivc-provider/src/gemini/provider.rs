@@ -460,7 +460,7 @@ impl SessionProvider for GeminiProvider {
                 && let Some(target) = probe_local_cli_target(&LocalCliProbe {
                     provider: ProviderId::Gemini,
                     display_name: DISPLAY_NAME,
-                    windows_command: "gemini.cmd",
+                    windows_command: "gemini",
                     unix_command: "gemini",
                     config_dir,
                 })

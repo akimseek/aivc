@@ -18,10 +18,9 @@
 //! 「轮询 + 到期强杀」而不是阻塞等待，并把超时如实记进快照——**超时不是「没装」**，
 //! 两者的提示完全不同。
 //!
-//! # WSL 探测走登录 shell
+//! # WSL 探测与终端使用同一环境
 //!
-//! WSL 侧必须用 `bash -lc`：`nvm` / `fnm` 这类版本管理器只在**登录 shell** 里注入
-//! `PATH`。用 `bash -c` 会得到一个干净的 `PATH`，于是明明装了的 Node 报「未检测到」。
+//! WSL 侧使用 `bash -ic` 加载 `.bashrc` 中的 nvm / fnm，与 CLI 终端启动保持一致。
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -135,6 +134,9 @@ pub const PROBE_TIMEOUT_MS: u64 = 10_000;
 /// 版本命令有时会在版本号前后输出额外内容（例如 nvm 的提示），只取第一行非空内容
 /// 比整段取回来更稳。
 fn first_line(run: &CommandRun) -> String {
+    if run.exit_code != Some(0) || run.timed_out {
+        return String::new();
+    }
     let text = if run.stdout.trim().is_empty() {
         &run.stderr
     } else {
@@ -157,12 +159,12 @@ fn run_in_scope(
     match scope {
         ProbeScope::Local => runner.run(program, args, PROBE_TIMEOUT_MS),
         ProbeScope::Wsl => {
-            // 登录 shell：版本管理器只在登录 shell 里注入 PATH。
+            // 与 CLI 终端一致，加载 .bashrc 中的版本管理器。
             let command = std::iter::once(program)
                 .chain(args.iter().copied())
                 .collect::<Vec<_>>()
                 .join(" ");
-            runner.run("bash", &["-lc", &command], PROBE_TIMEOUT_MS)
+            runner.run("bash", &["-ic", &command], PROBE_TIMEOUT_MS)
         }
     }
 }
@@ -657,10 +659,8 @@ mod tests {
     }
 
     #[test]
-    fn wsl_probes_go_through_a_login_shell() {
-        // nvm/fnm 只在登录 shell 里注入 PATH；用 `bash -c` 会得到干净的 PATH，
-        // 于是明明装了的 Node 报「未检测到」。
-        let runner = Fake::new().with("bash -lc node --version", "v22.0.0\n");
+    fn wsl_probes_use_the_terminal_shell_environment() {
+        let runner = Fake::new().with("bash -ic node --version", "v22.0.0\n");
         let snapshot = probe_environment(&runner, ProbeScope::Wsl, ProviderId::Codex);
         assert_eq!(
             snapshot.get(keys::NODE_VERSION).map(String::as_str),
@@ -668,8 +668,8 @@ mod tests {
         );
         let calls = runner.calls();
         assert!(
-            calls.iter().all(|call| call.starts_with("bash -lc ")),
-            "WSL 下所有探测都必须走登录 shell：{calls:?}"
+            calls.iter().all(|call| call.starts_with("bash -ic ")),
+            "WSL 下所有探测都必须使用终端 shell 环境：{calls:?}"
         );
     }
 
@@ -732,6 +732,24 @@ mod tests {
             snapshot.get(keys::NODE_VERSION).map(String::as_str),
             Some("v20.0.0")
         );
+    }
+
+    #[test]
+    fn shell_errors_are_not_reported_as_versions_or_executable_paths() {
+        struct Missing;
+        impl CommandRunner for Missing {
+            fn run(&self, _program: &str, _args: &[&str], _timeout_ms: u64) -> CommandRun {
+                CommandRun::failed(
+                    127,
+                    "",
+                    "bash: no job control\nbash: claude: command not found",
+                )
+            }
+        }
+        let snapshot = probe_environment(&Missing, ProbeScope::Wsl, ProviderId::Claude);
+        assert!(!snapshot.contains_key("CLAUDE_VERSION"));
+        assert!(!snapshot.contains_key(keys::NODE_VERSION));
+        assert!(!snapshot.contains_key(keys::NODE_PATH));
     }
 
     #[test]

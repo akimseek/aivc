@@ -1,19 +1,17 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   Badge,
   Button,
   Card,
   EmptyState,
-  HintBar,
   LoadingBlock,
-  Pager,
+  Pagination,
   Select,
   Toolbar,
   ToolbarSpacer,
   errorText,
-  useAsyncData,
-  useToast
+  useAsyncData
 } from "../../../components";
 import * as api from "../../../ipc/commands";
 import { PanelHeader } from "../panel-header";
@@ -21,24 +19,23 @@ import type { GatewayLogEntry, GatewayLogsPage } from "../../../types";
 import { formatLogTime, outcomeLabel, outcomeTone } from "../../../app/gateway-format";
 import { customBounds, rangeBounds, type UsageRangeKey } from "../../../app/gateway-range";
 import { GatewayRangePicker } from "./gateway-range-picker";
+import { vendorName } from "../../workbench/workbench-cards";
+import { REQUEST_REFRESH_WINDOW_MS, createRefreshCoalescer } from "../../../app/refresh-coalescer";
 
-/** 每页条数。后端会把它钳制在上限内，因此这里给的是一个「意愿」（与异常页同一个数字）。 */
+/** 默认每页条数（可在分页栏切换，与异常页一致）。 */
 const PAGE_SIZE = 20;
 
 /**
  * Gateway 日志的**查询与清理**。
  *
- * # 与「最近请求」那张表的区别
- *
- * `GatewayInsights` 的「最近请求」是只读的一瞥；这里可以做三件那里做不到的事：
- * **按条件筛出要清的**、**逐条勾选**、**按编号删除**。
+ * 每个外部 HTTP 请求保存一条独立记录，供应商重试和切换保存在该记录的尝试明细中。
  *
  * # 分页在**后端**
  *
  * 批次二裁定过不做客户端分页：日志只会越攒越多，前端把全表拉回来再切页，
  * 「翻到第 5 页」的开销与「只看一屏」一样大。现在 `gateway:query-logs` 支持
  * `page`/`pageSize`（**带上这两个参数**时返回 `{ items, total, page, pageSize }`，
- * 与异常诊断页逐字同形），这一页因此也同形：20 条一页、首/上/下翻页。
+ * 与异常诊断页逐字同形），这一页因此也同形：默认 20 条一页，使用公共分页栏。
  *
  * # 「清空全部日志」为什么在这里
  *
@@ -60,8 +57,9 @@ export function GatewayLogPanel({
   const [picker, setPicker] = useState({ range: "7d" as UsageRangeKey, start: "", end: "" });
   const [outcome, setOutcome] = useState<"" | "ok" | "error" | "timeout" | "client-aborted">("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const toast = useToast();
+  const vendors = useAsyncData(api.listVendors, { errorMessage: "供应商列表读取失败", onError });
 
   /**
    * 筛选条件变化时**回到第 1 页**，并清空勾选。
@@ -107,22 +105,41 @@ export function GatewayLogPanel({
         items: [],
         total: 0,
         page: 1,
-        pageSize: PAGE_SIZE
+        pageSize
       });
     }
     return api.queryGatewayLogs({
       page,
-      pageSize: PAGE_SIZE,
+      pageSize,
       ...(outcome ? { outcome } : {}),
       periodStart: bounds.start,
       periodEnd: bounds.end
     });
-  }, [page, outcome, picker.range, picker.start, picker.end]);
+  }, [page, pageSize, outcome, picker.range, picker.start, picker.end]);
 
-  const logs = useAsyncData(load, { errorMessage: "日志查询失败" });
+  const logs = useAsyncData(load, { errorMessage: "日志查询失败", onError });
+  const reloadLogs = logs.reload;
+  useEffect(() => {
+    const coalescer = createRefreshCoalescer(REQUEST_REFRESH_WINDOW_MS, () => {
+      setSelected(new Set());
+      void reloadLogs();
+    });
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void api.listen(api.CHANNEL_GATEWAY_REQUEST_RECORDED, () => coalescer.schedule()).then((fn) => {
+      if (cancelled) fn(); else unlisten = fn;
+    });
+    return () => { cancelled = true; unlisten?.(); coalescer.cancel(); };
+  }, [reloadLogs]);
   const items: GatewayLogEntry[] = logs.data?.items ?? [];
   const total = logs.data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  useEffect(() => {
+    // 只依据当前查询的响应校正页码，不能用上一页尚未刷新的 total。
+    if (!logs.loading && logs.data?.page === page && logs.data.pageSize === pageSize && page > pageCount) {
+      gotoPage(pageCount);
+    }
+  }, [logs.loading, logs.data, page, pageSize, pageCount, gotoPage]);
   // 勾选与这一页的条目对齐：翻页与换筛选都会清空，因此这里比的就是当前页。
   const allSelected = items.length > 0 && selected.size === items.length;
 
@@ -148,7 +165,7 @@ export function GatewayLogPanel({
     try {
       const removed = await api.deleteGatewayLogEntries([...selected]);
       setSelected(new Set());
-      toast.show(`已删除 ${removed} 条日志。`);
+      onNotify?.(`已删除 ${removed} 条日志。`);
       // 整页删光还留在原页，只会看到一张空表，看起来像「删多了」；
       // 退回上一页才是这个动作自然的结果（返回上一页本身会触发重查）。
       if (emptiedThePage && page > 1) setPage(page - 1);
@@ -156,7 +173,7 @@ export function GatewayLogPanel({
     } catch (problem) {
       onError(errorText(problem));
     }
-  }, [selected, items.length, page, logs, toast, onError]);
+  }, [selected, items.length, page, logs, onNotify, onError]);
 
   /**
    * 清空**全部**日志。
@@ -181,13 +198,10 @@ export function GatewayLogPanel({
 
   return (
     <div className="observability-panel">
-      {/* 删除/清空这类一次性的结果：说完自己消失，也可以立刻收掉。 */}
-      {toast.message && <HintBar message={toast.message} onDismiss={toast.dismiss} />}
-
       {/* 面板头统一：标题、说明与「重新查询」从卡片头搬到这里（卡片本体只管内容）。 */}
       <PanelHeader
         title="请求日志"
-        description="按时间区间与结果筛选。逐条勾选后可以只删掉选中的那些。"
+        description="每个 HTTP 请求独立记录，不按对话轮次合并。展开明细可查看全部供应商尝试；请求数与用量按原请求统计。"
         actions={
           <Button
             small
@@ -231,7 +245,7 @@ export function GatewayLogPanel({
           <ToolbarSpacer />
 
           {/*
-            「全选当前页」就是字面意思：勾上**这一页**的 20 条。
+            「全选当前页」就是字面意思：勾上**这一页**的条目。
             翻页会清空勾选（见 `gotoPage`），因此不存在「跨页累计」这种状态。
           */}
           <Button small onClick={toggleAll} disabled={items.length === 0}>
@@ -256,18 +270,7 @@ export function GatewayLogPanel({
 
       {/* 标题里报的是**匹配总数**（不是本页条数）：分页之后两者会不一样，
           而用户要的是「这个条件下到底有多少条」。 */}
-      <Card
-        title={`结果（共 ${total} 条）`}
-        actions={
-          pageCount > 1 && (
-            <Toolbar>
-              {/* 翻页与边界禁用都在 `Pager` 里（与异常诊断、消息弹框同一份实现）。 */}
-              <Pager page={page} pageCount={pageCount} onPage={gotoPage} />
-              <ToolbarSpacer />
-            </Toolbar>
-          )
-        }
-      >
+      <Card title={`结果（共 ${total} 条）`}>
         {logs.loading ? (
           <LoadingBlock label="正在查询日志…" />
         ) : logs.error ? (
@@ -289,7 +292,8 @@ export function GatewayLogPanel({
                 <th>供应商</th>
                 <th>结果</th>
                 <th>上游状态</th>
-                <th>错误代码</th>
+                <th>重试 / 切换</th>
+                <th>诊断与尝试明细</th>
               </tr>
             </thead>
             <tbody>
@@ -305,21 +309,47 @@ export function GatewayLogPanel({
                   </td>
                   <td className="mono ui-num">{formatLogTime(entry.createdAt)}</td>
                   <td>{entry.providerId}</td>
-                  <td>{entry.vendorId}</td>
+                  <td>{vendorName(vendors.data ?? [], entry.vendorId)}</td>
                   <td>
                     <Badge small tone={outcomeTone(entry.outcome)}>
                       {outcomeLabel(entry.outcome)}
                     </Badge>
                   </td>
                   <td className="ui-num">{entry.upstreamStatus ?? "-"}</td>
-                  <td className="mono" title={entry.requestId}>
-                    {entry.errorCode ?? "-"}
+                  <td>{entry.retryCount ?? 0} 次{entry.switched ? " · 已切换" : ""}</td>
+                  <td>
+                    <details>
+                      <summary>{entry.errorCode ?? "请求详情"}{entry.attempts?.length ? ` · ${entry.attempts.length} 次尝试` : ""}</summary>
+                      <p className="mono">请求编号：{entry.requestId}</p>
+                      {entry.durationMs != null && <p>总耗时：{entry.durationMs} ms</p>}
+                      {entry.errorMessage && <p>{entry.errorMessage}</p>}
+                      {entry.attempts?.length ? (
+                        <ol>
+                          {entry.attempts.map((attempt) => (
+                            <li key={attempt.number}>
+                              {attempt.vendorName || vendorName(vendors.data ?? [], attempt.vendorId)}
+                              {` · ${attempt.upstreamStatus ?? "无 HTTP 响应"} · ${attempt.durationMs} ms`}
+                              {attempt.errorMessage && ` · ${attempt.errorMessage}`}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : <p>此记录没有上游尝试明细。</p>}
+                    </details>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+        <Pagination
+          label="请求日志分页"
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={gotoPage}
+          onPageSizeChange={setPageSize}
+          disabled={logs.loading}
+        />
       </Card>
     </div>
   );

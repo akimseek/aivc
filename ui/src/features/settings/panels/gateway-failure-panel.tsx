@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   Badge,
@@ -6,10 +6,9 @@ import {
   Card,
   EmptyState,
   LoadingBlock,
-  Pager,
+  Pagination,
   Select,
   Toolbar,
-  ToolbarSpacer,
   useAsyncData
 } from "../../../components";
 import * as api from "../../../ipc/commands";
@@ -25,7 +24,7 @@ import {
 import { customBounds, rangeBounds, type UsageRangeKey } from "../../../app/gateway-range";
 import { GatewayRangePicker } from "./gateway-range-picker";
 
-/** 每页条数。后端会把它钳制在上限内，因此这里给的是一个「意愿」。 */
+/** 默认每页条数（可在分页栏切换）。 */
 const PAGE_SIZE = 20;
 
 /**
@@ -47,6 +46,7 @@ export function GatewayFailurePanel({
   onError: (message: string) => void;
 }) {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [outcome, setOutcome] = useState<"" | "error" | "timeout">("");
   const [vendorId, setVendorId] = useState("");
   const [useCurrentProvider, setUseCurrentProvider] = useState(true);
@@ -79,10 +79,10 @@ export function GatewayFailurePanel({
       picker.range === "custom"
         ? customBounds(picker.start, picker.end)
         : { ok: true as const, ...rangeBounds(picker.range) };
-    if (!bounds.ok) return Promise.resolve({ items: [], total: 0, page: 1, pageSize: PAGE_SIZE });
+    if (!bounds.ok) return Promise.resolve({ items: [], total: 0, page: 1, pageSize });
     return api.getFailureDiagnostics({
       page,
-      pageSize: PAGE_SIZE,
+      pageSize,
       // 空字符串**不传**，而不是传空串：后端把空串当「不筛选」，
       // 但少传一个无意义参数总是更清楚。
       ...(vendorId ? { vendorId } : {}),
@@ -93,6 +93,7 @@ export function GatewayFailurePanel({
     });
   }, [
     page,
+    pageSize,
     vendorId,
     useCurrentProvider,
     providerId,
@@ -102,9 +103,14 @@ export function GatewayFailurePanel({
     picker.end
   ]);
 
-  const diagnostics = useAsyncData(load, { errorMessage: "异常诊断读取失败" });
+  const diagnostics = useAsyncData(load, { errorMessage: "异常诊断读取失败", onError });
   const total = diagnostics.data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  useEffect(() => {
+    if (!diagnostics.loading && diagnostics.data?.page === page && diagnostics.data.pageSize === pageSize && page > pageCount) {
+      setPage(pageCount);
+    }
+  }, [diagnostics.loading, diagnostics.data, page, pageSize, pageCount]);
 
   return (
     <div className="observability-panel">
@@ -173,18 +179,7 @@ export function GatewayFailurePanel({
         </Toolbar>
       </Card>
 
-      <Card
-        title={`诊断明细（共 ${total} 条）`}
-        actions={
-          pageCount > 1 && (
-            <Toolbar>
-              {/* 翻页与边界禁用都在 `Pager` 里（与请求日志、消息弹框同一份实现）。 */}
-              <Pager page={page} pageCount={pageCount} onPage={setPage} />
-              <ToolbarSpacer />
-            </Toolbar>
-          )
-        }
-      >
+      <Card title={`诊断明细（共 ${total} 条）`}>
         {diagnostics.loading ? (
           <LoadingBlock label="正在读取诊断明细…" />
         ) : diagnostics.error ? (
@@ -195,7 +190,7 @@ export function GatewayFailurePanel({
             hint="这是好消息；如果确实期望有记录，先确认网关是否在服务请求。"
           />
         ) : (
-          /* `dense`：一页 20 行、行里是状态码与耗时这类数字，行距收一档、单元格居中；
+          /* `dense`：行里是状态码与耗时这类数字，行距收一档、单元格居中；
              数字列加 `.ui-num` 让同一列的数位对齐。 */
           <table className="data-table dense">
             <thead>
@@ -234,9 +229,17 @@ export function GatewayFailurePanel({
             </tbody>
           </table>
         )}
+        <Pagination
+          label="诊断明细分页"
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          disabled={diagnostics.loading}
+        />
       </Card>
 
-      {void onError}
     </div>
   );
 }

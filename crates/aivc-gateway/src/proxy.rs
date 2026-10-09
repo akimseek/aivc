@@ -46,11 +46,10 @@ pub mod messages {
 
 /// 该 HTTP 方法是否允许重试。
 ///
-/// 只有可能改变服务端状态的写方法才值得重试；`GET` / `HEAD` 的失败通常意味着网络或
-/// 上游本身有问题，重试同一供应商只会浪费一次往返。
+/// 查询接口（GET/HEAD）和生成接口均允许在收到失败响应前重试。
 #[must_use]
 pub fn is_retryable_method(method: &str) -> bool {
-    matches!(method, "POST" | "PUT" | "PATCH")
+    matches!(method, "GET" | "HEAD" | "POST" | "PUT" | "PATCH")
 }
 
 /// 规划本次请求的最大尝试次数。
@@ -144,8 +143,24 @@ pub fn is_self_upstream(upstream_url: &str, gateway_address: &str) -> bool {
     if gateway_address.is_empty() {
         return false;
     }
-    let base = gateway_address.trim_end_matches('/');
-    upstream_url.trim_end_matches('/').starts_with(base)
+    let (Ok(upstream), Ok(gateway)) = (
+        reqwest::Url::parse(upstream_url),
+        reqwest::Url::parse(gateway_address),
+    ) else {
+        return false;
+    };
+    let is_local = |url: &reqwest::Url| {
+        url.host_str().is_some_and(|host| {
+            host.eq_ignore_ascii_case("localhost")
+                || host
+                    .trim_matches(['[', ']'])
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
+        })
+    };
+    upstream.port_or_known_default() == gateway.port_or_known_default()
+        && (upstream.host_str() == gateway.host_str()
+            || (is_local(&upstream) && is_local(&gateway)))
 }
 
 /// 请求体读取上限。
@@ -172,7 +187,7 @@ pub const fn upstream_timeout_ms() -> u64 {
 /// （长上下文、大附件）完全不可用。
 #[must_use]
 pub fn should_buffer_body(declared_length: u64) -> bool {
-    declared_length > 0 && declared_length <= retry_buffer_bytes()
+    declared_length <= retry_buffer_bytes()
 }
 
 #[cfg(test)]
@@ -196,12 +211,12 @@ mod tests {
     }
 
     #[test]
-    fn only_write_methods_are_retryable() {
+    fn query_and_generation_methods_are_retryable() {
         assert!(is_retryable_method("POST"));
         assert!(is_retryable_method("PUT"));
         assert!(is_retryable_method("PATCH"));
-        assert!(!is_retryable_method("GET"));
-        assert!(!is_retryable_method("HEAD"));
+        assert!(is_retryable_method("GET"));
+        assert!(is_retryable_method("HEAD"));
         assert!(!is_retryable_method("DELETE"));
     }
 
@@ -209,7 +224,7 @@ mod tests {
     fn a_streamed_body_is_never_retried() {
         // 流式请求体读过一次就没了；重试会发出空 body。
         assert_eq!(plan_max_attempts(false, "POST", 3, 4), 1);
-        assert_eq!(plan_max_attempts(true, "GET", 3, 4), 1);
+        assert_eq!(plan_max_attempts(true, "GET", 3, 4), 12);
         assert_eq!(plan_max_attempts(true, "POST", 3, 4), 12);
     }
 
@@ -283,6 +298,8 @@ mod tests {
         ));
         assert!(is_self_upstream("http://127.0.0.1:8787/", gateway));
         assert!(is_self_upstream("http://127.0.0.1:8787", gateway));
+        assert!(is_self_upstream("http://localhost:8787/v1", gateway));
+        assert!(is_self_upstream("http://[::1]:8787/v1", gateway));
         // 不同端口不是自己。
         assert!(!is_self_upstream("http://127.0.0.1:8788/v1", gateway));
         // 外部地址不是自己。
@@ -301,7 +318,7 @@ mod tests {
 
     #[test]
     fn only_reasonably_sized_declared_bodies_are_buffered() {
-        assert!(!should_buffer_body(0), "未声明长度不缓冲");
+        assert!(should_buffer_body(0), "空请求体可以安全重试");
         assert!(should_buffer_body(1));
         assert!(should_buffer_body(retry_buffer_bytes()));
         // 超限的请求体不缓冲，但仍会透传——直接拒绝会让大请求完全不可用。

@@ -633,11 +633,11 @@ fn log_entry_value(entry: &LogEntry) -> Value {
         "providerId": entry.provider_id,
         "outcome": entry.outcome,
         "upstreamStatus": entry.upstream_status,
-        // **没转发的请求也要能看出来。**
-        //
-        // 「路由不存在 / 鉴权失败」记的是 `outcome: ok`（那不是供应商的错），
-        // 于是它与一次真正转发成功的记录只差这一个字段。少了它，
-        // 查「CLI 为什么失败」的人在日志里只能看到一串 `ok`。
+        "retryCount": entry.retry_count,
+        "switched": entry.switched,
+        "attempts": entry.attempts,
+        "durationMs": entry.duration_ms,
+        "errorMessage": entry.error_message,
         "errorCode": entry.error_code,
     })
 }

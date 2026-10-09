@@ -495,7 +495,7 @@ impl SessionProvider for QoderProvider {
                 && let Some(target) = probe_local_cli_target(&LocalCliProbe {
                     provider: ProviderId::Qoder,
                     display_name: DISPLAY_NAME,
-                    windows_command: "qodercn.cmd",
+                    windows_command: "qodercn",
                     unix_command: COMMAND,
                     config_dir,
                 })

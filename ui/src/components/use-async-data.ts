@@ -41,7 +41,7 @@ import { errorText } from "./error-text";
  */
 export function useAsyncData<T>(
   load: () => Promise<T>,
-  options: { errorMessage?: string; auto?: boolean } = {}
+  options: { errorMessage?: string; auto?: boolean; onError?: (message: string) => void } = {}
 ): {
   data: T | null;
   loading: boolean;
@@ -64,6 +64,8 @@ export function useAsyncData<T>(
   /** `load` 每次渲染都是新的函数，用 ref 固定住身份，避免它把 effect 拖成死循环。 */
   const loadRef = useRef(load);
   loadRef.current = load;
+  const feedbackRef = useRef({ errorMessage, onError: options.onError });
+  feedbackRef.current = { errorMessage, onError: options.onError };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -84,6 +86,8 @@ export function useAsyncData<T>(
       if (!mountedRef.current || seq !== seqRef.current) return;
       setData(null);
       setError(errorText(problem));
+      const feedback = feedbackRef.current;
+      feedback.onError?.(`${feedback.errorMessage}：${errorText(problem)}`);
     } finally {
       if (mountedRef.current && seq === seqRef.current) setLoading(false);
     }

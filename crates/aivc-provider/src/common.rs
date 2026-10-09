@@ -227,7 +227,7 @@ pub async fn probe_wsl_cli_targets(
     ctx: &crate::context::ProviderContext,
     probe: &WslCliProbe,
 ) -> Vec<aivc_core::target::Target> {
-    use aivc_core::target::{Target, TargetKind};
+    use aivc_core::shell::posix_shell_quote;
 
     if !ctx.wsl().is_available() {
         return Vec::new();
@@ -235,40 +235,73 @@ pub async fn probe_wsl_cli_targets(
     let distros = ctx.wsl().list_distros().await;
     let mut targets = Vec::new();
     for distro in distros {
-        let home = ctx.wsl().get_env(&distro, "HOME").await.unwrap_or_default();
-        let home = home.trim().to_owned();
-        let config_dir = if home.is_empty() {
-            String::new()
-        } else {
-            format!("{}/{}", home.trim_end_matches('/'), probe.config_dir_suffix)
-        };
-        let command_found = ctx.wsl().command_exists(&distro, probe.command).await;
-        let has_config_dir = !config_dir.is_empty() && ctx.wsl().exists(&distro, &config_dir).await;
-        if !command_found && !has_config_dir {
-            continue;
-        }
-
-        let detail = match (command_found, has_config_dir) {
-            (true, true) => format!("找到 {} 命令和配置目录", probe.display_name),
-            (true, false) => format!("找到 {} 命令", probe.display_name),
-            (false, _) => format!(
-                "找到 {} 配置目录，未找到 {} 命令",
-                probe.display_name, probe.command
-            ),
-        };
-
-        targets.push(Target {
-            id: aivc_core::id::TargetId::from(format!("{}:wsl:{distro}", probe.provider.as_str())),
-            provider: probe.provider,
-            label: format!("{}：WSL：{distro}", probe.display_name),
-            kind: TargetKind::Wsl,
-            distro: Some(distro),
-            codex_home: has_config_dir.then_some(config_dir),
-            available: command_found,
-            detail: Some(detail),
-        });
+        // 一次进入发行版完成探测；标签让 .bashrc 的额外输出不会污染结果。
+        let script = format!(
+            "printf '__AIVC_HOME__%s\\n' \"$HOME\"\n\
+             if command -v {} >/dev/null 2>&1; then echo __AIVC_COMMAND__; fi\n\
+             if [ -n \"$HOME\" ] && [ -d \"$HOME\"/{} ]; then echo __AIVC_CONFIG__; fi\n\
+             echo __AIVC_DONE__",
+            posix_shell_quote(probe.command),
+            posix_shell_quote(probe.config_dir_suffix)
+        );
+        let output = ctx
+            .wsl()
+            .run_cli_shell(&distro, &script)
+            .await
+            .and_then(|output| output.into_success(&format!("WSL CLI 探测（{distro}）")))
+            .map(|output| output.stdout)
+            .map_err(|error| error.to_string());
+        targets.push(wsl_cli_target(&distro, probe, output));
     }
     targets
+}
+
+fn wsl_cli_target(
+    distro: &str,
+    probe: &WslCliProbe,
+    output: Result<String, String>,
+) -> aivc_core::target::Target {
+    use aivc_core::target::{Target, TargetKind};
+
+    let (codex_home, available, detail) = match output {
+        Ok(output) if output.lines().any(|line| line.trim() == "__AIVC_DONE__") => {
+            let home = output
+                .lines()
+                .find_map(|line| line.strip_prefix("__AIVC_HOME__"));
+            let command_found = output.lines().any(|line| line.trim() == "__AIVC_COMMAND__");
+            let config_found = output.lines().any(|line| line.trim() == "__AIVC_CONFIG__");
+            let config_dir = home
+                .filter(|home| !home.trim().is_empty())
+                .filter(|_| config_found)
+                .map(|home| format!("{}/{}", home.trim_end_matches('/'), probe.config_dir_suffix));
+            let detail = match (command_found, config_dir.is_some()) {
+                (true, true) => format!("找到 {} 命令和配置目录", probe.display_name),
+                (true, false) => format!("找到 {} 命令", probe.display_name),
+                (false, true) => format!(
+                    "找到 {} 配置目录，未找到 {} 命令",
+                    probe.display_name, probe.command
+                ),
+                (false, false) => format!("可进入 WSL，未找到 {} 命令", probe.command),
+            };
+            (config_dir, command_found, detail)
+        }
+        Ok(_) => (
+            None,
+            false,
+            "WSL CLI 探测未完成，请检查 shell 启动配置".to_owned(),
+        ),
+        Err(reason) => (None, false, format!("无法探测 WSL：{reason}")),
+    };
+    Target {
+        id: aivc_core::id::TargetId::from(format!("{}:wsl:{distro}", probe.provider.as_str())),
+        provider: probe.provider,
+        label: format!("{}：WSL：{distro}", probe.display_name),
+        kind: TargetKind::Wsl,
+        distro: Some(distro.to_owned()),
+        codex_home,
+        available,
+        detail: Some(detail),
+    }
 }
 
 /// 本机命令是否存在（按 `PATH` 与 Windows 的 `PATHEXT` 查找）。
@@ -295,12 +328,16 @@ pub fn command_exists_local(command: &str) -> bool {
         Vec::new()
     };
 
-    for directory in std::env::split_paths(&path) {
+    command_exists_in_path(command, &path, &extensions)
+}
+
+fn command_exists_in_path(command: &str, path: &std::ffi::OsStr, extensions: &[String]) -> bool {
+    for directory in std::env::split_paths(path) {
         let candidate = directory.join(command);
         if candidate.is_file() {
             return true;
         }
-        for extension in &extensions {
+        for extension in extensions {
             let with_extension = directory.join(format!("{command}{extension}"));
             if with_extension.is_file() {
                 return true;
@@ -338,6 +375,85 @@ mod tests {
     use super::*;
     use aivc_core::id::SessionId;
     use aivc_core::time::Timestamp;
+
+    #[test]
+    fn local_probe_accepts_native_executables_and_npm_shims() {
+        for extension in [".exe", ".cmd", ".bat"] {
+            let directory = tempfile::tempdir().expect("tempdir");
+            std::fs::write(
+                directory.path().join(format!("claude{extension}")),
+                "fixture",
+            )
+            .expect("write command");
+            let path = std::env::join_paths([directory.path()]).expect("path");
+            assert!(command_exists_in_path(
+                "claude",
+                &path,
+                &[extension.to_owned()]
+            ));
+            assert!(!command_exists_in_path(
+                "gemini",
+                &path,
+                &[extension.to_owned()]
+            ));
+        }
+    }
+
+    fn claude_probe() -> WslCliProbe {
+        WslCliProbe {
+            provider: aivc_core::target::ProviderId::Claude,
+            display_name: "Claude Code",
+            command: "claude",
+            config_dir_suffix: ".claude",
+        }
+    }
+
+    #[test]
+    fn wsl_target_remains_visible_when_cli_is_missing_or_distro_is_unreachable() {
+        let probe = claude_probe();
+        let missing = wsl_cli_target(
+            "Ubuntu",
+            &probe,
+            Ok("__AIVC_HOME__/home/u\n__AIVC_DONE__\n".to_owned()),
+        );
+        assert_eq!(missing.id.as_str(), "claude:wsl:Ubuntu");
+        assert!(!missing.available);
+        assert!(missing.codex_home.is_none());
+        assert!(
+            missing
+                .detail
+                .expect("detail")
+                .contains("未找到 claude 命令")
+        );
+
+        let inaccessible = wsl_cli_target("Ubuntu", &probe, Err("HCS/E_ACCESSDENIED".to_owned()));
+        assert_eq!(inaccessible.distro.as_deref(), Some("Ubuntu"));
+        assert!(!inaccessible.available);
+        assert!(
+            inaccessible
+                .detail
+                .expect("detail")
+                .contains("HCS/E_ACCESSDENIED")
+        );
+    }
+
+    #[test]
+    fn wsl_probe_ignores_startup_noise_and_preserves_historical_config() {
+        let probe = claude_probe();
+        let output = "startup banner\n__AIVC_HOME__/home/u\n__AIVC_COMMAND__\n__AIVC_CONFIG__\n__AIVC_DONE__\n";
+        let installed = wsl_cli_target("Ubuntu", &probe, Ok(output.to_owned()));
+        assert!(installed.available);
+        assert_eq!(installed.codex_home.as_deref(), Some("/home/u/.claude"));
+        let historical = wsl_cli_target(
+            "Ubuntu",
+            &probe,
+            Ok(output.replace("__AIVC_COMMAND__\n", "")),
+        );
+        assert!(!historical.available);
+        assert_eq!(historical.codex_home.as_deref(), Some("/home/u/.claude"));
+        let incomplete = wsl_cli_target("Ubuntu", &probe, Ok("__AIVC_COMMAND__\n".to_owned()));
+        assert!(!incomplete.available);
+    }
 
     fn session(id: &str, updated: Option<&str>, created: Option<&str>) -> Session {
         Session {

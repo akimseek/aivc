@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { GatewayFailurePanel } from "./gateway-failure-panel";
 
@@ -20,7 +20,7 @@ const PAGE_SIZE = 20;
 type Call = { command: string; args: Record<string, unknown> | null };
 
 /** 装一个假的 Tauri 运行时；`answer` 按命令名给返回值。 */
-function fakeRuntime(answer: (command: string) => unknown) {
+function fakeRuntime(answer: (command: string, args: Call["args"]) => unknown) {
   const invocations: Call[] = [];
   window.__TAURI__ = {
     core: {
@@ -29,7 +29,7 @@ function fakeRuntime(answer: (command: string) => unknown) {
         const name = payload?.command ?? command;
         const call: Call = { command: name, args: payload?.args ?? null };
         invocations.push(call);
-        return answer(name);
+        return answer(name, call.args);
       }
     },
     event: { listen: async () => () => undefined }
@@ -73,6 +73,50 @@ function setup(total = 0) {
   const view = render(<GatewayFailurePanel providerId="" onError={() => undefined} />);
   return { view, invocations };
 }
+
+afterEach(cleanup);
+
+describe("GatewayFailurePanel：完整分页栏", () => {
+  it("空结果和单页也展示分页栏，支持变更页长及首末页", async () => {
+    let total = 63;
+    const calls = fakeRuntime((_command, args) => {
+      const current = Number(args?.page);
+      const size = Number(args?.pageSize);
+      const start = (current - 1) * size;
+      return { items: Array.from({ length: Math.max(0, Math.min(size, total - start)) }, (_, index) => item(start + index)), total, page: current, pageSize: size };
+    });
+    const view = render(<GatewayFailurePanel providerId="" onError={() => {}} />);
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(20));
+    expect(view.getByRole("navigation", { name: "诊断明细分页" })).toBeTruthy();
+    await act(async () => { buttonNamed(view.container, "最后一页").click(); });
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(3));
+    fireEvent.change(view.getByRole("combobox", { name: "每页数量" }), { target: { value: "50" } });
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(50));
+    expect(calls.at(-1)!.args).toMatchObject({ page: 1, pageSize: 50 });
+    await act(async () => { buttonNamed(view.container, "下一页").click(); });
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(13));
+    total = 3;
+    await act(async () => { buttonNamed(view.container, "重新查询").click(); });
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(3));
+    expect(calls.at(-1)!.args).toMatchObject({ page: 1, pageSize: 50 });
+    expect(buttonNamed(view.container, "下一页").disabled).toBe(true);
+    total = 0;
+    await act(async () => { buttonNamed(view.container, "重新查询").click(); });
+    await waitFor(() => expect(view.container.textContent).toContain("共 0 条 · 0–0"));
+    expect(buttonNamed(view.container, "最后一页").disabled).toBe(true);
+  });
+
+  it("修改筛选回到首页，页长选择保留", async () => {
+    const calls = fakeRuntime((_command, args) => ({ ...page(61, Number(args?.page)), pageSize: Number(args?.pageSize) }));
+    const view = render(<GatewayFailurePanel providerId="" onError={() => {}} />);
+    await waitFor(() => expect(view.container.querySelector("tbody tr")).toBeTruthy());
+    fireEvent.change(view.getByRole("combobox", { name: "每页数量" }), { target: { value: "10" } });
+    await waitFor(() => expect(calls.at(-1)!.args).toMatchObject({ pageSize: 10 }));
+    await act(async () => { buttonNamed(view.container, "下一页").click(); });
+    fireEvent.change(selectByLabel(view.container, "按结果筛选"), { target: { value: "timeout" } });
+    await waitFor(() => expect(calls.at(-1)!.args).toMatchObject({ page: 1, pageSize: 10, outcome: "timeout" }));
+  });
+});
 
 describe("GatewayFailurePanel：重查语义", () => {
   it("换「结果」筛选 ⇒ 重新请求，且请求带上新筛选", async () => {

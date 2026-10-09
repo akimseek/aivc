@@ -3,7 +3,7 @@
 //! 探测 node / npm / nvm 与各平台 CLI 的版本，并给出可安装性判断。推荐 Node 24；
 //! Gemini 与 Qoder 最低 Node 20。安装命令为 `npm install -g …`，超时 15 分钟。
 //!
-//! WSL 侧必须用 `bash -lc` 探测：`nvm` / `fnm` 按 profile 注入 PATH，非登录 shell 看不到。
+//! WSL 侧用 `bash -ic` 探测，与终端一致地加载 `.bashrc` 中的 nvm / fnm。
 
 pub mod core;
 pub mod install;

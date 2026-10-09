@@ -107,7 +107,7 @@ async fn call(app: &App, command: &str, args: Value) -> Value {
 /// `routeId` 参数错误。于是它成了一个现成的探针，不需要为测试新增任何生产 API。
 #[tokio::test(flavor = "multi_thread")]
 async fn starting_a_terminal_registers_a_route_the_gateway_knows_about() {
-    let (mut app, dir) = app().await;
+    let (app, dir) = app().await;
 
     // 网关要开着，路由才有地方注册。
     app.router()
@@ -445,9 +445,14 @@ async fn workspace_presets_and_gateway_commands_work_end_to_end() {
     // 否则界面拿到的永远是 `undefined`——那一格会一直显示「未启用」。
     let port = call(&app, "gateway:set-port", json!({ "port": 0 })).await;
     assert_eq!(port["configuredPort"], 0);
-    // 这个测试的应用不起网关，因此没有监听地址；这正是「已配置但未启动」。
-    assert_eq!(port["baseUrl"], "");
-    assert_eq!(port["activePort"], 0);
+    // 保存配置立即应用到启用的网关，自动端口必须返回实际地址。
+    assert!(
+        port["baseUrl"]
+            .as_str()
+            .expect("url")
+            .starts_with("http://127.0.0.1:")
+    );
+    assert!(port["activePort"].as_u64().expect("port") > 0);
     assert_eq!(
         call(&app, "gateway:get-port", json!({})).await["configuredPort"],
         0
@@ -502,7 +507,7 @@ async fn workspace_presets_and_gateway_commands_work_end_to_end() {
 async fn the_gateway_actually_proxies_a_request_end_to_end() {
     // 启动真实网关，让它把请求转发到真实的 mock 上游，并确认请求记录落库。
     // 这是唯一能证明「网关整条链路可用」的测试。
-    let (mut app, dir) = app().await;
+    let (app, dir) = app().await;
     let upstream = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("POST"))
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
@@ -605,7 +610,7 @@ async fn the_gateway_actually_proxies_a_request_end_to_end() {
 /// 2. **重试不会被记成多次请求**——用量报表按请求计数，多记会直接让用户的账对不上。
 #[tokio::test(flavor = "multi_thread")]
 async fn failover_works_with_vendors_read_from_the_real_database() {
-    let (mut app, dir) = app().await;
+    let (app, dir) = app().await;
 
     // 第一家总是 429，第二家成功。
     let first = wiremock::MockServer::start().await;

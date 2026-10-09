@@ -84,10 +84,10 @@ export function EnvironmentPanel({
         // 后端会据此决定要不要先装 Node：能直接装 CLI 就不必动 Node。
         ensureNode: !status.canInstallCli && status.canInstallNodeWithNvm
       });
-      await load();
       // 装 CLI 是**分钟级**的操作，用户会去看别的东西；不说一句，
       // 回来时既看不出装完没有、也看不出是不是点了没反应。文案照旧平台。
       onNotify?.("CLI 安装完成。");
+      await load();
     } catch (error) {
       onError(errorText(error));
     } finally {

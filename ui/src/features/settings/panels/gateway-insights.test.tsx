@@ -1,36 +1,17 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GatewayInsights } from "./gateway-insights";
 
-/**
- * 网关面板的测试。
- *
- * # 为什么这个组件必须有自己的测试
- *
- * 它是界面上**唯一有跨组件接线**的面板：订阅后端事件、合并刷新、调一条命令。
- * 而这三件事此前**全都缺失或全都没被验证过**——
- * 「后端每转发一个请求就推一条事件，面板实时更新」这个承诺，
- * 在界面上从来没有成立过。留在一个 1380 行的大文件里就只能靠肉眼看界面。
- *
- * 限流（自动刷新不高于 1Hz）与「只取首页 50 条」是后加的两条硬约束：
- * 前者防止有流量时 5 次/秒地拉三个接口，后者让每次刷新的 payload 有界——
- * 两条都不会在界面上肉眼可见，只能在这里钉住。
- */
+/** 健康表分页、实时刷新合并、重置与卸载接线。 */
 
 type Handler = (event: { payload: unknown }) => void;
 
 /** 装一个假的运行时，并记录订阅了哪些通道。 */
 function fakeRuntime(overrides: {
   health?: unknown[];
-  usage?: unknown;
-  /**
-   * 日志响应。数组按**后端真实契约**返回：不带分页参数是裸数组，带上则是
-   * `{ items, ... }` 外壳。函数形式用来控制时序（每次调用的 Promise 由测试兑现），
-   * 「旧响应晚到」那条测试靠它制造乱序。
-   */
-  logs?: unknown[] | (() => Promise<unknown>);
+  vendors?: unknown[];
 } = {}) {
   const calls: string[] = [];
   /**
@@ -48,14 +29,7 @@ function fakeRuntime(overrides: {
         calls.push(name);
         callsWithArgs.push({ command: name, args: payload?.args ?? {}, at: Date.now() });
         if (name === "gateway:get-vendor-health") return overrides.health ?? [];
-        if (name === "gateway:get-usage-summary") return overrides.usage ?? null;
-        if (name === "gateway:query-logs") {
-          if (typeof overrides.logs === "function") return overrides.logs();
-          const items = overrides.logs ?? [];
-          // 与后端一致：参数决定返回形状（两个参数总是一起给）。
-          const paged = "page" in (payload?.args ?? {});
-          return paged ? { items, total: items.length, page: 1, pageSize: 50 } : items;
-        }
+        if (name === "vendor:list") return overrides.vendors ?? [];
         if (name === "gateway:reset-vendor-health") return 1;
         return {};
       }
@@ -100,6 +74,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.useRealTimers();
 });
 
@@ -107,12 +82,72 @@ async function renderInsights(runtime: ReturnType<typeof fakeRuntime>) {
   const onError = vi.fn();
   const view = render(<GatewayInsights onError={onError} />);
   await waitFor(() => {
-    expect(runtime.calls).toContain("gateway:get-usage-summary");
+    expect(runtime.calls).toContain("gateway:get-vendor-health");
   });
   return { view, onError };
 }
 
 describe("GatewayInsights", () => {
+  it("健康按供应商编号关联名称，缺失的供应商保留编号供追溯", async () => {
+    const runtime = fakeRuntime({
+      health: [...HEALTH, { ...HEALTH[0], vendorId: "vendor-deleted" }],
+      vendors: [{ id: "vendor-a", name: "中转服务", providerId: "codex" }],
+
+    });
+    const { view } = await renderInsights(runtime);
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(2));
+    const rows = [...view.container.querySelectorAll("tbody tr")];
+    expect(rows[0]!.querySelector("td")!.textContent).toBe("中转服务");
+    expect(rows[1]!.querySelector("td")!.textContent).toBe("vendor-deleted");
+    expect(runtime.calls).not.toContain("gateway:query-logs");
+    expect(runtime.calls).not.toContain("gateway:get-usage-summary");
+    expect(view.queryByText("最近请求")).toBeNull();
+    expect(view.queryByText("用量")).toBeNull();
+  });
+
+  it("供应商健康默认每页 10 条，可翻页并切换 10 / 20 / 50 条", async () => {
+    const runtime = fakeRuntime({
+      health: Array.from({ length: 23 }, (_, index) => ({ ...HEALTH[0], vendorId: `v${index}` })),
+      vendors: Array.from({ length: 23 }, (_, index) => ({ id: `v${index}`, name: `供应商 ${index + 1}` }))
+    });
+    const { view } = await renderInsights(runtime);
+    const rows = () => view.container.querySelectorAll("tbody tr");
+    await waitFor(() => expect(rows()).toHaveLength(10));
+    const pager = within(view.getByRole("navigation", { name: "供应商健康分页" }));
+    expect((pager.getByRole("button", { name: "上一页" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(pager.getByRole("button", { name: "下一页" }));
+    expect(rows()[0]!.querySelector("td")!.textContent).toBe("供应商 11");
+    fireEvent.click(pager.getByRole("button", { name: "最后一页" }));
+    expect(rows()).toHaveLength(3);
+    expect((pager.getByRole("button", { name: "下一页" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(pager.getByRole("button", { name: "上一页" }));
+    expect(rows()[0]!.querySelector("td")!.textContent).toBe("供应商 11");
+    fireEvent.change(pager.getByRole("combobox", { name: "每页数量" }), { target: { value: "20" } });
+    expect(rows()).toHaveLength(20);
+    expect(view.container.textContent).toContain("第 1 / 2 页");
+    fireEvent.change(pager.getByRole("combobox", { name: "每页数量" }), { target: { value: "50" } });
+    expect(rows()).toHaveLength(23);
+    expect(view.container.textContent).toContain("第 1 / 1 页");
+  });
+
+  it("刷新后健康记录变少时页码不会越界", async () => {
+    const overrides = {
+      health: Array.from({ length: 11 }, (_, index) => ({ ...HEALTH[0], vendorId: `v${index}` }))
+    };
+    const runtime = fakeRuntime(overrides);
+    const { view } = await renderInsights(runtime);
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(10));
+    fireEvent.click(view.getByRole("button", { name: "下一页" }));
+    expect(view.container.querySelectorAll("tbody tr")).toHaveLength(1);
+    overrides.health = overrides.health.slice(0, 3);
+    fireEvent.click(view.getByRole("button", { name: "重置全部健康" }));
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(3));
+    expect(view.container.textContent).toContain("第 1 / 1 页");
+    overrides.health = [];
+    fireEvent.click(view.getByRole("button", { name: "重置全部健康" }));
+    await waitFor(() => expect(view.queryByRole("navigation", { name: "供应商健康分页" })).toBeNull());
+  });
+
   it("订阅了「请求已记录」事件", async () => {
     // 后端每次都推；界面不订阅，就不用谈「实时」。
     const runtime = fakeRuntime();
@@ -122,10 +157,10 @@ describe("GatewayInsights", () => {
 
   it("收到事件之后会重新取数", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const runtime = fakeRuntime({ usage: { requestCount: 1, failureCount: 0, switchedCount: 0 } });
+    const runtime = fakeRuntime();
     await renderInsights(runtime);
 
-    const before = runtime.calls.filter((name) => name === "gateway:get-usage-summary").length;
+    const before = runtime.calls.filter((name) => name === "gateway:get-vendor-health").length;
     await runtime.emit("gateway:request-recorded");
     // 刷新是**合并**的，且窗口就是自动刷新的最小间隔（1s），要等窗口过去。
     await act(async () => {
@@ -133,7 +168,7 @@ describe("GatewayInsights", () => {
     });
 
     await waitFor(() => {
-      const after = runtime.calls.filter((name) => name === "gateway:get-usage-summary").length;
+      const after = runtime.calls.filter((name) => name === "gateway:get-vendor-health").length;
       expect(after).toBeGreaterThan(before);
     });
   });
@@ -144,7 +179,7 @@ describe("GatewayInsights", () => {
     const runtime = fakeRuntime();
     await renderInsights(runtime);
 
-    const before = runtime.calls.filter((name) => name === "gateway:get-usage-summary").length;
+    const before = runtime.calls.filter((name) => name === "gateway:get-vendor-health").length;
     for (let index = 0; index < 5; index += 1) {
       await runtime.emit("gateway:request-recorded");
     }
@@ -153,7 +188,7 @@ describe("GatewayInsights", () => {
     });
 
     await waitFor(() => {
-      const after = runtime.calls.filter((name) => name === "gateway:get-usage-summary").length;
+      const after = runtime.calls.filter((name) => name === "gateway:get-vendor-health").length;
       expect(after - before).toBe(1);
     });
   });
@@ -168,7 +203,7 @@ describe("GatewayInsights", () => {
 
     const usageTimes = () =>
       runtime.callsWithArgs
-        .filter((item) => item.command === "gateway:get-usage-summary")
+        .filter((item) => item.command === "gateway:get-vendor-health")
         .map((item) => item.at);
 
     // 2.5 秒的连续流量：每 100ms 推一条事件（远密于窗口）。
@@ -204,7 +239,7 @@ describe("GatewayInsights", () => {
     );
     expect(button).toBeTruthy();
 
-    const before = runtime.calls.filter((name) => name === "gateway:query-logs").length;
+    const before = runtime.calls.filter((name) => name === "gateway:get-vendor-health").length;
     await act(async () => {
       button!.click();
     });
@@ -213,7 +248,7 @@ describe("GatewayInsights", () => {
       await act(async () => {});
     }
 
-    const after = runtime.calls.filter((name) => name === "gateway:query-logs").length;
+    const after = runtime.calls.filter((name) => name === "gateway:get-vendor-health").length;
     expect(after).toBe(before + 1);
   });
 
@@ -248,7 +283,7 @@ describe("GatewayInsights", () => {
       expect(runtime.calls).toContain("gateway:reset-vendor-health");
     });
     // 重置之后要重新取数，否则界面还显示着旧的熔断。
-    const usageCalls = runtime.calls.filter((name) => name === "gateway:get-usage-summary").length;
+    const usageCalls = runtime.calls.filter((name) => name === "gateway:get-vendor-health").length;
     expect(usageCalls).toBeGreaterThan(1);
   });
 
@@ -266,139 +301,4 @@ describe("GatewayInsights", () => {
     });
   });
 
-  it("用量请求**带上了区间**——后端缺任一端会直接报错", async () => {
-    // 这一条是这次接线里最要紧的：此前调 `getUsageSummary()` 一个参数都不传，
-    // 后端 `period()` 立刻报「参数无效」，于是用量那几格**从来没显示过**。
-    const runtime = fakeRuntime();
-    await renderInsights(runtime);
-
-    const call = runtime.callsWithArgs.find((item) => item.command === "gateway:get-usage-summary");
-    expect(call).toBeTruthy();
-    const args = call!.args as { periodStart?: string; periodEnd?: string };
-    expect(typeof args.periodStart).toBe("string");
-    expect(typeof args.periodEnd).toBe("string");
-    expect(args.periodStart).not.toBe("");
-  });
-
-  it("最近请求只取首页，且 pageSize 固定为 50", async () => {
-    // 「最近请求」是**概览**不是审计：固定首页 50 条（后端仓储的钳制上限），
-    // 一次请求画完整张表，不需要翻页控件；审计要看全量时去日志页（那里本就有分页）。
-    // 参数也决定返回形状：不带宽度的裸数组是全量，payload 没有上界。
-    const runtime = fakeRuntime();
-    const { view } = await renderInsights(runtime);
-
-    const call = runtime.callsWithArgs.find((item) => item.command === "gateway:query-logs");
-    expect(call).toBeTruthy();
-    const args = call!.args as Record<string, unknown>;
-    expect(args.page).toBe(1);
-    expect(args.pageSize).toBe(50);
-    expect(typeof args.periodStart).toBe("string");
-    expect(typeof args.periodEnd).toBe("string");
-    // 上限要在界面上说出来——否则用户会以为这 50 条就是「全部」。
-    expect(view.container.textContent).toContain("最多显示最近 50 条");
-  });
-
-  it("旧响应晚到不覆盖新结果：刷新按请求序号丢弃过期响应", async () => {
-    // 连点或换区间时，先发的请求可能后回。没有序号判定，旧区间的响应会把
-    // 新结果整表盖掉——界面显示的是用户已经离开的那段数据。
-    const deferred: Array<(payload: unknown) => void> = [];
-    const runtime = fakeRuntime({
-      logs: () => new Promise((resolve) => deferred.push(resolve))
-    });
-    const onError = vi.fn();
-    const view = render(<GatewayInsights onError={onError} />);
-
-    // 初始那次取数挂着不兑现，先等它已经发出。
-    await waitFor(() => {
-      expect(runtime.calls).toContain("gateway:query-logs");
-    });
-
-    // 换一个区间：这是**新**的一次取数（第二次）。
-    const all = [...view.container.querySelectorAll("button")].find(
-      (item) => item.textContent?.trim() === "全部时间"
-    );
-    expect(all).toBeTruthy();
-    await act(async () => {
-      all!.click();
-    });
-    await waitFor(() => {
-      expect(deferred).toHaveLength(2);
-    });
-
-    const page = (code: string) => ({
-      items: [
-        {
-          requestId: code,
-          createdAt: new Date().toISOString(),
-          vendorId: "v1",
-          providerId: "codex",
-          outcome: "ok",
-          errorCode: code
-        }
-      ],
-      total: 1,
-      page: 1,
-      pageSize: 50
-    });
-
-    // 新请求先回：界面显示新结果。
-    await act(async () => {
-      deferred[1](page("code-new"));
-    });
-    await waitFor(() => {
-      expect(view.container.textContent).toContain("code-new");
-    });
-
-    // 旧请求后回：必须被丢弃，不能把新结果盖掉。
-    await act(async () => {
-      deferred[0](page("code-old"));
-    });
-    expect(view.container.textContent).toContain("code-new");
-    expect(view.container.textContent).not.toContain("code-old");
-  });
-
-  it("换时间区间会重新取数，且新区间与旧区间不同", async () => {
-    // 「今天」与「全部时间」的起点差了几十年，这一点必须真的传到后端。
-    const runtime = fakeRuntime();
-    const { view } = await renderInsights(runtime);
-
-    const all = [...view.container.querySelectorAll("button")].find(
-      (item) => item.textContent?.trim() === "全部时间"
-    );
-    expect(all).toBeTruthy();
-
-    await act(async () => {
-      all!.click();
-    });
-
-    await waitFor(() => {
-      const starts = runtime.callsWithArgs
-        .filter((item) => item.command === "gateway:get-usage-summary")
-        .map((item) => (item.args as { periodStart: string }).periodStart);
-      // 至少两次，且起点里出现了纪元起点。
-      expect(starts.length).toBeGreaterThan(1);
-      expect(starts.some((value) => new Date(value).getTime() === 0)).toBe(true);
-    });
-  });
-
-  it("失败诊断里那列错误代码必须存在", async () => {
-    // 「路由不存在 / 鉴权失败」记的是 `ok`，与真正成功只差这一个字段。
-    // 界面不显示它，查「CLI 为什么失败」的人只能看到一串成功。
-    const runtime = fakeRuntime({
-      logs: [
-        {
-          requestId: "r1",
-          createdAt: new Date().toISOString(),
-          vendorId: "v1",
-          providerId: "codex",
-          outcome: "ok",
-          errorCode: "route-missing"
-        }
-      ]
-    });
-    const { view } = await renderInsights(runtime);
-    await waitFor(() => {
-      expect(view.container.textContent).toContain("route-missing");
-    });
-  });
 });

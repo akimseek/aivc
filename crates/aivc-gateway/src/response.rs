@@ -114,7 +114,7 @@ pub fn is_builtin_gateway_failover_error(message: &str) -> bool {
 
 /// 判定是否应当触发故障转移。
 ///
-/// 顺序：用户规则优先（可覆盖内置判定），没有匹配的规则时退回内置判定——
+/// 顺序：命中用户规则时触发，否则退回内置判定——
 /// 状态码在白名单里，或文本命中内置模式。
 #[must_use]
 pub fn matches_gateway_failover_error(
@@ -124,15 +124,12 @@ pub fn matches_gateway_failover_error(
     status_code: u16,
     rules: &[FailoverRule],
 ) -> bool {
-    let applicable: Vec<&FailoverRule> = rules
-        .iter()
-        .filter(|rule| rule.applies_to(provider_id, Some(vendor_id)))
-        .collect();
-    if !applicable.is_empty() {
-        // 有适用规则时**只**看规则：用户显式配置了范围，就不该再叠加内置判定。
-        return applicable
-            .iter()
-            .any(|rule| rule.matches(Some(status_code), message));
+    if rules.iter().any(|rule| {
+        rule.enabled
+            && rule.applies_to(provider_id, Some(vendor_id))
+            && rule.matches(Some(status_code), message)
+    }) {
+        return true;
     }
     if aivc_core::constants::GATEWAY_FAILOVER_DEFAULT_STATUS_CODES.contains(&status_code) {
         return true;
@@ -337,11 +334,11 @@ mod tests {
     }
 
     #[test]
-    fn user_rules_override_the_builtin_decision() {
+    fn user_rules_extend_the_builtin_decision() {
         let vendor = VendorId::from("v1");
-        // 规则只认 418：500 不再触发（用户显式配置了范围）。
+        // 增加 418 规则不应关闭对 500、429 等默认故障的处理。
         let rules = [rule(&[], &[418])];
-        assert!(!matches_gateway_failover_error(
+        assert!(matches_gateway_failover_error(
             None,
             ProviderId::Codex,
             &vendor,
@@ -354,6 +351,19 @@ mod tests {
             &vendor,
             418,
             &rules
+        ));
+    }
+
+    #[test]
+    fn disabled_rules_do_not_trigger_failover() {
+        let mut disabled = rule(&["custom failure"], &[418]);
+        disabled.enabled = false;
+        assert!(!matches_gateway_failover_error(
+            Some("custom failure"),
+            ProviderId::Codex,
+            &VendorId::from("v1"),
+            418,
+            &[disabled]
         ));
     }
 
@@ -373,7 +383,7 @@ mod tests {
             500,
             &rules
         ));
-        // 对 Claude 生效：418 触发，500 不触发（用户显式配置了范围）。
+        // 对 Claude 生效：418 触发，内置的 500 仍然触发。
         assert!(matches_gateway_failover_error(
             None,
             ProviderId::Claude,
@@ -381,7 +391,7 @@ mod tests {
             418,
             &rules
         ));
-        assert!(!matches_gateway_failover_error(
+        assert!(matches_gateway_failover_error(
             None,
             ProviderId::Claude,
             &vendor,

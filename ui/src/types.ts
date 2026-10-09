@@ -320,6 +320,15 @@ export type SessionQuickAccess = {
  * **刻意不声明的只有一个：`apiKey`。** 后端把明文密钥发过来了（它自己要用），
  * 但界面**任何地方都不该显示它**——不写进类型，就不会有人顺手用它渲染出来。
  */
+export type VendorConfigTemplate = {
+  id?: string;
+  providerId: AiProviderId;
+  label?: string;
+  enabled: boolean;
+  targetPath: string;
+  content: string;
+};
+
 export type ApiVendor = {
   id: string;
   providerId: AiProviderId;
@@ -340,8 +349,8 @@ export type ApiVendor = {
   balanceQuery?: Record<string, unknown>;
   /** 模型查询配置，同 `balanceQuery`。 */
   modelQuery?: Record<string, unknown>;
-  /** 写进 CLI 的配置模板。界面目前只读不改（见 A4）。 */
-  configs?: unknown[];
+  /** 写进 CLI 的配置模板。 */
+  configs?: VendorConfigTemplate[];
   createdAt?: string;
   updatedAt?: string;
   lastEnabledAt?: string;
@@ -509,13 +518,18 @@ export type GatewayLogEntry = {
   providerId: AiProviderId;
   outcome: string;
   upstreamStatus?: number;
-  /**
-   * 错误代码。
-   *
-   * 后端**特意**加了这一段（见 `log_entry_value` 的注释）：「路由不存在 / 鉴权失败」
-   * 记的是 `outcome: ok`（那不是供应商的错），于是它与一次真正转发成功的记录
-   * 只差这一个字段。少了它，查「CLI 为什么失败」的人在日志里只能看到一串 `ok`。
-   */
+  retryCount?: number;
+  switched?: boolean;
+  durationMs?: number;
+  errorMessage?: string;
+  attempts?: {
+    number: number;
+    vendorId: string;
+    vendorName: string;
+    upstreamStatus?: number;
+    durationMs: number;
+    errorMessage?: string;
+  }[];
   errorCode?: string;
 };
 

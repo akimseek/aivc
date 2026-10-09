@@ -88,7 +88,8 @@ pub struct App {
     /// （那时窗口还不存在），由 `tauri_app::run` 换成真实发射器。
     emitter: Arc<std::sync::RwLock<Arc<dyn aivc_ipc::terminal::EventEmitter>>>,
     gateway_state: Arc<GatewayState>,
-    gateway: Option<GatewayHandle>,
+    gateway: tokio::sync::Mutex<Option<(u16, GatewayHandle)>>,
+    gateway_config: tokio::sync::Mutex<()>,
     paths: AppPaths,
 }
 
@@ -98,7 +99,11 @@ impl std::fmt::Debug for App {
             .field("paths", &self.paths.root())
             .field(
                 "gateway",
-                &self.gateway.as_ref().map(|item| item.address.as_str()),
+                &self
+                    .gateway
+                    .try_lock()
+                    .ok()
+                    .and_then(|slot| slot.as_ref().map(|(_, item)| item.address.clone())),
             )
             .finish_non_exhaustive()
     }
@@ -321,7 +326,8 @@ impl App {
         Ok(Self {
             router,
             gateway_state,
-            gateway: None,
+            gateway: tokio::sync::Mutex::new(None),
+            gateway_config: tokio::sync::Mutex::new(()),
             paths,
             emitter: emitter_slot,
         })
@@ -447,8 +453,12 @@ impl App {
 
     /// 已启动的网关地址；未启动时为 [`None`]。
     #[must_use]
-    pub fn gateway_address(&self) -> Option<&str> {
-        self.gateway.as_ref().map(|handle| handle.address.as_str())
+    pub async fn gateway_address(&self) -> Option<String> {
+        self.gateway
+            .lock()
+            .await
+            .as_ref()
+            .map(|(_, handle)| handle.address.clone())
     }
 
     /// 装入真实事件发射器。
@@ -476,20 +486,39 @@ impl App {
     /// # Errors
     ///
     /// 找不到可用端口时返回错误。
-    pub async fn start_gateway_if_enabled(&mut self) -> anyhow::Result<Option<String>> {
+    pub async fn start_gateway_if_enabled(&self) -> anyhow::Result<Option<String>> {
+        let _guard = self.gateway_config.lock().await;
+        self.apply_gateway_runtime().await
+    }
+
+    async fn apply_gateway_runtime(&self) -> anyhow::Result<Option<String>> {
         let settings: GatewaySettings = self.gateway_state.settings();
+        let mut gateway = self.gateway.lock().await;
         if !settings.enabled {
+            if let Some((_, handle)) = gateway.take() {
+                self.gateway_state.set_address(String::new()).await;
+                handle.shutdown().await;
+            }
             return Ok(None);
+        }
+        if let Some((port, handle)) = gateway.as_ref()
+            && *port == settings.port
+        {
+            return Ok(Some(handle.address.clone()));
         }
         // **先把熔断状态读回来再开始服务。**
         //
         // 放在 `serve` 之前：之后的每次请求都要靠它判断哪些供应商已被熔断。
-        self.gateway_state.hydrate_health().await;
+        if gateway.is_none() {
+            self.gateway_state.hydrate_health().await;
+        }
         let handle = aivc_gateway::serve(Arc::clone(&self.gateway_state))
             .await
             .context("启动本地网关失败")?;
         let address = handle.address.clone();
-        self.gateway = Some(handle);
+        if let Some((_, previous)) = gateway.replace((settings.port, handle)) {
+            previous.shutdown().await;
+        }
         Ok(Some(address))
     }
 
@@ -503,12 +532,70 @@ impl App {
         command: &str,
         args: serde_json::Value,
     ) -> Result<serde_json::Value> {
-        self.router.dispatch(command, args).await
+        let changes_gateway_settings = matches!(
+            command,
+            "gateway:set-port"
+                | "gateway:set-enabled"
+                | "gateway:set-failure-threshold"
+                | "gateway:set-circuit-failure-threshold"
+                | "gateway:set-circuit-duration-seconds"
+                | "gateway:set-external-api-enabled"
+                | "gateway:rotate-external-api-token"
+        );
+        if !changes_gateway_settings {
+            return self.router.dispatch(command, args).await;
+        }
+        // 串行保存和应用，避免两次点击让文件配置与实际监听状态交错。
+        let _guard = self.gateway_config.lock().await;
+        let previous = self.router.context().settings().snapshot().await;
+        let value = self.router.dispatch(command, args).await?;
+        self.gateway_state.refresh_settings().await;
+        if let Err(error) = self.apply_gateway_runtime().await {
+            self.router
+                .context()
+                .settings()
+                .update(|raw| {
+                    raw.set_gateway_enabled(previous.gateway_enabled);
+                    raw.set_gateway_port(previous.gateway_port);
+                    raw.set_gateway_failure_threshold(previous.gateway_failure_threshold);
+                    raw.set_gateway_circuit_failure_threshold(
+                        previous.gateway_circuit_failure_threshold,
+                    );
+                    raw.set_gateway_circuit_duration_seconds(
+                        previous.gateway_circuit_duration_seconds,
+                    );
+                    raw.set_gateway_external_api_enabled(previous.gateway_external_api_enabled);
+                    raw.set_gateway_external_api_token_hash(
+                        &previous.gateway_external_api_token_hash,
+                    );
+                })
+                .await?;
+            self.gateway_state.refresh_settings().await;
+            return Err(aivc_core::error::IpcError::CommandFailed {
+                message: error.to_string(),
+            }
+            .into());
+        }
+        if matches!(
+            command,
+            "gateway:set-port"
+                | "gateway:set-enabled"
+                | "gateway:set-failure-threshold"
+                | "gateway:set-circuit-failure-threshold"
+                | "gateway:set-circuit-duration-seconds"
+        ) {
+            return self
+                .router
+                .dispatch("gateway:get-port", serde_json::json!({}))
+                .await;
+        }
+        Ok(value)
     }
 
     /// 有序收尾。
-    pub async fn shutdown(mut self) {
-        if let Some(handle) = self.gateway.take() {
+    pub async fn shutdown(self) {
+        if let Some((_, handle)) = self.gateway.lock().await.take() {
+            self.gateway_state.set_address(String::new()).await;
             handle.shutdown().await;
         }
     }
@@ -569,7 +656,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn the_gateway_is_not_started_when_disabled_in_settings() {
-        let (mut app, _dir) = app().await;
+        let (app, _dir) = app().await;
         app.router
             .context()
             .settings()
@@ -580,12 +667,12 @@ mod tests {
 
         let started = app.start_gateway_if_enabled().await.expect("start");
         assert!(started.is_none(), "设置关闭时不该启动网关");
-        assert!(app.gateway_address().is_none());
+        assert!(app.gateway_address().await.is_none());
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn the_gateway_starts_when_enabled_and_reports_its_address() {
-        let (mut app, _dir) = app().await;
+        let (app, _dir) = app().await;
         // 端口 0 让操作系统分配，测试之间不会互相冲突。
         app.router
             .context()
@@ -604,7 +691,7 @@ mod tests {
             .expect("start")
             .expect("已启动");
         assert!(address.starts_with("http://127.0.0.1:"), "{address}");
-        assert_eq!(app.gateway_address(), Some(address.as_str()));
+        assert_eq!(app.gateway_address().await, Some(address));
         app.shutdown().await;
     }
 
@@ -616,6 +703,125 @@ mod tests {
             .await
             .expect_err("必须失败");
         assert_eq!(error.to_string(), "未知命令：nope:nope");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn gateway_settings_and_token_rotation_apply_without_restarting() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let (app, _dir) = app().await;
+        app.dispatch("gateway:set-enabled", json!({"enabled": false}))
+            .await
+            .expect("disable");
+        let disabled = app
+            .dispatch("gateway:get-port", json!({}))
+            .await
+            .expect("status");
+        assert_eq!(disabled["activePort"], 0);
+        app.dispatch("gateway:set-port", json!({"port": 0}))
+            .await
+            .expect("port");
+        let enabled = app
+            .dispatch("gateway:set-enabled", json!({"enabled": true}))
+            .await
+            .expect("enable");
+        assert!(enabled["activePort"].as_u64().expect("port") > 0);
+        let first_address = enabled["baseUrl"].as_str().expect("url").to_owned();
+        let upstream = MockServer::start().await;
+        Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+            .mount(&upstream)
+            .await;
+        app.dispatch("vendor:save", json!({"providerId":"codex", "name":"local mock", "apiBaseUrl": upstream.uri(), "apiKey":"mock-key", "enabled":true})).await.expect("vendor");
+        let token = app
+            .dispatch("gateway:rotate-external-api-token", json!({}))
+            .await
+            .expect("token")["token"]
+            .as_str()
+            .expect("token")
+            .to_owned();
+        app.dispatch("gateway:set-external-api-enabled", json!({"enabled":true}))
+            .await
+            .expect("external");
+        let client = reqwest::Client::new();
+        let send = |address: String, token: String| {
+            client
+                .post(format!("{address}/codex/v1/responses"))
+                .bearer_auth(token)
+                .body("{}")
+                .send()
+        };
+        assert_eq!(
+            send(first_address.clone(), token.clone())
+                .await
+                .expect("send")
+                .status(),
+            200
+        );
+        let next_token = app
+            .dispatch("gateway:rotate-external-api-token", json!({}))
+            .await
+            .expect("rotate")["token"]
+            .as_str()
+            .expect("token")
+            .to_owned();
+        assert_eq!(
+            send(first_address.clone(), token)
+                .await
+                .expect("send")
+                .status(),
+            401
+        );
+        assert_eq!(
+            send(first_address.clone(), next_token.clone())
+                .await
+                .expect("send")
+                .status(),
+            200
+        );
+        app.dispatch("gateway:set-external-api-enabled", json!({"enabled":false}))
+            .await
+            .expect("external disable");
+        assert_eq!(
+            send(first_address.clone(), next_token)
+                .await
+                .expect("send")
+                .status(),
+            503
+        );
+        app.dispatch("gateway:set-failure-threshold", json!({"value":7}))
+            .await
+            .expect("threshold");
+        assert_eq!(app.gateway_state().settings().failure_threshold, 7);
+        assert_eq!(
+            app.gateway_address().await.as_deref(),
+            Some(first_address.as_str())
+        );
+
+        // 修改端口立即换监听，并在返回值中给出真正的新地址。
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("port");
+        let port = listener.local_addr().expect("address").port();
+        drop(listener);
+        let rebound = app
+            .dispatch("gateway:set-port", json!({"port":port}))
+            .await
+            .expect("rebind");
+        assert_eq!(rebound["activePort"], port);
+        assert_ne!(rebound["baseUrl"], first_address);
+        assert!(
+            client
+                .post(format!("{first_address}/codex/v1/responses"))
+                .send()
+                .await
+                .is_err()
+        );
+        app.dispatch("gateway:set-enabled", json!({"enabled":false}))
+            .await
+            .expect("stop");
+        assert!(app.gateway_address().await.is_none());
+        assert!(app.gateway_state().address().await.is_empty());
+        app.shutdown().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]

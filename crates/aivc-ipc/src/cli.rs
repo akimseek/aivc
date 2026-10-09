@@ -29,7 +29,7 @@ use aivc_tooling::cli_env::install::{
     InstallRequest, InstallScope, InstallStep, installer_for, plan_install, run_install,
 };
 use aivc_tooling::cli_env::probe::{
-    CommandRunner, EnvironmentSnapshot, ProbeScope, SystemRunner, probe_environment,
+    CommandRun, CommandRunner, EnvironmentSnapshot, ProbeScope, SystemRunner, probe_environment,
     status_from_snapshot,
 };
 use serde_json::{Value, json};
@@ -37,6 +37,32 @@ use serde_json::{Value, json};
 /// 把领域层的字符串错误包成命令面的错误。
 fn failed(message: String) -> Error {
     Error::Ipc(IpcError::CommandFailed { message })
+}
+
+/// 将探测命令实际送入所选发行版，脚本编码后透传以保留引号。
+struct TargetRunner {
+    inner: Arc<dyn CommandRunner>,
+    distro: Option<String>,
+}
+
+impl CommandRunner for TargetRunner {
+    fn run(&self, program: &str, args: &[&str], timeout_ms: u64) -> CommandRun {
+        let Some(distro) = self.distro.as_deref() else {
+            return self.inner.run(program, args, timeout_ms);
+        };
+        if program == "bash" && args.len() == 2 && matches!(args[0], "-ic" | "-lc") {
+            let script = aivc_infra::wsl::script_transfer::wrap_script_preserving_stdin(args[1]);
+            self.inner.run(
+                "wsl.exe",
+                &["-d", distro, "--", "bash", args[0], &script],
+                timeout_ms,
+            )
+        } else {
+            let mut scoped_args = vec!["-d", distro, "--", program];
+            scoped_args.extend_from_slice(args);
+            self.inner.run("wsl.exe", &scoped_args, timeout_ms)
+        }
+    }
 }
 
 /// 主机平台名（与现网 `process.platform` 的取值一致）。
@@ -140,14 +166,16 @@ impl CliCommands {
             return Ok(cached);
         }
 
-        let (probe_scope, _, _) = scope_for_target(&cache_key);
-        let runner = Arc::clone(&self.runner);
+        let (probe_scope, _, distro) = scope_for_target(&cache_key);
+        let runner = TargetRunner {
+            inner: Arc::clone(&self.runner),
+            distro,
+        };
         // 阻塞调用必须离开 async 运行时：单次探测最多 6 条命令 × 10 秒。
-        let snapshot = tokio::task::spawn_blocking(move || {
-            probe_environment(runner.as_ref(), probe_scope, provider)
-        })
-        .await
-        .map_err(|error| failed(format!("环境探测任务失败：{error}")))?;
+        let snapshot =
+            tokio::task::spawn_blocking(move || probe_environment(&runner, probe_scope, provider))
+                .await
+                .map_err(|error| failed(format!("环境探测任务失败：{error}")))?;
 
         self.snapshots
             .lock()
@@ -253,7 +281,6 @@ fn status_to_json(status: &aivc_tooling::cli_env::probe::CliEnvironmentStatus) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aivc_tooling::cli_env::probe::CommandRun;
     use std::collections::BTreeMap;
 
     /// 按命令名返回固定输出。
@@ -413,7 +440,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_wsl_target_reports_linux_and_the_install_goes_through_wsl() {
-        let runner = Fake::new().with("bash -lc node --version", "v22.0.0\n");
+        let runner = Fake::new().with(
+            "wsl.exe -d Ubuntu -- bash -ic source <(printf %s 'bm9kZSAtLXZlcnNpb24=' | base64 -d)",
+            "v22.0.0\n",
+        );
         let value = commands(runner)
             .check_environment("codex", "wsl:Ubuntu")
             .await
@@ -422,6 +452,26 @@ mod tests {
         // 目标在 WSL 里，平台就必须报 linux。
         assert_eq!(value["platform"], "linux");
         assert_eq!(value["hasNode"], true);
+    }
+
+    #[tokio::test]
+    async fn claude_environment_is_probed_in_the_selected_distro() {
+        let runner = Fake::new().with(
+            "wsl.exe -d Ubuntu-24.04 -- bash -ic source <(printf %s 'Y2xhdWRlIC0tdmVyc2lvbg==' | base64 -d)",
+            "2.1.283 (Claude Code)\n",
+        );
+        let commands = commands(runner);
+        let installed = commands
+            .check_environment("claude", "claude:wsl:Ubuntu-24.04")
+            .await
+            .expect("检测已安装发行版");
+        assert_eq!(installed["hasCli"], true);
+        assert_eq!(installed["cliVersion"], "2.1.283 (Claude Code)");
+        let other = commands
+            .check_environment("claude", "claude:wsl:Ubuntu-22.04")
+            .await
+            .expect("检测另一个发行版");
+        assert_eq!(other["hasCli"], false, "不能使用宿主机或其他发行版的结果");
     }
 
     #[tokio::test]

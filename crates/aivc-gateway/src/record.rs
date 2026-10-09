@@ -18,7 +18,7 @@
 
 use aivc_core::gateway::REQUEST_PATH_MAX_LENGTH;
 use aivc_core::gateway::{
-    GatewayOutcome, GatewayRequestRecord, GatewayUsage, sanitize_error_message,
+    GatewayAttempt, GatewayOutcome, GatewayRequestRecord, GatewayUsage, sanitize_error_message,
 };
 use aivc_core::id::{RequestId, VendorId};
 use aivc_core::target::ProviderId;
@@ -44,6 +44,9 @@ pub struct RequestTracker {
     error_code: Option<String>,
     error_message: Option<String>,
     usage: Option<GatewayUsage>,
+    attempts: Vec<GatewayAttempt>,
+    active_attempt: Option<(aivc_core::vendor::ApiVendor, i64)>,
+    last_attempt_started_at: Option<i64>,
 }
 
 impl RequestTracker {
@@ -80,6 +83,9 @@ impl RequestTracker {
             error_code: None,
             error_message: None,
             usage: None,
+            attempts: Vec::new(),
+            active_attempt: None,
+            last_attempt_started_at: None,
         }
     }
 
@@ -155,18 +161,8 @@ impl RequestTracker {
 
     /// 标记为「成功完成，但带一个原因码」。
     ///
-    /// # 为什么需要它
-    ///
-    /// 「路由不存在」「鉴权失败」这些路径**没有转发任何请求**，但把它们记成 `ok` 是
-    /// **有意的**：那不是供应商的错，记成失败会污染按供应商统计的失败率与熔断判定。
-    ///
-    /// 代价是记录里**看不出差别**——`outcome: ok`、供应商为空、上游状态为空，
-    /// 与一次真正转发成功的记录几乎一样。于是有人查「我的 CLI 为什么失败」时，
-    /// 在 `gateway:query-logs` 里看到的是一串 `ok`，而它们其实是 404。
-    ///
-    /// 因此这里在**保持 `outcome = ok` 不变**的前提下补一个原因码。这样做是安全的：
-    /// 失败列表与诊断只查 `outcome IN ('error','timeout')`（见仓储层的说明），
-    /// 用量统计也只看 `outcome`，因此这些记录不会被混进失败里。
+    /// 只用于成功请求的附加原因。路由不存在、鉴权失败等拒绝请求必须使用
+    /// `set_error`；请求结果与供应商健康分别统计，不能为避免更新健康而标记成功。
     pub fn mark_ok_with(&mut self, code: &str) {
         self.mark_ok();
         // 有意在 `mark_ok` **之后**设：它就是「成功但有一个原因」的表达。
@@ -189,12 +185,92 @@ impl RequestTracker {
     ///
     /// 摘要会清洗换行（否则可以在日志里伪造新行）并截断。
     pub fn set_error(&mut self, code: Option<&str>, message: Option<&str>) {
+        if self.outcome != GatewayOutcome::Timeout {
+            self.outcome = GatewayOutcome::Error;
+        }
         if let Some(code) = code.map(str::trim).filter(|value| !value.is_empty()) {
             self.error_code = Some(code.to_owned());
         }
         if let Some(message) = message.map(str::trim).filter(|value| !value.is_empty()) {
             self.error_message = Some(sanitize_error_message(message));
         }
+    }
+
+    /// 开始新的上游尝试，避免最终网络失败残留前一次的 HTTP 状态。
+    pub fn begin_attempt(&mut self) {
+        self.upstream_status = None;
+        self.error_code = None;
+        self.error_message = None;
+        self.outcome = GatewayOutcome::Error;
+    }
+
+    /// 包括在网络等待中被取消的尝试。
+    pub fn attempts(&self) -> Vec<GatewayAttempt> {
+        let mut attempts = self.attempts.clone();
+        if let Some((vendor, started)) = &self.active_attempt {
+            attempts.push(GatewayAttempt {
+                number: u32::try_from(attempts.len() + 1).unwrap_or(u32::MAX),
+                vendor_id: vendor.id.clone(),
+                vendor_name: vendor.name.clone(),
+                upstream_status: self.upstream_status,
+                duration_ms: u64::try_from(
+                    Timestamp::now()
+                        .to_unix_millis()
+                        .unwrap_or(0)
+                        .saturating_sub(*started)
+                        .max(0),
+                )
+                .unwrap_or(0),
+                error_message: self.error_message.clone(),
+            });
+        }
+        attempts
+    }
+
+    /// 发起上游请求前登记；取消时仍可追踪到供应商。
+    pub fn start_upstream_attempt(&mut self, vendor: &aivc_core::vendor::ApiVendor, started: i64) {
+        self.active_attempt = Some((vendor.clone(), started));
+        self.last_attempt_started_at = Some(started);
+    }
+
+    /// 尚在等待上游返回的供应商。
+    pub fn active_vendor(&self) -> Option<aivc_core::vendor::ApiVendor> {
+        self.active_attempt
+            .as_ref()
+            .map(|(vendor, _)| vendor.clone())
+    }
+
+    /// 结束最终尝试，补齐响应尾部失败和完整传输耗时。
+    pub fn complete_attempt(&mut self, now: i64) {
+        if self.active_attempt.is_none()
+            && let Some(attempt) = self.attempts.last_mut()
+        {
+            attempt.error_message.clone_from(&self.error_message);
+            if let Some(started) = self.last_attempt_started_at {
+                attempt.duration_ms =
+                    u64::try_from(now.saturating_sub(started).max(0)).unwrap_or(0);
+            }
+        }
+    }
+
+    /// 保存一次已返回的上游尝试。
+    pub fn record_attempt(
+        &mut self,
+        vendor: &aivc_core::vendor::ApiVendor,
+        started_at: i64,
+        now: i64,
+        status: Option<u16>,
+        error: Option<&str>,
+    ) {
+        self.active_attempt = None;
+        self.attempts.push(GatewayAttempt {
+            number: u32::try_from(self.attempts.len() + 1).unwrap_or(u32::MAX),
+            vendor_id: vendor.id.clone(),
+            vendor_name: vendor.name.clone(),
+            upstream_status: status,
+            duration_ms: u64::try_from(now.saturating_sub(started_at).max(0)).unwrap_or(0),
+            error_message: error.map(sanitize_error_message),
+        });
     }
 
     /// 收尾并产出记录。

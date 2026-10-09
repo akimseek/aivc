@@ -10,7 +10,10 @@ import type { WorkspacePreset } from "../../../types";
  *
  * 去重键是 `cwd` + 目标类型——同一个目录配两次没有意义，后端会替换旧的那条。
  */
-export function PresetsPanel({ onError }: { onError: (message: string) => void }) {
+export function PresetsPanel({ onError, onNotify }: {
+  onError: (message: string) => void;
+  onNotify?: (message: string) => void;
+}) {
   const [presets, setPresets] = useState<WorkspacePreset[]>([]);
   const [name, setName] = useState("");
   const [cwd, setCwd] = useState("");
@@ -31,6 +34,7 @@ export function PresetsPanel({ onError }: { onError: (message: string) => void }
     if (!cwd.trim()) return;
     try {
       await api.savePreset({ name: name.trim(), cwd: cwd.trim() });
+      onNotify?.(`工作区预设已保存：${name.trim() || cwd.trim()}。`);
       setName("");
       setCwd("");
       await load();
@@ -89,7 +93,10 @@ export function PresetsPanel({ onError }: { onError: (message: string) => void }
                   onClick={() =>
                     void api
                       .deletePreset(preset.id)
-                      .then(load)
+                      .then(async () => {
+                        onNotify?.(`工作区预设已删除：${preset.name}。`);
+                        await load();
+                      })
                       .catch((error: unknown) =>
                         onError(errorText(error))
                       )

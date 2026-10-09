@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, HttpBody};
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, Response, StatusCode, header};
 use axum::response::IntoResponse;
@@ -29,7 +29,7 @@ use futures::StreamExt;
 use tokio::sync::{Mutex, RwLock};
 
 use aivc_core::error::Result;
-use aivc_core::gateway::{FailoverRule, GatewayRequestRecord};
+use aivc_core::gateway::{FailoverRule, GatewayAttempt, GatewayRequestRecord};
 use aivc_core::id::VendorId;
 use aivc_core::ports::BoxFuture;
 use aivc_core::target::ProviderId;
@@ -76,6 +76,8 @@ pub struct GatewaySettings {
     pub external_token_hash: Option<String>,
     /// 上游超时。
     pub upstream_timeout: Duration,
+    /// 整次请求的总预算，所有上游尝试和响应流共用。
+    pub request_timeout: Duration,
 }
 
 impl Default for GatewaySettings {
@@ -88,6 +90,7 @@ impl Default for GatewaySettings {
             external_enabled: false,
             external_token_hash: None,
             upstream_timeout: Duration::from_millis(crate::proxy::upstream_timeout_ms()),
+            request_timeout: Duration::from_millis(crate::proxy::upstream_timeout_ms()),
         }
     }
 }
@@ -113,6 +116,15 @@ pub trait GatewaySource: Send + Sync {
     fn record(&self, record: GatewayRequestRecord) -> BoxFuture<'_, ()> {
         let _ = record;
         Box::pin(async {})
+    }
+
+    /// 保存汇总及尝试明细；默认实现兼容仅关心汇总的来源。
+    fn record_with_attempts(
+        &self,
+        record: GatewayRequestRecord,
+        _attempts: Vec<GatewayAttempt>,
+    ) -> BoxFuture<'_, ()> {
+        self.record(record)
     }
 
     /// 重新读取设置快照。
@@ -219,6 +231,8 @@ impl GatewayState {
         let settings = source.settings();
         let client = reqwest::Client::builder()
             .timeout(settings.upstream_timeout)
+            .connect_timeout(settings.upstream_timeout.min(Duration::from_secs(10)))
+            .read_timeout(settings.upstream_timeout.min(Duration::from_secs(60)))
             .redirect(reqwest::redirect::Policy::custom(|attempt| {
                 if is_loopback_host(attempt.url()) || attempt.previous().len() >= MAX_REDIRECTS {
                     // 见 `is_loopback_host` 与常量文档。
@@ -295,10 +309,16 @@ impl GatewayState {
     /// 成功是高频事件，每次落库会把健康表变成写放大。失败不节流：失败很少，
     /// 而且「刚熔断」这件事最需要跨重启记住。
     pub async fn record_vendor_success(&self, vendor: &ApiVendor) {
-        let health = {
+        let (health, recovered) = {
             let mut tracker = self.health.lock().await;
+            let recovered = tracker.get(&vendor.id).is_some_and(|state| {
+                state.health.status != aivc_core::gateway::GatewayVendorHealthStatus::Healthy
+            });
             tracker.record_success(vendor, now_ms());
-            tracker.get(&vendor.id).map(|state| state.health.clone())
+            (
+                tracker.get(&vendor.id).map(|state| state.health.clone()),
+                recovered,
+            )
         };
         let Some(health) = health else {
             return;
@@ -310,7 +330,7 @@ impl GatewayState {
                 now.saturating_sub(*last)
                     < aivc_core::constants::GATEWAY_HEALTH_SUCCESS_PERSIST_INTERVAL_MS
             });
-            if too_soon {
+            if too_soon && !recovered {
                 return;
             }
             persisted.insert(vendor.id.clone(), now);
@@ -479,6 +499,13 @@ impl GatewayState {
     /// 这一步让「重置健康」对**活的**状态生效。
     pub async fn reset_health(&self, vendor_id: Option<&VendorId>) {
         self.health.lock().await.reset(vendor_id);
+        let mut persisted = self.health_persisted_at.lock().await;
+        match vendor_id {
+            Some(id) => {
+                persisted.remove(id);
+            }
+            None => persisted.clear(),
+        }
     }
 
     /// 当前设置快照。
@@ -509,7 +536,7 @@ async fn handle(State(state): State<Arc<GatewayState>>, request: Request<Body>) 
     let method = request.method().to_string();
     let path = request.uri().path().to_owned();
     let started_at = now_ms();
-    let mut tracker = RequestTracker::start(
+    let tracker = RequestTracker::start(
         "",
         ProviderId::Codex,
         &VendorId::from(""),
@@ -518,10 +545,252 @@ async fn handle(State(state): State<Arc<GatewayState>>, request: Request<Body>) 
         started_at,
     );
 
-    let response = handle_inner(&state, &mut tracker, request).await;
-    // 记录失败不该影响已经写出的响应，因此这里不传播错误。
-    state.source.record(tracker.finish(now_ms())).await;
-    response
+    // 所有供应商尝试和响应转发共享 10 分钟预算，不能随候选数量倍增。
+    let mut deadline = tokio::time::Instant::now() + state.settings().request_timeout;
+    let mut completion = RequestCompletion::new(Arc::clone(&state), tracker);
+    let mut response = if let Ok(response) = tokio::time::timeout_at(
+        deadline,
+        handle_inner(&state, &mut completion.tracker, request),
+    )
+    .await
+    {
+        response
+    } else {
+        let tracker = &mut completion.tracker;
+        tracker.mark_timeout();
+        tracker.set_error(Some("UPSTREAM_TIMEOUT"), Some(messages::UPSTREAM_TIMEOUT));
+        deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        json_error(StatusCode::GATEWAY_TIMEOUT, messages::UPSTREAM_TIMEOUT)
+    };
+    completion.upstream = response.extensions_mut().remove::<CompletedUpstream>();
+    let (parts, body) = response.into_parts();
+    if method == "HEAD" || body.is_end_stream() {
+        completion.finish();
+        return Response::from_parts(parts, body);
+    }
+    let stream = futures::stream::unfold(
+        (body.into_data_stream(), completion),
+        move |(mut body, mut completion)| async move {
+            if completion.finished {
+                return None;
+            }
+            match tokio::time::timeout_at(deadline, body.next()).await {
+                Ok(Some(Ok(bytes))) => {
+                    completion.observe(&bytes);
+                    Some((Ok::<_, std::io::Error>(bytes), (body, completion)))
+                }
+                Ok(Some(Err(error))) => {
+                    completion.fail("UPSTREAM_STREAM_ERROR", &error.to_string(), false);
+                    completion.finish();
+                    Some((
+                        Err(std::io::Error::other(error.to_string())),
+                        (body, completion),
+                    ))
+                }
+                Ok(None) => {
+                    completion.finish();
+                    None
+                }
+                Err(_) => {
+                    completion.fail("UPSTREAM_TIMEOUT", messages::UPSTREAM_TIMEOUT, true);
+                    completion.finish();
+                    Some((
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            messages::UPSTREAM_TIMEOUT,
+                        )),
+                        (body, completion),
+                    ))
+                }
+            }
+        },
+    );
+    Response::from_parts(parts, Body::from_stream(stream))
+}
+
+#[derive(Clone)]
+struct CompletedUpstream {
+    vendor: ApiVendor,
+    circuit: CircuitConfig,
+}
+
+/// 日志在响应结束时落地；被取消的处理任务或响应体也通过 Drop 留下记录。
+struct RequestCompletion {
+    state: Arc<GatewayState>,
+    tracker: RequestTracker,
+    finished: bool,
+    upstream: Option<CompletedUpstream>,
+    prefix: Vec<u8>,
+    pending: Vec<u8>,
+    usage: aivc_core::gateway::GatewayUsage,
+    explicit_total: bool,
+    stream_error: Option<String>,
+}
+
+impl RequestCompletion {
+    fn new(state: Arc<GatewayState>, tracker: RequestTracker) -> Self {
+        Self {
+            state,
+            tracker,
+            finished: false,
+            upstream: None,
+            prefix: Vec::new(),
+            pending: Vec::new(),
+            usage: aivc_core::gateway::GatewayUsage::default(),
+            explicit_total: false,
+            stream_error: None,
+        }
+    }
+
+    fn fail(&mut self, code: &str, message: &str, timeout: bool) {
+        if !self.finished {
+            let tracker = &mut self.tracker;
+            if timeout {
+                tracker.mark_timeout();
+            }
+            tracker.set_error(Some(code), Some(message));
+            self.stream_error = Some(aivc_core::gateway::sanitize_error_message(message));
+        }
+    }
+
+    fn observe_payload(&mut self, payload: &[u8]) {
+        let text = String::from_utf8_lossy(payload);
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(
+            text.trim().strip_prefix("data:").unwrap_or(&text).trim(),
+        ) {
+            self.observe_usage(&json);
+        }
+        if self.upstream.is_some()
+            && let Some(message) = extract_gateway_response_error(&text)
+        {
+            self.fail("UPSTREAM_RESPONSE_ERROR", &message, false);
+        }
+    }
+
+    fn observe_usage(&mut self, json: &serde_json::Value) {
+        if let Some(usage) = aivc_core::gateway_usage::parse_gateway_usage(json) {
+            self.explicit_total |= [
+                "/usage/total_tokens",
+                "/usage/totalTokenCount",
+                "/response/usage/total_tokens",
+                "/message/usage/total_tokens",
+                "/usageMetadata/totalTokenCount",
+                "/total_tokens",
+                "/totalTokenCount",
+            ]
+            .iter()
+            .any(|pointer| {
+                json.pointer(pointer)
+                    .is_some_and(serde_json::Value::is_number)
+            });
+            self.usage.merge(&usage);
+        }
+    }
+
+    fn observe(&mut self, bytes: &[u8]) {
+        self.tracker.add_bytes_out(bytes.len() as u64);
+        let limit = aivc_core::constants::GATEWAY_REQUEST_LIMITS.response_capture_bytes;
+        self.prefix
+            .extend_from_slice(&bytes[..bytes.len().min(limit.saturating_sub(self.prefix.len()))]);
+        // 按完整行解析 SSE，处理跨网络分块的 JSON，用量位于长流尾部时也能捕获。
+        for segment in bytes.split_inclusive(|byte| *byte == b'\n') {
+            self.pending.extend_from_slice(
+                &segment[..segment.len().min(limit.saturating_sub(self.pending.len()))],
+            );
+            if segment.last() == Some(&b'\n') {
+                let payload = std::mem::take(&mut self.pending);
+                self.observe_payload(&payload);
+            }
+        }
+    }
+
+    fn finish(&mut self) {
+        if self.finished {
+            return;
+        }
+        let pending = std::mem::take(&mut self.pending);
+        self.observe_payload(&pending);
+        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&self.prefix) {
+            self.observe_usage(&json);
+        }
+        if !self.explicit_total
+            && (self.usage.input_tokens.is_some() || self.usage.output_tokens.is_some())
+        {
+            self.usage.total_tokens = Some(
+                self.usage
+                    .input_tokens
+                    .unwrap_or(0)
+                    .saturating_add(self.usage.output_tokens.unwrap_or(0)),
+            );
+        }
+        if let Some(pricing) = self
+            .upstream
+            .as_ref()
+            .and_then(|upstream| upstream.vendor.pricing)
+        {
+            let input = self
+                .usage
+                .input_tokens
+                .zip(pricing.input_per_million_usd)
+                .map(|(tokens, rate)| tokens as f64 * rate / 1_000_000.0);
+            let output = self
+                .usage
+                .output_tokens
+                .zip(pricing.output_per_million_usd)
+                .map(|(tokens, rate)| tokens as f64 * rate / 1_000_000.0);
+            if input.is_some() || output.is_some() {
+                self.usage.cost_usd = Some(input.unwrap_or(0.0) + output.unwrap_or(0.0));
+            }
+        }
+        self.finished = true;
+        let tracker = &mut self.tracker;
+        tracker.complete_attempt(now_ms());
+        if self.usage != aivc_core::gateway::GatewayUsage::default() {
+            tracker.set_usage(Some(self.usage.clone()));
+        }
+        let record = tracker.finish(now_ms());
+        let attempts = tracker.attempts();
+        let state = Arc::clone(&self.state);
+        let upstream = self.upstream.take().or_else(|| {
+            tracker.active_vendor().map(|vendor| CompletedUpstream {
+                vendor,
+                circuit: state.settings().circuit,
+            })
+        });
+        let stream_error = self.stream_error.take();
+        let final_error = record.error_message.clone();
+        tokio::spawn(async move {
+            if let Some(upstream) = upstream {
+                if let Some(message) = stream_error.or_else(|| {
+                    (record.outcome == aivc_core::gateway::GatewayOutcome::Timeout)
+                        .then_some(final_error)
+                        .flatten()
+                }) {
+                    state
+                        .record_vendor_failure(&upstream.vendor, &message, upstream.circuit)
+                        .await;
+                } else if record.outcome == aivc_core::gateway::GatewayOutcome::Ok {
+                    state.record_vendor_success(&upstream.vendor).await;
+                }
+            }
+            state.source.record_with_attempts(record, attempts).await;
+        });
+    }
+}
+
+impl Drop for RequestCompletion {
+    fn drop(&mut self) {
+        if !self.finished {
+            let tracker = &mut self.tracker;
+            tracker.set_error(
+                Some("CLIENT_ABORTED"),
+                Some("client disconnected before response completion"),
+            );
+            // set_error 保持错误结果；客户端主动断开由独立结果表示。
+            tracker.mark_client_aborted();
+            self.finish();
+        }
+    }
 }
 
 /// 转发一次请求。
@@ -541,6 +810,10 @@ async fn handle_inner(
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0);
     let raw_body = request.into_body();
+    if !settings.enabled {
+        tracker.set_error(Some("GATEWAY_DISABLED"), Some("gateway is disabled"));
+        return json_error(StatusCode::SERVICE_UNAVAILABLE, "gateway is disabled");
+    }
 
     // 路由解析 + 鉴权。
     //
@@ -555,26 +828,25 @@ async fn handle_inner(
             state.routes.write().await.ensure_external_route(provider);
         }
     }
-    let (route, external) = {
+    let route = {
         let routes = state.routes.read().await;
         let route_id = match external_provider {
             Some(provider) => external_route_id(provider),
             None => extract_route_id(&path),
         };
-        // 这几条路径**都没有转发**。保持 `outcome = ok` 是有意的（不是供应商的错，
-        // 记成失败会污染按供应商统计的失败率与熔断判定），但必须留下**原因**——
-        // 否则它在日志里与一次真正转发成功的记录长得一样。见 `mark_ok_with`。
+        // 网关请求结果与供应商健康分别记录；拒绝接入不更新任何供应商健康。
         let Some(route) = routes.get(&route_id).cloned() else {
-            tracker.mark_ok_with("ROUTE_NOT_FOUND");
+            tracker.set_error(Some("ROUTE_NOT_FOUND"), Some(messages::ROUTE_NOT_FOUND));
             return json_error(StatusCode::NOT_FOUND, messages::ROUTE_NOT_FOUND);
         };
+        tracker.set_route(&route.route_id, route.provider_id);
         // 平台必须与路径一致：终端路由看第 2 段，外部路由看第 1 段。
         let provider_matches = match external_provider {
             Some(provider) => route.provider_id == provider,
             None => extract_provider(&path) == Some(route.provider_id),
         };
         if !provider_matches {
-            tracker.mark_ok_with("ROUTE_NOT_FOUND");
+            tracker.set_error(Some("ROUTE_NOT_FOUND"), Some(messages::ROUTE_NOT_FOUND));
             return json_error(StatusCode::NOT_FOUND, messages::ROUTE_NOT_FOUND);
         }
         let auth = AuthRequest {
@@ -585,26 +857,28 @@ async fn handle_inner(
         };
         if route.external {
             if !settings.external_enabled {
-                tracker.mark_ok_with("EXTERNAL_API_DISABLED");
+                tracker.set_error(
+                    Some("EXTERNAL_API_DISABLED"),
+                    Some(messages::EXTERNAL_API_DISABLED),
+                );
                 return json_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     messages::EXTERNAL_API_DISABLED,
                 );
             }
             let Some(hash) = settings.external_token_hash.as_deref() else {
-                tracker.mark_ok_with("UNAUTHORIZED");
+                tracker.set_error(Some("UNAUTHORIZED"), Some(messages::UNAUTHORIZED));
                 return json_error(StatusCode::UNAUTHORIZED, messages::UNAUTHORIZED);
             };
             if !has_external_access_token(&auth, hash) {
-                tracker.mark_ok_with("UNAUTHORIZED");
+                tracker.set_error(Some("UNAUTHORIZED"), Some(messages::UNAUTHORIZED));
                 return json_error(StatusCode::UNAUTHORIZED, messages::UNAUTHORIZED);
             }
         } else if !has_route_token(&auth, &route.local_token) {
-            tracker.mark_ok_with("UNAUTHORIZED");
+            tracker.set_error(Some("UNAUTHORIZED"), Some(messages::UNAUTHORIZED));
             return json_error(StatusCode::UNAUTHORIZED, messages::UNAUTHORIZED);
         }
-        let external = route.external;
-        (route, external)
+        route
     };
 
     tracker.set_route(&route.route_id, route.provider_id);
@@ -680,12 +954,19 @@ async fn handle_inner(
             .await;
     }
 
-    // 请求体：小体积缓冲以便重试；超限的直接拒绝，因为无法安全重试。
+    // 接收上限与重试上限分开：2–32 MiB 正文完整转发一次，不重试。
     let body_bytes = match read_body(raw_body, declared_length).await {
         Ok(bytes) => bytes,
-        Err(response) => return *response,
+        Err(response) => {
+            tracker.set_error(
+                Some("INVALID_REQUEST_BODY"),
+                Some("request body is unreadable or exceeds 32 MiB"),
+            );
+            return *response;
+        }
     };
-    // 只在请求体已缓冲时能拿到模型名：流式请求体不缓冲（无法重试），非 JSON 也拿不到。
+    tracker.add_bytes_in(body_bytes.as_ref().map_or(0, |bytes| bytes.len() as u64));
+    // 包括 chunked 请求在内都按实际字节读取；非 JSON 正文没有模型字段。
     // 取成 `String` 而不是借用——解析出的 `Value` 是局部变量。
     let model = body_bytes
         .as_ref()
@@ -717,19 +998,23 @@ async fn handle_inner(
 
     let mut attempted: Vec<VendorId> = Vec::new();
     let mut failures_on_vendor = 0usize;
-    let upstream_search = if external {
-        crate::routes::external_upstream_search(query.as_deref())
-    } else {
-        query
-            .as_deref()
-            .map_or_else(String::new, |value| format!("?{value}"))
-    };
+    // key 是网关的访问令牌，两种路由都不能把它透传给供应商。
+    let upstream_search = crate::routes::external_upstream_search(query.as_deref());
+    let mut custom_failure_response = None;
 
     for attempt in 0..max_attempts {
+        let attempt_started_at = now_ms();
+        if attempt > 0 {
+            tracker.record_retry();
+        }
+        tracker.begin_attempt();
         let upstream_url =
             match join_upstream_url(&attempt_vendor.api_base_url, &suffix, &upstream_search) {
                 Ok(url) => url,
-                Err(error) => return json_error(StatusCode::BAD_GATEWAY, &error.to_string()),
+                Err(error) => {
+                    tracker.set_error(Some("INVALID_UPSTREAM_URL"), Some(&error.to_string()));
+                    return json_error(StatusCode::BAD_GATEWAY, &error.to_string());
+                }
             };
         // 自我代理防护：否则请求会在网关与「上游」之间无限循环。
         if is_self_upstream(&upstream_url, &state.address().await) {
@@ -740,22 +1025,35 @@ async fn handle_inner(
                     settings.circuit,
                 )
                 .await;
+            tracker.set_error(
+                Some("LOCAL_GATEWAY_UPSTREAM"),
+                Some(messages::LOCAL_GATEWAY_UPSTREAM),
+            );
             return json_error(StatusCode::BAD_GATEWAY, messages::LOCAL_GATEWAY_UPSTREAM);
         }
 
         let request_builder = state
             .client
             .request(method.clone(), &upstream_url)
+            .timeout(settings.upstream_timeout)
             .headers(headers_from(&headers, &attempt_vendor));
         let request_builder = match &body_bytes {
             Some(bytes) => request_builder.body(bytes.clone()),
             None => request_builder,
         };
 
+        tracker.start_upstream_attempt(&attempt_vendor, attempt_started_at);
         let outcome = request_builder.send().await;
         let response = match outcome {
             Ok(response) => response,
             Err(error) => {
+                tracker.record_attempt(
+                    &attempt_vendor,
+                    attempt_started_at,
+                    now_ms(),
+                    None,
+                    Some(&error.to_string()),
+                );
                 // 连接失败：没有响应可回放。
                 // 必须先算「还有没有候选」再取健康锁：`has_next` 内部也要取同一把锁，
                 // 而 `tokio::sync::Mutex` 不可重入，在持锁时调用会直接死锁。
@@ -792,7 +1090,6 @@ async fn handle_inner(
                         .await
                         {
                             tracker.switch_vendor(&next.id);
-                            tracker.record_retry();
                             // 界面必须知道这次请求换了供应商，否则它显示的还是原来那一家。
                             state.notify_failover(&route, &next.id);
                             attempt_vendor = next;
@@ -817,15 +1114,59 @@ async fn handle_inner(
 
         let status = response.status();
         let status_code = status.as_u16();
+        tracker.set_upstream_status(status_code);
         let probe = probe_response(response).await;
-        let error_message = probe.error_message.clone();
-        let retryable_response = matches_gateway_failover_error(
-            error_message.as_deref(),
-            route.provider_id,
-            &attempt_vendor.id,
-            status_code,
-            &rules,
+        let error_message = probe
+            .error_message
+            .clone()
+            .or_else(|| probe.read_error.as_ref().map(ToString::to_string));
+        let retryable_response = probe.read_error.is_some()
+            || matches_gateway_failover_error(
+                error_message.as_deref(),
+                route.provider_id,
+                &attempt_vendor.id,
+                status_code,
+                &rules,
+            );
+        let response_failed = !status.is_success() || error_message.is_some() || retryable_response;
+        if response_failed {
+            tracker.set_error(
+                Some("UPSTREAM_RESPONSE_ERROR"),
+                Some(
+                    error_message
+                        .as_deref()
+                        .unwrap_or(&format!("HTTP {status_code}")),
+                ),
+            );
+        }
+        tracker.record_attempt(
+            &attempt_vendor,
+            attempt_started_at,
+            now_ms(),
+            Some(status_code),
+            response_failed
+                .then(|| {
+                    error_message
+                        .clone()
+                        .unwrap_or_else(|| format!("HTTP {status_code}"))
+                })
+                .as_deref(),
         );
+        if retryable_response && custom_failure_response.is_none() {
+            custom_failure_response = rules
+                .iter()
+                .filter(|rule| {
+                    rule.enabled
+                        && rule.applies_to(route.provider_id, Some(&attempt_vendor.id))
+                        && rule.matches(Some(status_code), error_message.as_deref())
+                })
+                .find_map(|rule| {
+                    Some((
+                        rule.custom_response_status?,
+                        rule.custom_response_body.clone()?,
+                    ))
+                });
+        }
 
         if retryable_response {
             // 同连接失败路径：先算候选再取锁。
@@ -874,27 +1215,54 @@ async fn handle_inner(
                         //
                         // 由 `a_failover_is_visible_in_the_request_record` 钉住。
                         tracker.switch_vendor(&next.id);
-                        tracker.record_retry();
                         // 界面必须知道这次请求换了供应商，否则它显示的还是原来那一家。
                         state.notify_failover(&route, &next.id);
                         attempt_vendor = next;
                         continue;
                     }
-                    return replay(probe);
+                    return replay_failure(probe, custom_failure_response.as_ref());
                 }
                 // 回放最后一次上游响应：让客户端看到真实错误而不是 502。
                 // 没有其他候选（或已达上限）时回放最后一次上游响应，
                 // 让客户端看到真实错误而不是 502。
-                FailureAction::NoNext(_) | FailureAction::Stop => return replay(probe),
+                FailureAction::NoNext(_) | FailureAction::Stop => {
+                    return replay_failure(probe, custom_failure_response.as_ref());
+                }
             }
         }
 
-        state.record_vendor_success(&attempt_vendor).await;
+        if response_failed {
+            // 未命中规则的普通 4xx 可能是调用参数问题，不当成供应商健康故障。
+            if status.is_server_error()
+                || matches!(status_code, 401 | 403 | 408 | 429)
+                || status.is_success()
+            {
+                state
+                    .record_vendor_failure(
+                        &attempt_vendor,
+                        error_message
+                            .as_deref()
+                            .unwrap_or(&format!("HTTP {status_code}")),
+                        settings.circuit,
+                    )
+                    .await;
+            }
+            return replay_failure(probe, custom_failure_response.as_ref());
+        }
         tracker.mark_ok();
-        tracker.set_upstream_status(status_code);
-        return replay(probe);
+        let mut response = replay(probe);
+        // 正常上游到完整响应结束才算成功，避免 SSE 中途出错却清除熔断。
+        response.extensions_mut().insert(CompletedUpstream {
+            vendor: attempt_vendor,
+            circuit: settings.circuit,
+        });
+        return response;
     }
 
+    tracker.set_error(
+        Some("VENDOR_UNAVAILABLE"),
+        Some(messages::NO_AVAILABLE_VENDOR),
+    );
     json_error(StatusCode::BAD_GATEWAY, messages::NO_AVAILABLE_VENDOR)
 }
 
@@ -956,24 +1324,19 @@ async fn take_next(
 
 /// 读取请求体。
 ///
-/// - 未声明长度（GET/HEAD 或分块请求）：不缓冲，转发时不带 body。
-/// - 声明长度在可缓冲范围内：读入内存，使重试成为可能。
-/// - 声明长度超限：**明确拒绝**而不是悄悄丢弃——丢弃会让上游收到残缺请求并给出
-///   难以理解的错误；明确拒绝至少能让用户看到真实原因。
+/// 按实际字节读取，支持未声明长度的分块请求。32 MiB 是接收上限；
+/// 是否允许重试另按 2 MiB 判断，不能把重试缓存上限当成接收上限。
 async fn read_body(
     body: Body,
     declared_length: u64,
 ) -> std::result::Result<Option<Bytes>, Box<Response<Body>>> {
-    if declared_length == 0 {
-        return Ok(None);
-    }
-    if !should_buffer_body(declared_length) {
+    if declared_length > crate::proxy::max_body_bytes() {
         return Err(Box::new(json_error(
             StatusCode::PAYLOAD_TOO_LARGE,
             messages::UPSTREAM_REQUEST_FAILED,
         )));
     }
-    match axum::body::to_bytes(body, crate::proxy::retry_buffer_bytes() as usize).await {
+    match axum::body::to_bytes(body, crate::proxy::max_body_bytes() as usize).await {
         Ok(bytes) => Ok(Some(bytes)),
         Err(_) => Err(Box::new(json_error(
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -991,6 +1354,8 @@ struct ProbedResponse {
     status: StatusCode,
     headers: HeaderMap,
     error_message: Option<String>,
+    read_error: Option<reqwest::Error>,
+    finished: bool,
 }
 
 /// 探测响应体，识别「状态码正常但内容是错误」。
@@ -1003,6 +1368,8 @@ async fn probe_response(response: reqwest::Response) -> ProbedResponse {
     let mut prefix: Vec<Bytes> = Vec::new();
     let mut total = 0usize;
     let mut error_message = None;
+    let mut read_error = None;
+    let mut finished = false;
 
     while total < crate::response::probe_max_bytes() {
         match stream.next().await {
@@ -1020,13 +1387,21 @@ async fn probe_response(response: reqwest::Response) -> ProbedResponse {
                 // 正常 SSE 的第一个事件已完整；再读就是无意义地阻塞首 token。
                 if error_message.is_some()
                     || text.contains("\n\n")
+                    || text.contains("\r\n\r\n")
                     || total >= crate::response::probe_max_bytes()
                 {
                     break;
                 }
             }
             // 流读取失败：交给回放阶段把错误传递给客户端。
-            Some(Err(_)) | None => break,
+            Some(Err(error)) => {
+                read_error = Some(error);
+                break;
+            }
+            None => {
+                finished = true;
+                break;
+            }
         }
     }
 
@@ -1036,6 +1411,8 @@ async fn probe_response(response: reqwest::Response) -> ProbedResponse {
         status,
         headers,
         error_message,
+        read_error,
+        finished,
     }
 }
 
@@ -1053,13 +1430,34 @@ fn replay(probed: ProbedResponse) -> Response<Body> {
         }
         builder = builder.header(name, value);
     }
+    if probed.finished && probed.read_error.is_none() {
+        let bytes: Vec<u8> = probed.prefix.into_iter().flatten().collect();
+        return builder
+            .body(Body::from(bytes))
+            .unwrap_or_else(|_| json_error(StatusCode::BAD_GATEWAY, messages::GENERIC_FAILURE));
+    }
     let prefix = futures::stream::iter(probed.prefix.into_iter().map(Ok));
     let stream = prefix
+        .chain(futures::stream::iter(probed.read_error.map(Err)))
         .chain(probed.rest)
         .map(|item| item.map_err(|error| std::io::Error::other(error.to_string())));
     builder
         .body(Body::from_stream(stream))
         .unwrap_or_else(|_| json_error(StatusCode::BAD_GATEWAY, messages::GENERIC_FAILURE))
+}
+
+/// 候选耗尽才应用友好报错；上游的原始状态仍保留在诊断记录中。
+fn replay_failure(probed: ProbedResponse, custom: Option<&(u16, String)>) -> Response<Body> {
+    if let Some((status, body)) = custom
+        && let Ok(status) = StatusCode::from_u16(*status)
+    {
+        return Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .body(Body::from(body.clone()))
+            .unwrap_or_else(|_| json_error(StatusCode::BAD_GATEWAY, messages::GENERIC_FAILURE));
+    }
+    replay(probed)
 }
 
 /// 按供应商构造转发用的请求头。
@@ -1285,6 +1683,8 @@ mod tests {
         vendors: Vec<ApiVendor>,
         settings: GatewaySettings,
         records: std::sync::Mutex<Vec<GatewayRequestRecord>>,
+        attempts: std::sync::Mutex<Vec<Vec<GatewayAttempt>>>,
+        rules: Vec<FailoverRule>,
     }
 
     impl RecordingSource {
@@ -1293,6 +1693,8 @@ mod tests {
                 vendors,
                 settings,
                 records: std::sync::Mutex::new(Vec::new()),
+                attempts: std::sync::Mutex::new(Vec::new()),
+                rules: Vec::new(),
             }
         }
 
@@ -1308,7 +1710,7 @@ mod tests {
         }
 
         fn failover_rules(&self) -> BoxFuture<'_, Vec<FailoverRule>> {
-            Box::pin(async move { Vec::new() })
+            Box::pin(async move { self.rules.clone() })
         }
 
         fn settings(&self) -> GatewaySettings {
@@ -1318,6 +1720,15 @@ mod tests {
         fn record(&self, record: GatewayRequestRecord) -> BoxFuture<'_, ()> {
             self.records.lock().expect("lock").push(record);
             Box::pin(async {})
+        }
+
+        fn record_with_attempts(
+            &self,
+            record: GatewayRequestRecord,
+            attempts: Vec<GatewayAttempt>,
+        ) -> BoxFuture<'_, ()> {
+            self.attempts.lock().expect("attempts").push(attempts);
+            self.record(record)
         }
     }
 
@@ -1345,6 +1756,492 @@ mod tests {
             .await;
         let handle = serve(Arc::clone(&state)).await.expect("serve");
         (handle, source)
+    }
+
+    async fn wait_for_record(source: &RecordingSource) -> GatewayRequestRecord {
+        for _ in 0..100 {
+            if let Some(record) = source.taken().into_iter().next() {
+                return record;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("request record was not persisted");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn every_http_request_on_the_same_route_has_its_own_log() {
+        let upstream = healthy_upstream(r#"{"usage":{"input_tokens":12,"output_tokens":8}}"#).await;
+        let (handle, source) = start_recording(vec![vendor("v1", &upstream.uri(), 1)], "tok").await;
+        let client = reqwest::Client::new();
+        let mut records = Vec::new();
+        for _ in 0..3 {
+            let response = client
+                .post(format!("{}/gateway/codex/r1/v1/responses", handle.address))
+                .bearer_auth("tok")
+                .json(&serde_json::json!({"model": "test-model", "input": "hello"}))
+                .send()
+                .await
+                .expect("send");
+            assert_eq!(response.status(), 200);
+            response.bytes().await.expect("body");
+            records.push(wait_for_record(&source).await);
+        }
+        let ids: std::collections::BTreeSet<_> =
+            records.iter().map(|record| &record.request_id).collect();
+        assert_eq!(ids.len(), 3, "同一路由的多次请求不可合并或覆盖");
+        assert!(records.iter().all(|record| record.route_id == "r1"));
+        {
+            let attempts = source.attempts.lock().expect("attempts");
+            assert_eq!(attempts.len(), 3);
+            assert!(attempts.iter().all(|items| items.len() == 1));
+        }
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chunked_requests_keep_their_body_and_usage_is_recorded() {
+        let upstream = healthy_upstream(r#"{"usage":{"input_tokens":12,"output_tokens":8}}"#).await;
+        let mut supplier = vendor("v1", &upstream.uri(), 1);
+        supplier.pricing = Some(aivc_core::vendor::VendorPricing {
+            input_per_million_usd: Some(0.5),
+            output_per_million_usd: Some(2.0),
+        });
+        let (handle, source) = start_recording(vec![supplier], "tok").await;
+        let json = r#"{"model":"test-model","input":"hello"}"#;
+        let chunks = futures::stream::iter(vec![Ok::<_, std::io::Error>(Bytes::from_static(
+            json.as_bytes(),
+        ))]);
+        let response = reqwest::Client::new()
+            .post(format!("{}/gateway/codex/r1/v1/responses", handle.address))
+            .bearer_auth("tok")
+            .body(reqwest::Body::wrap_stream(chunks))
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(response.status(), 200);
+        let output = response.bytes().await.expect("body");
+        let received = upstream.received_requests().await.expect("received");
+        assert_eq!(received[0].body, json.as_bytes());
+        assert!(!received[0].headers.contains_key("transfer-encoding"));
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.bytes_in, json.len() as u64);
+        assert_eq!(record.bytes_out, output.len() as u64);
+        assert_eq!(record.model.as_deref(), Some("test-model"));
+        let usage = record.usage.expect("usage");
+        assert_eq!(usage.total_tokens, Some(20));
+        assert!((usage.cost_usd.expect("cost") - 0.000_022).abs() < 1e-10);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_body_above_the_retry_limit_is_forwarded_once() {
+        let upstream = failing_upstream().await;
+        let (handle, source) = start_recording(vec![vendor("v1", &upstream.uri(), 1)], "tok").await;
+        let input = vec![b'x'; crate::proxy::retry_buffer_bytes() as usize + 100];
+        let response = reqwest::Client::new()
+            .post(format!("{}/gateway/codex/r1/v1/responses", handle.address))
+            .bearer_auth("tok")
+            .body(input.clone())
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(response.status(), 429);
+        response.bytes().await.expect("body");
+        let requests = upstream.received_requests().await.expect("received");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].body, input);
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::Error);
+        assert_eq!(record.upstream_status, Some(429));
+        assert_eq!(record.retry_count, 0);
+        assert!(record.error_message.is_some());
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn all_35_supplier_attempts_produce_one_failed_request_with_details() {
+        let upstream = failing_upstream().await;
+        let vendors = (0..35)
+            .map(|i| vendor(&format!("v{i}"), &upstream.uri(), i))
+            .collect();
+        let (handle, source) = start_with_thresholds(vendors, 1, 5, "tok").await;
+        let response = post(&handle.address, "tok").await;
+        assert_eq!(response.status(), 429);
+        response.bytes().await.expect("body");
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::Error);
+        assert_eq!(record.upstream_status, Some(429));
+        assert_eq!(record.retry_count, 34);
+        assert!(record.switched);
+        assert!(record.error_message.is_some());
+        assert_eq!(received(&upstream).await, 35);
+        let details = source.attempts.lock().expect("attempts").clone();
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].len(), 35);
+        assert_eq!(
+            details[0]
+                .iter()
+                .map(|a| a.vendor_id.clone())
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            35
+        );
+        drop(details);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_unmatched_http_error_is_not_a_success() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(400).set_body_string(r#"{"error":"invalid input"}"#),
+            )
+            .mount(&upstream)
+            .await;
+        let mut source = RecordingSource::new(
+            vec![vendor("v1", &upstream.uri(), 1)],
+            GatewaySettings {
+                enabled: true,
+                port: 0,
+                ..Default::default()
+            },
+        );
+        source.rules.push(FailoverRule {
+            id: "balance".into(),
+            scope: aivc_core::gateway::FailoverRuleScope::Global,
+            provider_id: None,
+            vendor_id: None,
+            pattern: "insufficient balance".into(),
+            status_codes: Some(vec![418]),
+            custom_response_body: None,
+            custom_response_status: None,
+            enabled: true,
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
+        });
+        let source = Arc::new(source);
+        let state = Arc::new(GatewayState::new(source.clone()).expect("state"));
+        let mut route = sample_route();
+        route.local_token = "tok".into();
+        state.register_route(route).await;
+        let handle = serve(state.clone()).await.expect("serve");
+        let response = post(&handle.address, "tok").await;
+        assert_eq!(response.status(), 400);
+        response.bytes().await.expect("body");
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::Error);
+        assert_eq!(record.upstream_status, Some(400));
+        assert_eq!(record.error_message.as_deref(), Some("invalid input"));
+        let health = state.health_snapshot().await;
+        assert!(health.is_empty(), "普通参数错误不影响供应商健康");
+        handle.shutdown().await;
+    }
+
+    async fn streaming_upstream(
+        chunks: Vec<(u64, &'static str, bool)>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listen");
+        let address = format!("http://{}", listener.local_addr().expect("address"));
+        let app = Router::new().fallback(any(move || {
+            let chunks = chunks.clone();
+            async move {
+                let stream =
+                    futures::stream::iter(chunks).then(|(delay, text, broken)| async move {
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        if broken {
+                            Err(std::io::Error::other("upstream interrupted"))
+                        } else {
+                            Ok(Bytes::from_static(text.as_bytes()))
+                        }
+                    });
+                Response::builder()
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from_stream(stream))
+                    .expect("response")
+            }
+        }));
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        (address, task)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn streaming_usage_waits_for_the_end_and_merges_split_events() {
+        let (upstream, task) = streaming_upstream(vec![
+            (0, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12}}}\n\n", false),
+            (80, "data: {\"usage\":{\"output_", false),
+            (0, "tokens\":8}}\n\n", false),
+        ]).await;
+        let (handle, source) = start_recording(vec![vendor("v1", &upstream, 1)], "tok").await;
+        let response = post(&handle.address, "tok").await;
+        assert_eq!(response.status(), 200);
+        assert!(source.taken().is_empty(), "stream is still running");
+        let text = response.text().await.expect("body");
+        assert!(text.contains("output_tokens"));
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::Ok);
+        assert!(record.duration_ms >= 70);
+        assert_eq!(record.bytes_out, text.len() as u64);
+        let usage = record.usage.expect("usage");
+        assert_eq!(usage.input_tokens, Some(12));
+        assert_eq!(usage.output_tokens, Some(8));
+        assert_eq!(usage.total_tokens, Some(20));
+        handle.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_late_sse_error_is_logged_and_does_not_record_health_success() {
+        let (upstream, task) = streaming_upstream(vec![
+            (0, "data: {\"ok\":true}\n\n", false),
+            (
+                80,
+                "event: error\ndata: {\"error\":{\"message\":\"credit insufficient balance\"}}\n\n",
+                false,
+            ),
+        ])
+        .await;
+        let source = Arc::new(RecordingSource::new(
+            vec![vendor("v1", &upstream, 1)],
+            GatewaySettings {
+                enabled: true,
+                port: 0,
+                ..Default::default()
+            },
+        ));
+        let state = Arc::new(GatewayState::new(source.clone()).expect("state"));
+        state.register_route(sample_route()).await;
+        let handle = serve(state.clone()).await.expect("serve");
+        post(&handle.address, "t").await.text().await.expect("body");
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::Error);
+        assert_eq!(record.upstream_status, Some(200));
+        assert_eq!(
+            record.error_message.as_deref(),
+            Some("credit insufficient balance")
+        );
+        assert_eq!(
+            source.attempts.lock().expect("attempts")[0][0].error_message,
+            record.error_message
+        );
+        let health = state.health_snapshot().await;
+        assert_eq!(health[0].failure_count, 1);
+        assert_eq!(health[0].success_count, 0);
+        handle.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_upstream_stream_read_error_reaches_the_client_and_log() {
+        let (upstream, task) =
+            streaming_upstream(vec![(0, "data: {\"ok\":true}\n\n", false), (80, "", true)]).await;
+        let (handle, source) = start_recording(vec![vendor("v1", &upstream, 1)], "tok").await;
+        assert!(post(&handle.address, "tok").await.text().await.is_err());
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::Error);
+        assert_eq!(record.error_code.as_deref(), Some("UPSTREAM_STREAM_ERROR"));
+        handle.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dropping_a_streaming_client_still_records_the_request() {
+        let (upstream, task) = streaming_upstream(vec![
+            (0, "data: {\"ok\":true}\n\n", false),
+            (10_000, "data: [DONE]\n\n", false),
+        ])
+        .await;
+        let (handle, source) = start_recording(vec![vendor("v1", &upstream, 1)], "tok").await;
+        let response = post(&handle.address, "tok").await;
+        let mut stream = response.bytes_stream();
+        stream.next().await.expect("chunk").expect("data");
+        drop(stream);
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::ClientAborted);
+        assert_eq!(record.error_code.as_deref(), Some("CLIENT_ABORTED"));
+        handle.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn total_request_budget_stops_an_active_upstream_and_records_timeout() {
+        let (upstream, task) = streaming_upstream(vec![(10_000, "data: [DONE]\n\n", false)]).await;
+        let source = Arc::new(RecordingSource::new(
+            vec![vendor("v1", &upstream, 1)],
+            GatewaySettings {
+                enabled: true,
+                port: 0,
+                upstream_timeout: Duration::from_secs(5),
+                request_timeout: Duration::from_millis(100),
+                ..Default::default()
+            },
+        ));
+        let state = Arc::new(GatewayState::new(source.clone()).expect("state"));
+        state.register_route(sample_route()).await;
+        let handle = serve(state.clone()).await.expect("serve");
+        let response = post(&handle.address, "t").await;
+        assert_eq!(response.status(), 504);
+        assert!(
+            response
+                .text()
+                .await
+                .expect("timeout body")
+                .contains(messages::UPSTREAM_TIMEOUT)
+        );
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::Timeout);
+        assert!(record.duration_ms < 1000);
+        assert_eq!(source.attempts.lock().expect("attempts")[0].len(), 1);
+        assert_eq!(state.health_snapshot().await[0].failure_count, 1);
+        handle.shutdown().await;
+        task.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_empty_upstream_response_is_logged_as_success() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&upstream)
+            .await;
+        let (handle, source) = start_recording(vec![vendor("v1", &upstream.uri(), 1)], "tok").await;
+        assert_eq!(post(&handle.address, "tok").await.status(), 204);
+        assert_eq!(wait_for_record(&source).await.outcome, GatewayOutcome::Ok);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_local_route_strips_the_query_token_before_forwarding() {
+        let upstream = healthy_upstream("ok").await;
+        let (handle, _source) =
+            start_recording(vec![vendor("v1", &upstream.uri(), 1)], "local-secret").await;
+        let response = reqwest::Client::new()
+            .post(format!(
+                "{}/gateway/codex/r1/v1/responses?key=local-secret&stream=true",
+                handle.address
+            ))
+            .body("{}")
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(response.status(), 200);
+        response.bytes().await.expect("body");
+        let requests = upstream.received_requests().await.expect("received");
+        assert_eq!(requests[0].url.query(), Some("stream=true"));
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn recovery_bypasses_the_health_success_write_throttle() {
+        let source = Arc::new(RecordingSource::new(Vec::new(), GatewaySettings::default()));
+        let state = GatewayState::new(source).expect("state");
+        let saved = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = saved.clone();
+        state.set_health_hook(HealthHook {
+            load: Arc::new(|| Box::pin(async { Vec::new() })),
+            save: Arc::new(move |health| {
+                sink.lock().expect("saved").push(health);
+                Box::pin(async {})
+            }),
+        });
+        let vendor = vendor("v1", "http://example.test", 1);
+        state.record_vendor_success(&vendor).await;
+        state
+            .record_vendor_failure(&vendor, "failure", CircuitConfig::default())
+            .await;
+        state.record_vendor_success(&vendor).await;
+        let health = saved.lock().expect("saved");
+        assert_eq!(health.len(), 3);
+        assert_eq!(
+            health[2].status,
+            aivc_core::gateway::GatewayVendorHealthStatus::Healthy
+        );
+        assert_eq!(health[2].success_count, 2);
+        assert_eq!(health[2].failure_count, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_custom_failure_response_is_applied_only_after_retries_are_exhausted() {
+        let upstream = failing_upstream().await;
+        let mut source = RecordingSource::new(
+            vec![vendor("v1", &upstream.uri(), 1)],
+            GatewaySettings {
+                enabled: true,
+                port: 0,
+                failure_threshold: 2,
+                ..Default::default()
+            },
+        );
+        source.rules.push(FailoverRule {
+            id: "custom".into(),
+            scope: aivc_core::gateway::FailoverRuleScope::Global,
+            provider_id: None,
+            vendor_id: None,
+            pattern: String::new(),
+            status_codes: Some(vec![429]),
+            custom_response_status: Some(402),
+            custom_response_body: Some(r#"{"error":"please try later"}"#.into()),
+            enabled: true,
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
+        });
+        let source = Arc::new(source);
+        let state = Arc::new(GatewayState::new(source.clone()).expect("state"));
+        state.register_route(sample_route()).await;
+        let handle = serve(state).await.expect("serve");
+        let response = post(&handle.address, "t").await;
+        assert_eq!(response.status(), 402);
+        assert_eq!(
+            response.text().await.expect("body"),
+            r#"{"error":"please try later"}"#
+        );
+        assert_eq!(received(&upstream).await, 2);
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.outcome, GatewayOutcome::Error);
+        assert_eq!(record.upstream_status, Some(429));
+        assert_eq!(record.retry_count, 1);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_model_listing_get_can_fail_over_with_an_empty_request_body() {
+        let first = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&first)
+            .await;
+        let second = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("models"))
+            .mount(&second)
+            .await;
+        let (handle, source) = start_with_thresholds(
+            vec![
+                vendor("v1", &first.uri(), 1),
+                vendor("v2", &second.uri(), 2),
+            ],
+            1,
+            5,
+            "tok",
+        )
+        .await;
+        let response = reqwest::Client::new()
+            .get(format!("{}/gateway/codex/r1/v1/models", handle.address))
+            .bearer_auth("tok")
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.text().await.expect("body"), "models");
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.retry_count, 1);
+        assert!(record.switched);
+        assert_eq!(record.vendor_id.as_str(), "v2");
+        handle.shutdown().await;
     }
 
     /// 外部接入形态的服务器：启用共享令牌（库内只存 SHA-256）。
@@ -1653,17 +2550,11 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert_eq!(records.len(), 1, "被拒绝的请求也要留下记录");
-        // **「没转发」必须能看出来。**
-        //
-        // 这条记录保持 `ok`（路由不存在不是供应商的错），但少了原因码时，
-        // 它与一次真正转发成功的记录只差一个空供应商——查「CLI 为什么失败」的人
-        // 在日志里会看到一串 `ok`。失败列表只查 `outcome IN ('error','timeout')`，
-        // 因此补这个码不会把它混进失败里。
-        assert_eq!(records[0].outcome, GatewayOutcome::Ok);
+        // 拒绝接入是网关请求失败，供应商未参与，健康状态不受影响。
+        assert_eq!(records[0].outcome, GatewayOutcome::Error);
         assert_eq!(records[0].error_code.as_deref(), Some("ROUTE_NOT_FOUND"));
         let record = &records[0];
-        // 与现网一致：网关自己给出了明确答复即记为 ok。
-        assert_eq!(record.outcome, GatewayOutcome::Ok);
+        assert_eq!(record.outcome, GatewayOutcome::Error);
         // 没有供应商参与，因此供应商为空、没有上游状态码。
         assert!(record.vendor_id.as_str().is_empty());
         assert!(record.upstream_status.is_none());
@@ -2050,9 +2941,7 @@ mod tests {
     /// 于是一台卡住的上游会把整次请求耗光（默认 10 分钟）然后放弃，
     /// **网关的故障转移形同不存在**——而那正是它存在的理由。
     ///
-    /// 这里保留 Rust 的**每次尝试各自计时**：超时与其他失败一样可重试，卡住的那一家会被
-    /// 放弃、请求转给下一家。代价是最坏总耗时变成「尝试数 × 超时」（默认 10 分钟 × 最多 4 次），
-    /// 但那个上限是可算的，而「卡住就不转移」是功能缺失。
+    /// 每次尝试仍可因连接或读取超时切换供应商，所有尝试另共享 10 分钟总预算。
     #[tokio::test(flavor = "multi_thread")]
     async fn a_hanging_vendor_is_abandoned_and_the_next_one_serves() {
         // 卡住的第一家：延迟远大于超时。
@@ -2192,7 +3081,7 @@ mod tests {
     async fn a_failing_vendor_is_retried_up_to_the_threshold_before_switching() {
         let first = failing_upstream().await;
         let second = healthy_upstream("from-second").await;
-        let (handle, _source) = start_with_thresholds(
+        let (handle, source) = start_with_thresholds(
             vec![
                 vendor("v1", &first.uri(), 1),
                 vendor("v2", &second.uri(), 2),
@@ -2209,6 +3098,9 @@ mod tests {
         assert_eq!(response.text().await.expect("正文"), "from-second");
         assert_eq!(received(&first).await, 2, "阈值是 2，第一家应当被重试一次");
         assert_eq!(received(&second).await, 1, "切换之后只该问第二家一次");
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.retry_count, 2, "同一家重试和切换后的重试都应计数");
+        assert_eq!(source.attempts.lock().expect("attempts")[0].len(), 3);
         handle.shutdown().await;
     }
 

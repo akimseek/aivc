@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   Badge,
@@ -6,14 +6,15 @@ import {
   ChipGroup,
   EmptyState,
   Field,
-  HintBar,
   Icon,
   LoadingBlock,
+  Pagination,
+  Popover,
   TextInput,
   Toolbar,
   ToolbarSpacer,
   errorText,
-  useToast
+  useListPagination
 } from "../../../components";
 import { PanelHeader } from "../panel-header";
 import * as api from "../../../ipc/commands";
@@ -22,7 +23,8 @@ import type {
   AiProviderSummary,
   ApiVendor,
   GatewayVendorHealth,
-  VendorBalance
+  VendorBalance,
+  VendorConfigTemplate
 } from "../../../types";
 import { formatWhen } from "../../../app/session-display";
 
@@ -57,7 +59,7 @@ import { formatWhen } from "../../../app/session-display";
  *
  * 1. 表单**分区两列**（基本信息 / 计费）+ 必填红 * + 点「创建」就地校验
  *    （此前靠禁用按钮，点了没反应也没提示）；
- * 2. **一个字段一列**：名称 / 端点分列、输入费率 / 输出费率分列；
+ * 2. 列表不展示端点与费率，健康状态与健康状况分列；
  * 3. 余额与操作拆成两列；
  * 4. 操作列新增「复制」＝克隆为新供应商（id 留空、密钥重填）；
  * 5. 候选池状态改为**开关**（`role="switch"`，旧平台同形），操作列的
@@ -76,6 +78,7 @@ type VendorDraft = {
   apiBaseUrl: string;
   sort: string;
   enabled: boolean;
+  configs?: VendorConfigTemplate[];
   /**
    * 费率（每百万 Token，美元）。
    *
@@ -306,6 +309,25 @@ export function VendorsPanel({
   const [filter, setFilter] = useState<ProviderFilter>("all");
   /** 正在编辑的草稿；`id` 为空表示新建。`null` 表示表单未打开（显示主表）。 */
   const [draft, setDraft] = useState<VendorDraft | null>(null);
+  const [templateError, setTemplateError] = useState("");
+  const [templateVersion, setTemplateVersion] = useState(0);
+  const draftProvider = draft?.providerId;
+  const needsTemplates = draft !== null && draft.configs === undefined;
+  useEffect(() => {
+    if (!draftProvider || !needsTemplates) return;
+    let cancelled = false;
+    setTemplateError("");
+    void api.getVendorConfigTemplates(draftProvider).then((configs) => {
+      if (!cancelled) setDraft((current) => current?.providerId === draftProvider
+        ? { ...current, configs } : current);
+    }).catch((error) => {
+      if (!cancelled) {
+        setTemplateError(errorText(error));
+        onError(`配置模板读取失败：${errorText(error)}`);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [draftProvider, needsTemplates, templateVersion, onError]);
   /** 字段级报错（名称/地址/Key）。提交时给出；改哪个字段就消掉它那条。 */
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<VendorFieldKey, string>>>({});
   /**
@@ -333,7 +355,6 @@ export function VendorsPanel({
    * 没有快照的那一家那一格就是空的，而不是写一句「未知」假装有数据。
    */
   const [health, setHealth] = useState<GatewayVendorHealth[]>([]);
-  const toast = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -366,12 +387,12 @@ export function VendorsPanel({
       // **只翻候选池的启用位，绝不动用户的 CLI 配置文件**——写文件是表单里
       // 那个「保存时写入」勾选的事（`vendor:write-configs`），两者互不牵连。
       await api.setVendorEnabled(vendor.id, !vendor.enabled);
-      await load();
       onNotify?.(
         vendor.enabled
           ? `已禁用供应商：${vendor.name}（移出候选池）`
           : `已启用供应商：${vendor.name}（加入候选池）`
       );
+      await load();
     } catch (error) {
       onError(errorText(error));
     } finally {
@@ -415,6 +436,11 @@ export function VendorsPanel({
             : { status: "ok", balance: result.balance }
         }));
         if (result.error) onError(`余额查询失败：${result.error}`);
+        else if (!result.balance || balanceText(result.balance) === "未提供") {
+          onError("余额查询失败：上游未提供余额。");
+        } else {
+          onNotify?.(`余额查询成功：${vendor.name}，${balanceLabel({ status: "ok", balance: result.balance })}。`);
+        }
       } catch (problem) {
         setBalance((current) => ({
           ...current,
@@ -423,7 +449,7 @@ export function VendorsPanel({
         onError(errorText(problem));
       }
     },
-    [onError]
+    [onError, onNotify]
   );
 
   /**
@@ -453,9 +479,9 @@ export function VendorsPanel({
         }
         return next;
       });
-      const ok = results.filter((item) => item.balance).length;
+      const ok = results.filter((item) => !item.error && item.balance && balanceText(item.balance) !== "未提供").length;
       const failed = results.length - ok;
-      toast.show(
+      onNotify?.(
         failed === 0
           ? `已刷新 ${ok} 家供应商的余额。`
           : `${ok} 家成功，${failed} 家未提供或查询失败。`
@@ -465,7 +491,7 @@ export function VendorsPanel({
     } finally {
       setBusy(false);
     }
-  }, [vendors, toast, onError]);
+  }, [vendors, onNotify, onError]);
 
   /**
    * 更新草稿里的一个字段。
@@ -537,14 +563,13 @@ export function VendorsPanel({
         ...(pricing ? { pricing } : {}),
         ...(balanceQuery.value === undefined ? {} : { balanceQuery: balanceQuery.value }),
         ...(modelQuery.value === undefined ? {} : { modelQuery: modelQuery.value }),
-        enabled: draft.enabled
+        enabled: draft.enabled,
+        configs: draft.configs
       });
       setDraft(null);
-      await load();
       let writeNote = "";
       if (writeOnSave) {
-        // 写文件是**单独一步**：它失败不该掩盖「记录已保存」这件事，因此分开报错、
-        // 分开提示；后端只写文件，不翻候选池启用位、也不刷「最近启用时刻」。
+        // 写文件失败时保留「记录已保存」的说明，避免随后成功提示覆盖这个错误。
         try {
           const result = await api.writeVendorConfigs(saved.id);
           writeNote =
@@ -553,12 +578,15 @@ export function VendorsPanel({
               : `；已写入 ${result.written.length} 个配置文件（原文件已备份到 ${result.backupRoot}）`;
         } catch (error) {
           onError(`供应商已保存，但写入配置文件失败：${errorText(error)}`);
+          await load();
+          return;
         }
       }
       onNotify?.(
         (draft.id ? `供应商已保存：${draft.name.trim()}` : `已新增供应商：${draft.name.trim()}`) +
           writeNote
       );
+      await load();
     } catch (error) {
       onError(errorText(error));
     }
@@ -629,6 +657,7 @@ export function VendorsPanel({
   };
 
   const shown = filter === "all" ? vendors : vendors.filter((item) => item.providerId === filter);
+  const pagination = useListPagination(shown, filter);
   const enabledCount = shown.filter((item) => item.enabled).length;
   const countOf = (id: string) => vendors.filter((item) => item.providerId === id).length;
 
@@ -638,7 +667,6 @@ export function VendorsPanel({
   return (
     <div className="vendor-panel">
       {/* 余额刷新这类一次性的结果：说完自己消失，也可以立刻收掉。 */}
-      {toast.message && <HintBar message={toast.message} onDismiss={toast.dismiss} />}
 
       <PanelHeader
         title={`供应商管理 (${vendors.length})`}
@@ -685,7 +713,8 @@ export function VendorsPanel({
               >
                 <ChipGroup
                   value={draft.providerId}
-                  onChange={(value) => setDraftField("providerId", value as AiProviderId)}
+                  onChange={(value) => setDraft((current) => current && current.providerId !== value
+                    ? { ...current, providerId: value as AiProviderId, configs: undefined } : current)}
                   options={providers.map((item) => ({ value: item.id, label: item.label }))}
                 />
               </Field>
@@ -769,6 +798,37 @@ export function VendorsPanel({
             写文件是一个**显式动作**：保存本身只写数据库。勾上才在保存后把配置模板
             写进 CLI 配置文件（写前备份）。与候选池开关无关——那个只翻启用位。
           */}
+          <section className="vendor-form-section">
+            <div className="vendor-config-heading">
+              <div className="vendor-form-section-title">配置模板（兼容模式）</div>
+              <label className="vendor-write-toggle">
+                <input type="checkbox" checked={draft.enabled}
+                  onChange={(event) => setDraftField("enabled", event.target.checked)} />
+                <span>参与候选池</span>
+              </label>
+            </div>
+            <p className="field-hint">模板用于直接配置 CLI。可使用 {"{{API_KEY}}"}、{"{{BASE_URL}}"}、{"{{VENDOR_NAME}}"} 占位符；勾选下方写入选项后才会写入文件。</p>
+            {draft.configs === undefined ? templateError
+              ? <div><p className="err">配置模板读取失败：{templateError}</p><Button small onClick={() => setTemplateVersion((value) => value + 1)}>重试读取模板</Button></div>
+              : <LoadingBlock label="正在读取配置模板…" />
+              : draft.configs.length === 0 ? <p className="field-hint">当前平台没有可用的兼容配置模板。</p>
+              : draft.configs.map((config, index) => (
+                <div className="field vendor-config-editor" key={`${config.providerId}:${config.targetPath}`}>
+                  <span className="field-label">{config.label || config.targetPath}</span>
+                  <label className="vendor-write-toggle">
+                    <input type="checkbox" checked={config.enabled} onChange={(event) =>
+                      setDraftField("configs", draft.configs!.map((item, i) => i === index
+                        ? { ...item, enabled: event.target.checked } : item))} />
+                    <span>写入此配置文件</span>
+                  </label>
+                  <textarea className="control mono" rows={6} spellCheck={false}
+                    aria-label={`${config.targetPath} 配置模板`} value={config.content}
+                    onChange={(event) => setDraftField("configs", draft.configs!.map((item, i) =>
+                      i === index ? { ...item, content: event.target.value } : item))} />
+                </div>
+              ))}
+          </section>
+
           <label className="vendor-write-toggle">
             <input
               type="checkbox"
@@ -815,7 +875,7 @@ export function VendorsPanel({
               **不禁用**：缺字段时在点击的那一刻就地报错。此前按钮在名称/地址为空时
               直接禁用、点击毫无反应——用户实测的「没反应，也没提示」正是这种形态。
             */}
-            <Button small variant="primary" onClick={() => void save()}>
+            <Button small variant="primary" disabled={draft.configs === undefined} onClick={() => void save()}>
               {draft.id ? "保存修改" : "创建"}
             </Button>
             <Button small onClick={() => setDraft(null)}>
@@ -885,186 +945,178 @@ export function VendorsPanel({
               action={<Button onClick={startNew}>新增供应商</Button>}
             />
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  {/* 一个字段一列（2026-10-02 实机反馈）：名称 / 端点分列、费率分列。 */}
-                  <th>名称</th>
-                  <th>端点</th>
-                  {/* 厂商列非有不可：列表是跨平台的，不标出来同名供应商分不清。 */}
-                  <th>厂商</th>
-                  <th>输入费率</th>
-                  <th>输出费率</th>
-                  <th>健康</th>
-                  <th>候选池状态</th>
-                  {/* 余额与操作**分列**（2026-10-02 实机反馈：合并成一格读不清）。 */}
-                  <th>余额</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((vendor) => {
-                  const snapshot = healthOf(vendor.id);
-                  const state = balance[vendor.id];
-                  const remaining = snapshot ? circuitRemaining(snapshot.circuitUntil) : "";
-                  /*
-                    健康这一格**只列真实可得的信息**：
-                    快照里没有的（例如延时——后端根本不记）就不显示，
-                    不拿 0 或「未知」去填满它。
-                  */
-                  const healthDetails = snapshot
-                    ? [
-                        snapshot.failureCount > 0
-                          ? `失败率 ${Math.round(snapshot.failureRate * 100)}%`
-                          : "",
-                        snapshot.lastSuccessAt ? `最近成功 ${formatWhen(snapshot.lastSuccessAt)}` : "",
-                        remaining ? `熔断剩余 ${remaining}` : ""
-                      ].filter(Boolean)
-                    : [];
-                  return (
-                    <tr key={vendor.id}>
-                      <td>
-                        <span className="vendor-identity-name">{vendor.name}</span>
-                      </td>
-                      <td className="vendor-endpoint-cell">
-                        {/* 地址可能很长，用等宽字体——截断会让同名中转商分不出来。 */}
-                        <span className="mono vendor-endpoint" title={vendor.apiBaseUrl}>
-                          {vendor.apiBaseUrl}
-                        </span>
-                      </td>
-                      <td>{labelOf(vendor.providerId)}</td>
-                      <td className="mono">{rateText(vendor.pricing?.inputPerMillionUsd)}</td>
-                      <td className="mono">{rateText(vendor.pricing?.outputPerMillionUsd)}</td>
-                      <td>
-                        {snapshot && (
-                          <div className="vendor-health">
-                            <Badge tone={healthTone(snapshot.status)}>
-                              {healthLabel(snapshot.status)}
-                            </Badge>
-                            {healthDetails.length > 0 && (
-                              <span className="row-meta">{healthDetails.join(" · ")}</span>
+            <div className="vendor-table-scroll">
+              <table className="data-table vendor-table">
+                <thead>
+                  <tr>
+                    <th>名称</th>
+                    {/* 厂商列非有不可：列表是跨平台的，不标出来同名供应商分不清。 */}
+                    <th>厂商</th>
+                    <th>健康</th>
+                    <th>健康状况</th>
+                    <th>候选池状态</th>
+                    {/* 余额与操作**分列**（2026-10-02 实机反馈：合并成一格读不清）。 */}
+                    <th>余额</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagination.items.map((vendor) => {
+                    const snapshot = healthOf(vendor.id);
+                    const state = balance[vendor.id];
+                    const remaining = snapshot ? circuitRemaining(snapshot.circuitUntil) : "";
+                    /*
+                      健康这一格**只列真实可得的信息**：
+                      快照里没有的（例如延时——后端根本不记）就不显示，
+                      不拿 0 或「未知」去填满它。
+                    */
+                    const healthDetails = snapshot
+                      ? [
+                          snapshot.failureCount > 0
+                            ? `失败率 ${Math.round(snapshot.failureRate * 100)}%`
+                            : "",
+                          snapshot.lastSuccessAt ? `最近成功 ${formatWhen(snapshot.lastSuccessAt)}` : "",
+                          remaining ? `熔断剩余 ${remaining}` : ""
+                        ].filter(Boolean)
+                      : [];
+                    return (
+                      <tr key={vendor.id}>
+                        <td>
+                          <span className="vendor-identity-name">{vendor.name}</span>
+                        </td>
+                        <td>{labelOf(vendor.providerId)}</td>
+                        <td>
+                          {snapshot && (
+                            <div className="vendor-health">
+                              <Badge tone={healthTone(snapshot.status)}>
+                                {healthLabel(snapshot.status)}
+                              </Badge>
+                            </div>
+                          )}
+                        </td>
+                        <td><span className="row-meta">{healthDetails.join(" · ") || "-"}</span></td>
+                        <td>
+                          {/*
+                            **开关而不是徽章**（2026-10-02 实机反馈，旧平台同形）：
+                            「参不参与候选池」本来就是可以直接操作的状态，再让用户跑到
+                            操作列点「启用/禁用」是两处操作的同一件事。
+                            无障碍语义与旧平台一致：`role="switch"` + `aria-checked` +
+                            「X 已参与候选池/未参与候选池」的可读名。
+                          */}
+                          <div className="vendor-pool-cell">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={vendor.enabled}
+                              aria-label={`${vendor.name}${vendor.enabled ? "已参与候选池" : "未参与候选池"}`}
+                              className={`vendor-pool-switch${vendor.enabled ? " active" : ""}`}
+                              title={
+                                vendor.enabled
+                                  ? "禁用：移出候选池（不改动你的 CLI 配置文件）"
+                                  : "启用：加入候选池（不改动你的 CLI 配置文件）"
+                              }
+                              disabled={togglingId === vendor.id}
+                              onClick={() => void toggle(vendor)}
+                            >
+                              <span />
+                            </button>
+                            {/* 「优先」是**启用且顺位最前**的那家：网关没有既有绑定时先试它。 */}
+                            {vendor.enabled && isFirstInPool(vendor) && (
+                              <span className="row-meta">优先</span>
                             )}
                           </div>
-                        )}
-                      </td>
-                      <td>
-                        {/*
-                          **开关而不是徽章**（2026-10-02 实机反馈，旧平台同形）：
-                          「参不参与候选池」本来就是可以直接操作的状态，再让用户跑到
-                          操作列点「启用/禁用」是两处操作的同一件事。
-                          无障碍语义与旧平台一致：`role="switch"` + `aria-checked` +
-                          「X 已参与候选池/未参与候选池」的可读名。
-                        */}
-                        <div className="vendor-pool-cell">
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={vendor.enabled}
-                            aria-label={`${vendor.name}${vendor.enabled ? "已参与候选池" : "未参与候选池"}`}
-                            className={`vendor-pool-switch${vendor.enabled ? " active" : ""}`}
-                            title={
-                              vendor.enabled
-                                ? "禁用：移出候选池（不改动你的 CLI 配置文件）"
-                                : "启用：加入候选池（不改动你的 CLI 配置文件）"
-                            }
-                            disabled={togglingId === vendor.id}
-                            onClick={() => void toggle(vendor)}
-                          >
-                            <span />
-                          </button>
-                          {/* 「优先」是**启用且顺位最前**的那家：网关没有既有绑定时先试它。 */}
-                          {vendor.enabled && isFirstInPool(vendor) && (
-                            <span className="row-meta">优先</span>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="vendor-balance-line">
-                          <span className="row-meta" title={state?.error ?? undefined}>
-                            余额 {balanceLabel(state)}
-                          </span>
-                          {/* 单家刷新入口：批量要几秒，而用户常常只想知道某一家。 */}
-                          <Button
-                            small
-                            disabled={busy || state?.status === "loading"}
-                            aria-label={`刷新 ${vendor.name} 的余额`}
-                            title="只刷新这一家的余额"
-                            onClick={() => void refreshOne(vendor)}
-                          >
-                            刷新
-                          </Button>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="vendor-row-actions">
-                          <Button
-                            small
-                            onClick={() => {
-                              setFieldErrors({});
-                              setWriteOnSave(false);
-                              setDraft({
-                                id: vendor.id,
-                                providerId: vendor.providerId,
-                                name: vendor.name,
-                                // **不回填密钥**：接口本来就不返回它，界面也不该假装有。
-                                apiKey: "",
-                                apiBaseUrl: vendor.apiBaseUrl,
-                                sort: String(vendor.sort),
-                                enabled: vendor.enabled,
-                                // 费率与高级 JSON 要回填——不回填的话，用户点一次「保存修改」
-                                // 就会把它们当成「没填」而清掉。
-                                inputPrice: formatPrice(vendor.pricing?.inputPerMillionUsd),
-                                outputPrice: formatPrice(vendor.pricing?.outputPerMillionUsd),
-                                balanceQuery: formatJson(vendor.balanceQuery),
-                                modelQuery: formatJson(vendor.modelQuery)
-                              });
-                            }}
-                          >
-                            编辑
-                          </Button>
-                          {/*
-                            **复制 = 克隆为新供应商**（用户 2026-10-02 选定的语义）：
-                            预填整份配置（名称带「副本」），但 **id 留空、密钥必须重填**——
-                            这是它与「编辑」的本质区别，也是它真正有用的那个场景：
-                            同一家中转商配第二个密钥时不用从头填。
-                          */}
-                          <Button
-                            small
-                            title="复制这条配置新建供应商（名称带「副本」，API Key 需重填）"
-                            onClick={() => {
-                              setFieldErrors({});
-                              setWriteOnSave(false);
-                              setDraft({
-                                id: "",
-                                providerId: vendor.providerId,
-                                name: `${vendor.name} 副本`,
-                                apiKey: "",
-                                apiBaseUrl: vendor.apiBaseUrl,
-                                sort: String(vendors.length),
-                                // 与「新增」同一理由：启用会写 CLI 配置文件，不顺手做。
-                                enabled: false,
-                                inputPrice: formatPrice(vendor.pricing?.inputPerMillionUsd),
-                                outputPrice: formatPrice(vendor.pricing?.outputPerMillionUsd),
-                                balanceQuery: formatJson(vendor.balanceQuery),
-                                modelQuery: formatJson(vendor.modelQuery)
-                              });
-                            }}
-                          >
-                            复制
-                          </Button>
-                          <Button small variant="danger" onClick={() => void remove(vendor)}>
-                            删除
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td>
+                          <div className="vendor-balance-line">
+                            <span className="row-meta" title={state?.error ?? undefined}>
+                              {!state || state.status === "idle" ? "未获取" : `余额 ${balanceLabel(state)}`}
+                            </span>
+                            {/* 单家刷新入口：批量要几秒，而用户常常只想知道某一家。 */}
+                            <Button
+                              small
+                              className="vendor-icon-button"
+                              disabled={busy || state?.status === "loading"}
+                              aria-label={`刷新 ${vendor.name} 的余额`}
+                              title="只刷新这一家的余额"
+                              onClick={() => void refreshOne(vendor)}
+                            >
+                              <Icon name="refresh" size={15} />
+                            </Button>
+                          </div>
+                        </td>
+                        <td>
+                          <VendorRowActions vendor={vendor} onEdit={() => {
+                                setFieldErrors({});
+                                setWriteOnSave(false);
+                                setDraft({
+                                  id: vendor.id,
+                                  providerId: vendor.providerId,
+                                  name: vendor.name,
+                                  // **不回填密钥**：接口本来就不返回它，界面也不该假装有。
+                                  apiKey: "",
+                                  apiBaseUrl: vendor.apiBaseUrl,
+                                  sort: String(vendor.sort),
+                                  enabled: vendor.enabled,
+                                  configs: vendor.configs,
+                                  // 费率与高级 JSON 要回填——不回填的话，用户点一次「保存修改」
+                                  // 就会把它们当成「没填」而清掉。
+                                  inputPrice: formatPrice(vendor.pricing?.inputPerMillionUsd),
+                                  outputPrice: formatPrice(vendor.pricing?.outputPerMillionUsd),
+                                  balanceQuery: formatJson(vendor.balanceQuery),
+                                  modelQuery: formatJson(vendor.modelQuery)
+                                });
+                              }} onCopy={() => {
+                                setFieldErrors({});
+                                setWriteOnSave(false);
+                                setDraft({
+                                  id: "",
+                                  providerId: vendor.providerId,
+                                  name: `${vendor.name} 副本`,
+                                  apiKey: "",
+                                  apiBaseUrl: vendor.apiBaseUrl,
+                                  sort: String(vendors.length),
+                                  // 复制默认不加入候选池，由用户显式勾选。
+                                  enabled: false,
+                                  configs: vendor.configs,
+                                  inputPrice: formatPrice(vendor.pricing?.inputPerMillionUsd),
+                                  outputPrice: formatPrice(vendor.pricing?.outputPerMillionUsd),
+                                  balanceQuery: formatJson(vendor.balanceQuery),
+                                  modelQuery: formatJson(vendor.modelQuery)
+                                });
+                              }} onDelete={() => void remove(vendor)} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {!loading && shown.length > 0 && (
+            <Pagination {...pagination} label="供应商分页" />
           )}
         </>
       )}
     </div>
   );
+}
+
+function VendorRowActions({ vendor, onEdit, onCopy, onDelete }: {
+  vendor: ApiVendor; onEdit: () => void; onCopy: () => void; onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  return <div className="vendor-row-actions">
+    <Button small className="vendor-icon-button" aria-label="编辑" title={`编辑 ${vendor.name}`} onClick={onEdit}>
+      <Icon name="edit" size={16} />
+    </Button>
+    <button type="button" ref={anchorRef} className="btn btn-sm vendor-icon-button vendor-more-button"
+      aria-label={`${vendor.name} 更多操作`} aria-haspopup="dialog" aria-expanded={open}
+      title="更多操作" onClick={() => setOpen((value) => !value)}><Icon name="more" size={16} /></button>
+    <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef}
+      className="vendor-action-menu" ariaLabel={`${vendor.name} 更多操作`}>
+      <button type="button" onClick={() => { setOpen(false); onCopy(); }}><span>复制</span><Icon name="copy" /></button>
+      <button type="button" className="danger" onClick={() => { setOpen(false); onDelete(); }}><span>删除</span><Icon name="trash" /></button>
+    </Popover>
+  </div>;
 }

@@ -550,6 +550,7 @@ impl CommandRouter {
             // 主目录**显式传进去**：这条命令会读用户 HOME 下的配置文件。
             // 生产传真实 HOME；测试上下文传的是临时目录（见 `with_config_home`）。
             "vendor:read-configs" => Ok(VendorCommands::read_configs(&args, &ctx.config_home())?),
+            "vendor:default-configs" => to_value(VendorCommands::default_configs(&args)?),
             "vendor:refresh-balance" => Ok(VendorCommands::refresh_balance(ctx, &args).await?),
             "vendor:refresh-balances" => Ok(VendorCommands::refresh_balances(ctx).await?),
             // --- CLI 环境与安装 ---
@@ -1252,6 +1253,59 @@ mod tests {
             .await
             .expect("list");
         assert_eq!(list.as_array().expect("数组").len(), 1);
+
+        let defaults = router
+            .dispatch("vendor:default-configs", json!({"providerId": "codex"}))
+            .await
+            .expect("defaults");
+        assert_eq!(defaults.as_array().expect("templates").len(), 2);
+        assert_eq!(defaults[0]["targetPath"], "~/.codex/auth.json");
+        assert!(
+            defaults[0]["content"]
+                .as_str()
+                .expect("content")
+                .contains("{{API_KEY}}")
+        );
+        assert!(
+            router
+                .dispatch("vendor:default-configs", json!({"providerId": "invalid"}))
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            router
+                .dispatch("vendor:default-configs", json!({"providerId": "qoder"}))
+                .await
+                .expect("qoder"),
+            json!([])
+        );
+
+        let custom = json!([{"providerId": "codex", "enabled": true, "targetPath": "~/.codex/config.toml", "content": "model = \"custom-model\""}]);
+        let updated = router
+            .dispatch(
+                "vendor:save",
+                json!({
+                    "id": id, "providerId": "codex", "name": "主供应商", "apiKey": "",
+                    "apiBaseUrl": "https://api.example.com", "configs": custom, "enabled": true
+                }),
+            )
+            .await
+            .expect("custom template");
+        assert_eq!(updated["configs"][0]["content"], "model = \"custom-model\"");
+        let preserved = router
+            .dispatch(
+                "vendor:save",
+                json!({
+                    "id": id, "providerId": "codex", "name": "主供应商", "apiKey": "",
+                    "apiBaseUrl": "https://api.example.com", "enabled": true
+                }),
+            )
+            .await
+            .expect("preserve omitted templates");
+        assert_eq!(preserved["configs"].as_array().expect("configs").len(), 1);
+        for field in ["content", "enabled", "targetPath", "providerId"] {
+            assert_eq!(preserved["configs"][0][field], updated["configs"][0][field]);
+        }
 
         // 严格解析：裸 `claude` 必须被识别成 Claude 而不是兜底成 Codex。
         let claude = router

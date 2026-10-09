@@ -557,3 +557,23 @@
   max-width: min(1024px, 92vw);
   max-height: min(660px, 90vh);
 }
+
+/* 通用分页：数量与范围在左，翻页在右，窄容器自动换行。 */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--ui-space-3);
+  margin-top: var(--ui-space-3);
+}
+.pagination-summary,
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+}
+.pagination .control-select {
+  width: auto;
+}

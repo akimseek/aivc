@@ -25,6 +25,28 @@ use crate::validate::{require_boolean, require_string};
 pub struct VendorCommands;
 
 impl VendorCommands {
+    /// 返回兼容模式的标准模板；不读取或写入用户配置文件。
+    ///
+    /// # Errors
+    ///
+    /// 平台标识非法。
+    pub fn default_configs(args: &Value) -> Result<Vec<aivc_core::vendor::VendorConfigTemplate>> {
+        let provider_id = crate::validate::require_provider_id(args.get("providerId"))?;
+        Ok(aivc_tooling::vendor::default_vendor_configs(provider_id)
+            .into_iter()
+            .map(
+                |(target_path, content)| aivc_core::vendor::VendorConfigTemplate {
+                    id: None,
+                    provider_id,
+                    label: None,
+                    enabled: true,
+                    target_path,
+                    content,
+                },
+            )
+            .collect())
+    }
+
     /// 列出供应商；`providerId` 可选，缺省列出全部平台。
     ///
     /// # Errors
@@ -49,14 +71,15 @@ impl VendorCommands {
 
     /// 保存供应商（新建或更新）。
     ///
-    /// # 调用方没给 `configs` 时补上平台的默认模板
+    /// # 调用方没给 `configs` 时保留原模板；新建或更换平台时补上默认模板
     ///
     /// 「启用供应商」在后端的含义是**把它的凭据写进 CLI 的配置文件**
     /// （见 [`VendorCommands::enable`]），而那条命令要求至少一个启用的配置模板。
     /// 界面此前从不设 `configs`，于是供应商能保存、**但永远启用不了**：
     /// 报错是 `请至少启用一个配置文件。`，而用户根本没有「配置文件」这个概念。
     ///
-    /// 因此这里兜底填上该平台的标准目标（[`aivc_tooling::vendor::default_vendor_configs`]）。
+    /// 同平台编辑保留现有模板，避免覆盖自定义模型与协议设置；新建时兜底填上
+    /// 平台标准目标（[`aivc_tooling::vendor::default_vendor_configs`]）。
     /// 调用方**显式给了** `configs` 就一律用它的——包括给空数组表示
     /// 「这个供应商就是不要写配置」（此时启用会照旧被后端拒绝，那是调用方的选择）。
     ///
@@ -73,19 +96,32 @@ impl VendorCommands {
         // 都尊重调用方——空数组是一个有意义的表达。
         let provided_configs = args.get("configs").is_some();
         if !provided_configs {
-            input.configs = aivc_tooling::vendor::default_vendor_configs(input.provider_id)
-                .into_iter()
-                .map(
-                    |(target_path, content)| aivc_core::vendor::VendorConfigTemplate {
-                        id: None,
-                        provider_id: input.provider_id,
-                        label: None,
-                        enabled: true,
-                        target_path,
-                        content,
-                    },
-                )
-                .collect();
+            let existing = match input.id.as_ref() {
+                Some(id) => ctx
+                    .vendor()
+                    .list(None)
+                    .await?
+                    .into_iter()
+                    .find(|vendor| vendor.id == *id && vendor.provider_id == input.provider_id),
+                None => None,
+            };
+            input.configs = if let Some(vendor) = existing {
+                vendor.configs
+            } else {
+                aivc_tooling::vendor::default_vendor_configs(input.provider_id)
+                    .into_iter()
+                    .map(
+                        |(target_path, content)| aivc_core::vendor::VendorConfigTemplate {
+                            id: None,
+                            provider_id: input.provider_id,
+                            label: None,
+                            enabled: true,
+                            target_path,
+                            content,
+                        },
+                    )
+                    .collect()
+            };
         }
         ctx.vendor().save(&input).await
     }

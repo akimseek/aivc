@@ -53,6 +53,11 @@ pub const MIGRATIONS: &[Migration] = &[
         description: "分页锚点补记绝对行号：字节偏移用于定位，行号是消息身份",
         sql: V3_ANCHOR_LINE_NUMBER,
     },
+    Migration {
+        version: 4,
+        description: "网关请求日志增加上游尝试明细，保留一次外部请求一条统计记录",
+        sql: "ALTER TABLE gateway_request_logs ADD COLUMN attempts_json TEXT NOT NULL DEFAULT '[]';",
+    },
 ];
 
 /// 当前最新 schema 版本。
@@ -378,7 +383,7 @@ mod tests {
     fn migration_table_starts_at_one_and_is_contiguous() {
         assert_eq!(MIGRATIONS[0].version, 1);
         validate_migration_table().expect("迁移表必须良构");
-        assert_eq!(latest_version(), 3);
+        assert_eq!(latest_version(), 4);
     }
 
     #[test]
@@ -415,7 +420,7 @@ mod tests {
         }
 
         let versions = applied_versions(&conn).expect("applied versions");
-        assert_eq!(versions, std::collections::BTreeSet::from([1, 2, 3]));
+        assert_eq!(versions, std::collections::BTreeSet::from([1, 2, 3, 4]));
     }
 
     #[test]
@@ -426,6 +431,18 @@ mod tests {
         apply(&mut conn).expect("second apply");
         let versions = applied_versions(&conn).expect("applied versions");
         assert_eq!(versions.len(), MIGRATIONS.len());
+    }
+
+    #[test]
+    fn attempt_details_migration_keeps_existing_request_logs() {
+        let conn = memory_connection();
+        conn.execute_batch(V1_INITIAL).expect("v1");
+        conn.execute("INSERT INTO gateway_request_logs (request_id, route_id, provider_id, vendor_id, method, path, upstream_status, outcome, duration_ms, created_at) VALUES ('existing', 'external-claude', 'claude', 'v1', 'POST', '/claude/v1/messages', 400, 'ok', 100, '2026-10-08T01:30:00.000Z')", []).expect("log");
+        conn.execute_batch(MIGRATIONS[3].sql).expect("v4");
+        let (outcome, status, attempts): (String, u16, String) = conn.query_row("SELECT outcome, upstream_status, attempts_json FROM gateway_request_logs WHERE request_id = 'existing'", [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).expect("preserved");
+        assert_eq!(outcome, "ok");
+        assert_eq!(status, 400);
+        assert_eq!(attempts, "[]");
     }
 
     #[test]

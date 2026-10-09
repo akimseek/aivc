@@ -112,14 +112,14 @@ async function clickVendor(view: ReturnType<typeof render>, name: string) {
 }
 
 describe("VendorRoutePicker", () => {
-  it("没有终端时不渲染任何东西", () => {
+  it("没有终端时保留当前供应商状态", () => {
     const view = render(
       <VendorRoutePicker terminal={undefined} onSwitch={vi.fn()} onSetMode={vi.fn()} />
     );
-    expect(view.container.textContent).toBe("");
+    expect(view.container.textContent).toContain("当前供应商 未启动终端");
   });
 
-  it("没有 providerId 时不显示供应商", () => {
+  it("没有 providerId 时说明未绑定平台", () => {
     // 终端都不知道自己属于哪个平台时，取不到供应商列表，选择器无从谈起。
     const view = render(
       <VendorRoutePicker
@@ -128,7 +128,7 @@ describe("VendorRoutePicker", () => {
         onSetMode={vi.fn()}
       />
     );
-    expect(view.container.querySelector(".status-vendor")).toBeNull();
+    expect(view.container.textContent).toContain("未绑定平台");
   });
 
   it("没有绑定时**显眼地**说明「没走网关」，而不是一个中性的「直连」", async () => {

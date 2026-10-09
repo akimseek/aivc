@@ -172,9 +172,16 @@ pub const UNLABELLED_MODEL: &str = "未标注模型";
 pub fn parse_gateway_usage(body: &Value) -> Option<GatewayUsage> {
     let root = body.as_object()?;
     let response = root.get("response").and_then(Value::as_object);
+    let message = root.get("message").and_then(Value::as_object);
     let usage = root
         .get("usage")
         .and_then(Value::as_object)
+        .or_else(|| root.get("usageMetadata").and_then(Value::as_object))
+        .or_else(|| {
+            message
+                .and_then(|item| item.get("usage"))
+                .and_then(Value::as_object)
+        })
         .or_else(|| {
             response
                 .and_then(|item| item.get("usage"))
@@ -185,11 +192,21 @@ pub fn parse_gateway_usage(body: &Value) -> Option<GatewayUsage> {
     let usage = Value::Object(usage.clone());
     let input_tokens = number_at(
         &usage,
-        &["input_tokens", "prompt_tokens", "inputTokenCount"],
+        &[
+            "input_tokens",
+            "prompt_tokens",
+            "inputTokenCount",
+            "promptTokenCount",
+        ],
     );
     let output_tokens = number_at(
         &usage,
-        &["output_tokens", "completion_tokens", "outputTokenCount"],
+        &[
+            "output_tokens",
+            "completion_tokens",
+            "outputTokenCount",
+            "candidatesTokenCount",
+        ],
     );
     let cached_input_tokens = number_at(
         &usage,
@@ -197,6 +214,8 @@ pub fn parse_gateway_usage(body: &Value) -> Option<GatewayUsage> {
             "input_tokens_details.cached_tokens",
             "prompt_tokens_details.cached_tokens",
             "cached_tokens",
+            "cache_read_input_tokens",
+            "cachedContentTokenCount",
         ],
     );
     let reasoning_tokens = number_at(
@@ -643,15 +662,17 @@ mod tests {
         .expect("usage");
         assert_eq!(usage.input_tokens, Some(10));
         assert_eq!(usage.output_tokens, Some(20));
+        assert_eq!(usage.cached_input_tokens, Some(5));
     }
 
     #[test]
     fn parses_gemini_style_usage_with_camel_case_aliases() {
         let usage = parse_gateway_usage(&json(
             r#"{"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":3,"thoughtsTokenCount":2}}"#,
-        ));
-        // usageMetadata 不是受支持的容器名，必须返回 None 而不是瞎猜。
-        assert!(usage.is_none());
+        )).expect("usageMetadata");
+        assert_eq!(usage.input_tokens, Some(7));
+        assert_eq!(usage.output_tokens, Some(3));
+        assert_eq!(usage.reasoning_tokens, Some(2));
 
         let usage = parse_gateway_usage(&json(
             r#"{"usage":{"inputTokenCount":7,"outputTokenCount":3,"thoughtsTokenCount":2}}"#,

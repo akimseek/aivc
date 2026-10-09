@@ -237,33 +237,99 @@ async fn every_installed_wsl_distro_appears_in_the_target_list() {
     let app = App::start(dir.path().join("runtime"), None)
         .await
         .expect("启动");
-    let targets = app
-        .dispatch("codex:list-targets", json!({ "providerId": "codex" }))
-        .await
-        .expect("探测目标");
-
-    let returned: Vec<String> = targets
-        .as_array()
-        .expect("数组")
-        .iter()
-        .filter(|item| item["kind"] == "wsl")
-        .filter_map(|item| item["distro"].as_str().map(str::to_owned))
-        .collect();
-
-    println!("wsl.exe 报告 {expected:?}；目标列表给出 {returned:?}");
-    for distro in &expected {
-        assert!(
-            returned.iter().any(|item| item == distro),
-            "发行版 {distro} 没有出现在目标列表里（实际返回 {returned:?}）——\
-             每个已安装的发行版都必须可见，否则用户连「手动指定 Codex 目录」这个\
-             恢复入口都进不去"
+    for provider in ["codex", "claude", "gemini", "qoder"] {
+        let targets = app
+            .dispatch("codex:list-targets", json!({ "providerId": provider }))
+            .await
+            .expect("探测目标");
+        let returned: Vec<String> = targets
+            .as_array()
+            .expect("数组")
+            .iter()
+            .filter(|item| item["kind"] == "wsl")
+            .filter_map(|item| item["distro"].as_str().map(str::to_owned))
+            .collect();
+        println!("{provider}：wsl.exe 报告 {expected:?}；目标列表给出 {returned:?}");
+        for distro in &expected {
+            assert!(
+                returned.contains(distro),
+                "{provider} 隐藏了发行版 {distro}：{returned:?}"
+            );
+        }
+        assert_eq!(
+            returned.len(),
+            expected.len(),
+            "{provider} 的目标数量必须与发行版数量一致"
         );
+        for target in targets.as_array().expect("数组") {
+            println!(
+                "{} available={} detail={}",
+                target["id"], target["available"], target["detail"]
+            );
+        }
     }
-    assert_eq!(
-        returned.len(),
-        expected.len(),
-        "目标数量必须与发行版数量一致：少了是隐藏入口，多了是凭空捏造"
-    );
+    app.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn installed_claude_is_available_in_the_same_environment_as_the_terminal() {
+    let _serial = wsl_serial().await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let app = App::start(dir.path().join("runtime"), None)
+        .await
+        .expect("启动");
+    let targets = app
+        .dispatch("codex:list-targets", json!({ "providerId": "claude" }))
+        .await
+        .expect("探测 Claude");
+    let items = targets.as_array().expect("数组");
+    if aivc_provider::common::command_exists_local("claude") {
+        let local = items
+            .iter()
+            .find(|target| target["kind"] == "local")
+            .expect("本机目标");
+        assert_eq!(local["available"], true, "已安装的本机 Claude 必须可用");
+        println!("本机 Claude available=true");
+    }
+    if let Ok(distros) = expected_wsl_distros() {
+        for distro in distros {
+            let output = std::process::Command::new(find_wsl_exe().expect("wsl.exe"))
+                .args(["-d", &distro, "--", "bash", "-ic", "command -v claude"])
+                .output()
+                .expect("shell 探测");
+            let target = items
+                .iter()
+                .find(|target| target["distro"] == distro)
+                .expect("WSL 目标");
+            if output.status.success() {
+                assert_eq!(
+                    target["available"], true,
+                    "终端能找到 Claude，目标也必须可用：{target}"
+                );
+                let environment = app
+                    .dispatch(
+                        "cli:check-environment",
+                        json!({
+                            "providerId": "claude", "targetId": target["id"]
+                        }),
+                    )
+                    .await
+                    .expect("环境检查");
+                assert_eq!(
+                    environment["hasCli"], true,
+                    "环境检查必须进入所选发行版：{environment}"
+                );
+                println!(
+                    "{distro} Claude available=true version={}",
+                    environment["cliVersion"]
+                );
+            } else {
+                println!("{distro}：终端未能找到 Claude；目标状态：{target}");
+            }
+        }
+    } else {
+        println!("WSL 基准不可用，本用例仅检查本机");
+    }
     app.shutdown().await;
 }
 

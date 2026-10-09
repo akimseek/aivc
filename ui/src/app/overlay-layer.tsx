@@ -335,7 +335,7 @@ export function AppOverlays({
           onQuit={actions.quit}
           onOpenLogDirectory={actions.openLogDirectory}
           onClose={actions.closeSettings}
-          onError={actions.reportError}
+          onError={actions.notify}
           onNotify={actions.notify}
         />
       )}

@@ -27,10 +27,9 @@ import { SwitchPill } from "./gateway-switch-pill";
  * | 外部接入 | `gateway-external-card.tsx` | 外部开关、共享令牌、平台端点清单 |
  * | 故障规则 | `gateway-rules-card.tsx` | 规则列表 + 表单 + 在线测试 |
  *
- * 下面还留着 `GatewayInsights`（用量 / 供应商健康 / 最近请求）：它的
+ * 下面的 `GatewayInsights` 只保留供应商健康：它的
  * 「重置全部健康」是**全应用唯一**的熔断重置入口（`gateway:reset-vendor-health`），
- * 删掉这一块就等于把这个能力从界面上摘掉。用量、日志、异常各自有专属面板
- * （导航里的「用量报表 / 异常诊断 / 请求日志」），这里只是扫一眼的那一份。
+ * 用量、日志、异常分别在「用量报表 / 请求日志 / 异常诊断」中查看。
  */
 export function GatewayPanel({
   providers,
@@ -126,7 +125,7 @@ export function GatewayPanel({
       // 因此这里必须说清是哪一种结果。
       onNotify?.(
         next.enabled
-          ? "已启用网关。重启应用后开始监听。"
+          ? "已启用网关，正在监听。"
           : "已关闭网关。使用网关的终端路由将立即停止。"
       );
     } catch (error) {
@@ -211,7 +210,7 @@ export function GatewayPanel({
         onNotify={onNotify}
       />
       <GatewayRulesCard providers={providers} onError={onError} onNotify={onNotify} />
-      <GatewayInsights onError={onError} />
+      <GatewayInsights onError={onError} onNotify={onNotify} />
     </div>
   );
 }

@@ -11,6 +11,8 @@ import type { ReactNode } from "react";
 // `as const satisfies`：`as const` 保住字面量键（否则 `keyof` 退化成 `string`，
 // 拼错图标名不会被类型系统拦住），`satisfies` 同时校验每个值仍是合法的 SVG 子树。
 const PATHS = {
+  edit: <path d="m16 3 5 5-12 12-6 1 1-6L16 3Zm-3 3 5 5" />,
+  more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
   /** demo `docs/ui-redesign-demo.html:186` */
   chat: <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />,
   /** demo:193（柱状图） */

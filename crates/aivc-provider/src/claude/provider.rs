@@ -376,7 +376,7 @@ impl ClaudeProvider {
         LocalCliProbe {
             provider: ProviderId::Claude,
             display_name: DISPLAY_NAME,
-            windows_command: "claude.cmd",
+            windows_command: "claude",
             unix_command: "claude",
             config_dir,
         }

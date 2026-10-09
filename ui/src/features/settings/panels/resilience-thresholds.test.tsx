@@ -132,7 +132,7 @@ describe("GatewayPortCard：端口与三个阈值", () => {
     expect(text).toContain("活跃端口 8787 · 监听中");
     // 「端口被占用会自动回退」：不说这句，用户会以为填了固定端口就一定绑得上。
     expect(text).toContain("自动回退");
-    expect(text).toContain("重启应用");
+    expect(text).toContain("保存后立即生效");
   });
 
   it("没在监听时读数是「未监听」", () => {
@@ -240,7 +240,7 @@ describe("GatewayPortCard：端口与三个阈值", () => {
     });
   });
 
-  it("**端口保存**走 `gateway:set-port`，并提示重启后生效", async () => {
+  it("端口保存走 gateway:set-port，并提示已经生效", async () => {
     const { view, calls, onNotify } = setup();
     await act(async () => {
       setValue(input(view.container, "配置端口"), "9000");
@@ -250,8 +250,7 @@ describe("GatewayPortCard：端口与三个阈值", () => {
       expect(calls.some((item) => item.command === "gateway:set-port")).toBe(true);
     });
     expect(calls.find((item) => item.command === "gateway:set-port")!.args.port).toBe(9000);
-    // 端口改了但**不会立刻生效**（要重启才重绑），这句话不能说丢。
-    expect(onNotify).toHaveBeenCalledWith(expect.stringContaining("重启应用后生效"));
+    expect(onNotify).toHaveBeenCalledWith(expect.stringContaining("已保存并生效"));
   });
 
   it("端口填 0 = 自动分配，提示里说清这一点", async () => {

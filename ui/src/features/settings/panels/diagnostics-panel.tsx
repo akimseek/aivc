@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Badge, Button, Card, EmptyState } from "../../../components";
+import { Badge, Button, Card, EmptyState, errorText } from "../../../components";
 import { PanelHeader } from "../panel-header";
 import * as api from "../../../ipc/commands";
 import type { AiProviderId, AiProviderSummary, AiTarget } from "../../../types";
@@ -40,7 +40,8 @@ export function DiagnosticsPanel({
   targets,
   selectedTargetId,
   providers,
-  selectedProviderId
+  selectedProviderId,
+  onError
 }: {
   targets: AiTarget[];
   selectedTargetId: string;
@@ -48,6 +49,7 @@ export function DiagnosticsPanel({
   providers: AiProviderSummary[];
   /** 当前平台：能力矩阵要显示它的那一行。 */
   selectedProviderId: AiProviderId | "";
+  onError?: (message: string) => void;
 }) {
   /** 路径探测结果，按路径存。 */
   const [probes, setProbes] = useState<Record<string, PathProbe["state"]>>({});
@@ -65,12 +67,13 @@ export function DiagnosticsPanel({
       try {
         const exists = await api.pathExists(path, target.id);
         setProbes((current) => ({ ...current, [path]: exists ? "present" : "missing" }));
-      } catch {
+      } catch (error) {
+        onError?.(`路径检查失败：${errorText(error)}`);
         // 探测不了（WSL / 权限）时不写结论：留着「检查中」比写一个错的更诚实。
         setProbes((current) => ({ ...current, [path]: "checking" }));
       }
     },
-    []
+    [onError]
   );
 
   const target = targets.find((item) => item.id === selectedTargetId) ?? null;

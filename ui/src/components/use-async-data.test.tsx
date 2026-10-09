@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, waitFor } from "@testing-library/react";
 import { useCallback } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { useAsyncData } from "./use-async-data";
 
@@ -35,6 +35,25 @@ function Probe({ filter }: { filter: string }) {
 }
 
 describe("useAsyncData：跟随 load 身份重查", () => {
+  it("失败每次只反馈一次，回调变化不触发重复查询", async () => {
+    const feedback = vi.fn();
+    const load = vi.fn(async () => { throw new Error("连接失败"); });
+    function FailedProbe() {
+      const { error, reload } = useAsyncData(load, {
+        errorMessage: "日志查询失败",
+        onError: (message) => feedback(message)
+      });
+      return <button onClick={() => void reload()}>{error}</button>;
+    }
+    const view = render(<FailedProbe />);
+    await waitFor(() => expect(feedback).toHaveBeenCalledTimes(1));
+    expect(feedback).toHaveBeenCalledWith("日志查询失败：连接失败");
+    view.rerender(<FailedProbe />);
+    expect(load).toHaveBeenCalledTimes(1);
+    await act(async () => { view.container.querySelector("button")!.click(); });
+    expect(feedback).toHaveBeenCalledTimes(2);
+    view.unmount();
+  });
   it("输入变化 ⇒ 重新取数；输入不变（重渲染）⇒ 不重复取数", async () => {
     calls.length = 0;
     const view = render(<Probe filter="近 7 天" />);

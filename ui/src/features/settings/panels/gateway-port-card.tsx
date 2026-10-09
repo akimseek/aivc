@@ -11,7 +11,7 @@ import type { GatewayPortStatus } from "../../../types";
  *
  * 这五项（端口 + 三条阈值）说的是同一件事——网关怎么分配端口、怎么判定失败。
  * 逐项保存时用户要按五次，而且**按到哪一项了看不出来**；旧平台原话就是
- * 「统一保存端口分配与熔断规则；端口需重启应用生效，阈值即时生效」。
+ * 端口与阈值由后端保存后应用到运行中的网关。
  *
  * # 保存只发改过的项
  *
@@ -110,12 +110,13 @@ export function GatewayPortCard({
     if (!status.baseUrl) return;
     try {
       await api.copyText(status.baseUrl);
+      onNotify?.("网关地址已复制。");
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       onError(errorText(error));
     }
-  }, [status.baseUrl, onError]);
+  }, [status.baseUrl, onError, onNotify]);
 
   const saveAll = async () => {
     // 端口：空表示自动分配（与后端 `require_gateway_port` 一致，它接受 0）。
@@ -155,9 +156,7 @@ export function GatewayPortCard({
       if (parts.length === 0) {
         onNotify?.("网关配置没有改动。");
       } else {
-        // 端口改了但**不会立刻生效**（要重启才重绑），这句话不说出来
-        // 用户会以为点了没反应。
-        onNotify?.(`已保存：${parts.join("、")}。${portChanged ? "端口需重启应用后生效。" : ""}`);
+        onNotify?.(`已保存并生效：${parts.join("、")}。`);
       }
     } catch (error) {
       if (next) onStatusChange(next);
@@ -170,7 +169,7 @@ export function GatewayPortCard({
   return (
     <Card
       title="网关端口与熔断韧性参数"
-      description="统一保存端口分配与熔断规则；端口需重启应用生效，阈值即时生效。"
+      description="统一保存端口分配与熔断规则，保存后立即生效。"
       actions={
         <Button
           small
@@ -186,7 +185,7 @@ export function GatewayPortCard({
       <div className="field-grid">
         <Field
           label="配置端口"
-          hint="填 0 表示自动分配。改完需重启应用才生效；端口被占用时网关会自动回退到可用端口。"
+          hint="填 0 表示自动分配。保存后重新监听；端口被占用时自动回退，请使用实际监听地址。"
         >
           <div className="gateway-port-input">
             <TextInput
@@ -195,7 +194,7 @@ export function GatewayPortCard({
               aria-label="配置端口"
               onChange={(event) => setDraft({ ...draft, port: event.target.value })}
             />
-            {/* 用户改的是「下次启动用哪个端口」，这里告诉他**现在**跑在哪个端口上。 */}
+            {/* 始终展示实际监听端口，包括端口占用后的回退结果。 */}
             <span className="row-meta">
               {status.activePort > 0 ? `活跃端口 ${status.activePort} · 监听中` : "未监听"}
             </span>
@@ -220,12 +219,12 @@ export function GatewayPortCard({
           ) : (
             /*
               没有地址时要说清**下一步做什么**，而不是只说「没有」：
-              按停在哪一步给不同的指引——关着就让他开，开着没监听就让他重启。
+              按停在哪一步给不同的指引。
             */
             <span className="row-meta">
               {status.enabled
-                ? "已启用但还没开始监听。重启应用后这里会出现可用地址。"
-                : "尚未开启网关。请先在上面点「启用网关」，然后重启应用。"}
+                ? "已启用但尚未监听，请检查端口配置并重试。"
+                : "尚未开启网关。请先在上面点「启用网关」。"}
             </span>
           )}
         </Field>
@@ -237,7 +236,7 @@ export function GatewayPortCard({
         <p className="field-hint">
           {status.configuredPort === 0
             ? "端口由系统自动分配，每次启动都可能不同。要长期给别的客户端用，请在上面填一个固定端口。"
-            : `端口已固定在 ${status.configuredPort}，重启后地址不变。`}
+            : `配置端口 ${status.configuredPort}，当前实际监听端口 ${status.activePort}。`}
         </p>
       )}
 

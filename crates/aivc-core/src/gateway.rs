@@ -548,6 +548,24 @@ pub struct GatewayRequestRecord {
     pub created_at: Timestamp,
 }
 
+/// 一次上游尝试的诊断信息；不保存请求或响应正文及凭据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayAttempt {
+    /// 顺序编号，从 1 起。
+    pub number: u32,
+    /// 供应商编号。
+    pub vendor_id: VendorId,
+    /// 尝试时的供应商名称快照。
+    pub vendor_name: String,
+    /// 上游 HTTP 状态码；连接失败时为空。
+    pub upstream_status: Option<u16>,
+    /// 本次尝试耗时，最终一次包含响应传输时间。
+    pub duration_ms: u64,
+    /// 已清洗、截断的错误摘要。
+    pub error_message: Option<String>,
+}
+
 /// 路径字段的截断长度。
 pub const REQUEST_PATH_MAX_LENGTH: usize = 500;
 /// 错误摘要的截断长度。

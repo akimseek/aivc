@@ -121,7 +121,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 网关启动失败不阻止窗口打开。
-    let mut app = app;
     match tauri::async_runtime::block_on(app.start_gateway_if_enabled()) {
         Ok(Some(address)) => tracing::info!(%address, "本地 Gateway 已启动"),
         Ok(None) => tracing::info!("设置里未启用本地 Gateway"),

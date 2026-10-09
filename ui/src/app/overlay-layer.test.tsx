@@ -109,12 +109,13 @@ function renderOverlays(
     canCustomCwd?: boolean;
     canSessionSettings?: boolean;
     selectedTarget?: AiTarget | null;
+    actions?: OverlaysActions;
   } = {}
 ) {
   return render(
     <AppOverlays
       state={state}
-      actions={stubActions()}
+      actions={over.actions ?? stubActions()}
       providers={[]}
       providerId=""
       appVersion="0.1.0"
@@ -136,6 +137,22 @@ function renderOverlays(
 afterEach(cleanup);
 
 describe("AppOverlays 的排布顺序", () => {
+  it("设置中心的失败通过右上角提示反馈，不写入底部状态栏", async () => {
+    fakeRuntime();
+    window.__TAURI__!.core!.invoke = async (_command, args) => {
+      const payload = args as { command?: string };
+      if (payload.command === "vendor:list") throw new Error("查询余额失败 (404)");
+      return null;
+    };
+    const actions = stubActions();
+    const state = baseState({ settingsOpen: true, settingsTab: "vendors" });
+    renderOverlays(state, { actions });
+    await waitFor(() => expect(actions.notify).toHaveBeenCalledWith("查询余额失败 (404)"));
+    expect(actions.reportError).not.toHaveBeenCalled();
+    cleanup();
+    const toastView = renderOverlays({ ...state, toastMessage: "查询余额失败 (404)" }, { actions });
+    expect(toastView.container.querySelector(".hint-float")?.textContent).toContain("查询余额失败 (404)");
+  });
   it("退出确认框排在**最后**：设置中心开着时它也盖在上面", async () => {
     const runtime = fakeRuntime();
     const view = renderOverlays(baseState({ settingsOpen: true }));

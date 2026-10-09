@@ -33,6 +33,7 @@ function fakeRuntime(handlers: Record<string, (args: Record<string, unknown>) =>
         const payload = args as { command?: string; args?: Record<string, unknown> };
         const name = payload?.command ?? "";
         const handler = handlers[name];
+        if (!handler && name === "vendor:default-configs") return [];
         return handler ? handler(payload?.args ?? {}) : null;
       }
     },
@@ -84,10 +85,8 @@ describe("VendorsPanel：供应商动作要有回音", () => {
         onNotify={onNotify}
       />
     );
-    await waitFor(() => {
-      expect([...view.container.querySelectorAll("button")].some((b) => b.textContent === "删除"))
-        .toBe(true);
-    });
+    await waitFor(() => expect(view.container.querySelector(".vendor-more-button")).toBeTruthy());
+    await act(async () => { view.container.querySelector<HTMLButtonElement>(".vendor-more-button")!.click(); });
     const button = [...view.container.querySelectorAll("button")].find(
       (b) => b.textContent === "删除"
     )!;

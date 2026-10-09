@@ -7,7 +7,9 @@ import {
   DescriptionList,
   EmptyState,
   LoadingBlock,
-  useAsyncData
+  Pagination,
+  useAsyncData,
+  useListPagination
 } from "../../../components";
 import * as api from "../../../ipc/commands";
 import { PanelHeader } from "../panel-header";
@@ -54,7 +56,7 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
         : { ok: true as const, ...rangeBounds(picker.range) };
     return bounds.ok ? api.getUsageReport(bounds.start, bounds.end) : Promise.resolve(null);
   }, [picker.range, picker.start, picker.end]);
-  const report = useAsyncData(load, { errorMessage: "用量报表读取失败" });
+  const report = useAsyncData(load, { errorMessage: "用量报表读取失败", onError });
 
   return (
     <div className="observability-panel">
@@ -141,17 +143,18 @@ export function GatewayUsagePanel({ onError }: { onError: (message: string) => v
             firstColumn="供应商"
             empty="这个区间内没有供应商维度的记录。"
             rows={report.data.vendors}
+            resetKey={`${picker.range}:${picker.start}:${picker.end}`}
           />
           <DimensionTable
             title="按模型"
             firstColumn="模型"
             empty="这个区间内没有模型维度的记录——上游可能没返回模型名。"
             rows={report.data.models}
+            resetKey={`${picker.range}:${picker.start}:${picker.end}`}
           />
         </>
       )}
 
-      {void onError}
     </div>
   );
 }
@@ -223,13 +226,16 @@ function DimensionTable({
   title,
   firstColumn,
   empty,
-  rows
+  rows,
+  resetKey
 }: {
   title: string;
   firstColumn: string;
   empty: string;
   rows: UsageDimension[];
+  resetKey: string;
 }) {
+  const pagination = useListPagination(rows, resetKey);
   return (
     <Card title={title}>
       {rows.length === 0 ? (
@@ -255,7 +261,7 @@ function DimensionTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {pagination.items.map((row) => (
               <tr key={`${row.providerId}:${row.key}`}>
                 {/* `label` 是展示名、`key` 是真实身份。供应商被删掉时 label 是占位文案，
                     因此把 key 放在 title 上，鼠标悬停能看到真正是谁。 */}
@@ -279,6 +285,7 @@ function DimensionTable({
           </tbody>
         </table>
       )}
+      <Pagination {...pagination} label={`${title}分页`} />
     </Card>
   );
 }

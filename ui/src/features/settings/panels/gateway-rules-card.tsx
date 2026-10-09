@@ -102,8 +102,8 @@ export function GatewayRulesCard({
       await api.saveFailoverRule(payload.value);
       setDraft(null);
       setTestResult(null);
-      await load();
       onNotify?.(editing ? "故障规则已保存。" : "已新增故障规则。");
+      await load();
     } catch (error) {
       onError(errorText(error));
     }
@@ -153,7 +153,7 @@ export function GatewayRulesCard({
   return (
     <Card
       title="故障识别与自定义拦截规则"
-      description="当上游返回指定错误文本或 HTTP 状态码时，触发自动切源，或由网关直接应答友好报错。"
+      description="启用的规则补充内置故障判断；错误文本或状态码任一命中即可重试、切源。候选耗尽后可返回自定义报错。"
       actions={
         <Button
           small
@@ -231,7 +231,10 @@ export function GatewayRulesCard({
                         onClick={() =>
                           void api
                             .setFailoverRuleEnabled(rule.id, !rule.enabled)
-                            .then(load)
+                            .then(async () => {
+                              onNotify?.(rule.enabled ? "故障规则已停用。" : "故障规则已启用。");
+                              await load();
+                            })
                             .catch((error: unknown) =>
                               onError(errorText(error))
                             )
@@ -245,7 +248,10 @@ export function GatewayRulesCard({
                         onClick={() =>
                           void api
                             .deleteFailoverRule(rule.id)
-                            .then(load)
+                            .then(async () => {
+                              onNotify?.("故障规则已删除。");
+                              await load();
+                            })
                             .catch((error: unknown) =>
                               onError(errorText(error))
                             )

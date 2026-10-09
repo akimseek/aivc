@@ -4,6 +4,7 @@ import type {
   AiSession,
   AiTarget,
   ApiVendor,
+  VendorConfigTemplate,
   CliEnvironmentStatus,
   ExportFormat,
   ExternalApiStatus,
@@ -274,6 +275,9 @@ export const writeVendorConfigs = (id: string) =>
  * `pricing` / `balanceQuery` / `modelQuery` 都是**可选**的：不传表示不设置，
  * 传空对象则是「设置了但什么都没有」——两者不是一回事。
  */
+export const getVendorConfigTemplates = (providerId: string) =>
+  invoke<VendorConfigTemplate[]>("vendor:default-configs", { providerId });
+
 export const saveVendor = (request: {
   id?: string;
   providerId: string;
@@ -282,6 +286,7 @@ export const saveVendor = (request: {
   apiBaseUrl: string;
   sort?: number;
   enabled?: boolean;
+  configs?: VendorConfigTemplate[];
   /** 费率（每百万 Token，美元）。 */
   pricing?: { inputPerMillionUsd?: number; outputPerMillionUsd?: number };
   /** 余额查询配置（后端 `BalanceQueryConfig` 的结构化对象）。 */

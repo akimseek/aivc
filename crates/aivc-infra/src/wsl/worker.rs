@@ -70,7 +70,11 @@ impl CommandOutput {
         if self.is_success() {
             return Ok(self);
         }
-        let detail = self.stderr.trim();
+        let detail = if self.stderr.trim().is_empty() {
+            self.stdout.trim()
+        } else {
+            self.stderr.trim()
+        };
         Err(WslError::CommandFailed {
             message: if detail.is_empty() {
                 format!("{label} 失败，退出码 {}", self.exit_code)
@@ -789,7 +793,16 @@ mod tests {
         let error = output.into_success("读取").expect_err("必须失败");
         assert_eq!(error.to_string(), "boom");
 
-        // 无 stderr 时给出带退出码的说明。
+        // WSL 系统错误可能写到 stdout，仍然必须保留。
+        let output = CommandOutput {
+            stdout: "  HCS/E_ACCESSDENIED  ".to_owned(),
+            stderr: String::new(),
+            exit_code: -1,
+        };
+        let error = output.into_success("探测").expect_err("必须失败");
+        assert_eq!(error.to_string(), "HCS/E_ACCESSDENIED");
+
+        // 两条输出均为空时给出带退出码的说明。
         let output = CommandOutput {
             stdout: String::new(),
             stderr: String::new(),

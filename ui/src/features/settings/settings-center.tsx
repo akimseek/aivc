@@ -83,9 +83,7 @@ export function SettingsCenter({
   /**
    * 一句话成功反馈。
    *
-   * 与 `onError` 成对：旧平台**每个动作都有结果回应**，而失败与成功走的是两条路
-   * （失败常驻在状态栏、成功几秒后自动消失）。面板只管说「做完了什么」，
-   * 通道由上层给——这样「反馈长什么样」只有一处实现。
+   * 与 `onError` 都由上层接到右上角的全局提示。面板只负责反馈内容。
    */
   onNotify?: (message: string) => void;
 }) {
@@ -192,7 +190,7 @@ export function SettingsCenter({
                 onOpenSessionSettings={onOpenSessionSettings}
               />
             )}
-            {tab === "presets" && <PresetsPanel onError={onError} />}
+            {tab === "presets" && <PresetsPanel onError={onError} onNotify={onNotify} />}
             {tab === "diagnostics" && (
               <DiagnosticsPanel
                 targets={targets}
@@ -200,6 +198,7 @@ export function SettingsCenter({
                 // 能力矩阵从平台摘要取，因此这里也要传进去。
                 providers={providers}
                 selectedProviderId={providerId}
+                onError={onError}
               />
             )}
             {tab === "about" && (

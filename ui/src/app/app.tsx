@@ -268,7 +268,9 @@ export function App() {
    *   界面不需要知道它在哪。
    */
   const quit = useCallback(() => runWindowAction(api.windowClose), [runWindowAction]);
-  const openLogDirectory = useCallback(() => void api.appCommand("openLogDir"), []);
+  const openLogDirectory = useCallback(() => {
+    void api.appCommand("openLogDir").catch((error: unknown) => toast.show(errorText(error)));
+  }, [toast.show]);
 
   /* ── 工作台要的数据 ───────────────────────────────────── */
 
@@ -979,18 +981,24 @@ export function App() {
             setSessionSettings(null);
             void api
               .clearWslCodexHome(distro)
-              .then(() => console.reloadSessions())
+              .then(async () => {
+                toast.show("已恢复自动探测会话目录。");
+                await console.reloadSessions();
+              })
               .catch((error: unknown) =>
-                console.setError(errorText(error))
+                toast.show(errorText(error))
               );
           },
           saveSessionSettings: (distro, path) => {
             setSessionSettings(null);
             void api
               .setWslCodexHome(distro, path)
-              .then(() => console.reloadSessions())
+              .then(async () => {
+                toast.show("WSL Codex 目录已保存。");
+                await console.reloadSessions();
+              })
               .catch((error: unknown) =>
-                console.setError(errorText(error))
+                toast.show(errorText(error))
               );
           },
           changeNewSession: (patch) =>

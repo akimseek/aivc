@@ -78,7 +78,7 @@ impl CommandDomain {
 /// 现网的会话命令统一挂在 `codex:` 前缀下，但它们**服务全部四个平台**——平台由
 /// `targetId` 区分（如 `claude:local`）。这是历史命名，改名会破坏前端与既有文档，
 /// 因此保留并在此说明。
-pub const COMMANDS: [(&str, CommandDomain); 98] = [
+pub const COMMANDS: [(&str, CommandDomain); 99] = [
     ("app:command", CommandDomain::App),
     ("app:exit-choice", CommandDomain::App),
     ("app:get-version", CommandDomain::App),
@@ -191,6 +191,7 @@ pub const COMMANDS: [(&str, CommandDomain); 98] = [
     ("vendor:list", CommandDomain::Vendor),
     ("vendor:list-models", CommandDomain::Vendor),
     ("vendor:read-configs", CommandDomain::Vendor),
+    ("vendor:default-configs", CommandDomain::Vendor),
     ("vendor:refresh-balance", CommandDomain::Vendor),
     ("vendor:refresh-balances", CommandDomain::Vendor),
     ("vendor:route-mode", CommandDomain::Vendor),
@@ -264,8 +265,8 @@ mod tests {
     #[test]
     fn the_command_count_is_stable() {
         // 前端契约的一部分：漏接或多接一条都会在这里暴露。
-        assert_eq!(COMMAND_COUNT, 98);
-        assert_eq!(command_names().len(), 98);
+        assert_eq!(COMMAND_COUNT, 99);
+        assert_eq!(command_names().len(), 99);
     }
 
     #[test]
@@ -319,7 +320,7 @@ mod tests {
         assert_eq!(commands_of(CommandDomain::Shell).len(), 5);
         assert_eq!(commands_of(CommandDomain::Skill).len(), 8);
         assert_eq!(commands_of(CommandDomain::Terminal).len(), 5);
-        assert_eq!(commands_of(CommandDomain::Vendor).len(), 12);
+        assert_eq!(commands_of(CommandDomain::Vendor).len(), 13);
         assert_eq!(commands_of(CommandDomain::Workspace).len(), 3);
 
         // 各域加起来必须正好是全部命令。

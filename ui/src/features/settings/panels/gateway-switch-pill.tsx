@@ -43,7 +43,7 @@ export function SwitchPill({
       disabled={disabled}
       onClick={onClick}
     >
-      <StatusDot tone={on ? "ok" : "idle"} pulse={on} />
+      <StatusDot tone={on ? "ok" : "idle"} />
       <span>{label}</span>
     </button>
   );

@@ -383,6 +383,9 @@ impl GatewayState {
         vendor_id: &str,
         reason: Option<&str>,
     ) -> Option<VendorRoute> {
+        if vendor_id.trim().is_empty() {
+            return None;
+        }
         let updated = {
             let mut routes = self.routes.write().await;
             let route = routes.get_mut(route_id)?;
@@ -391,6 +394,42 @@ impl GatewayState {
         };
         self.notify_switch(&updated, reason);
         Some(updated)
+    }
+
+    /// 供应商被停用后立即把仍绑定它的动态终端迁移到候选池中的下一家。
+    ///
+    /// 请求开始时仍会再次校验候选池；这里的主动迁移用于让正在使用的终端
+    /// 立即显示真实供应商，并避免用户必须先发出下一条请求才能看到切换。
+    pub async fn reconcile_disabled_vendor(&self, vendor_id: &VendorId) {
+        let vendors = self.source.vendors().await;
+        let route_ids = self
+            .routes
+            .read()
+            .await
+            .route_ids_for_vendor(vendor_id.as_str());
+        if route_ids.is_empty() {
+            return;
+        }
+        let mut health = self.health.lock().await;
+        let now = now_ms();
+        for route_id in route_ids {
+            let Some(route) = self.routes.read().await.get(&route_id).cloned() else {
+                continue;
+            };
+            let mut is_open = |id: &VendorId| health.is_circuit_open(id, now);
+            let Some(next) = choose_vendor(
+                &vendors,
+                route.provider_id,
+                Some(vendor_id.as_str()),
+                &mut is_open,
+            ) else {
+                continue;
+            };
+            drop(health);
+            self.switch_route_vendor(&route_id, next.id.as_str(), Some("candidate-pool"))
+                .await;
+            health = self.health.lock().await;
+        }
     }
 
     /// 切换路由模式。
@@ -457,6 +496,9 @@ impl GatewayState {
 
     /// 送出一次切换通知。
     fn emit_notice(&self, notice: &SwitchNotice) {
+        if notice.vendor_id.trim().is_empty() {
+            return;
+        }
         let Ok(slot) = self.switch_hook.read() else {
             return;
         };
@@ -915,16 +957,7 @@ async fn handle_inner(
         }
     };
     let Some(mut attempt_vendor) = selected else {
-        // 没有可用供应商：记录里保留空供应商，但结果分类必须是失败，
-        // 否则用量报表会把这类请求算成正常流量。
-        tracker.set_error(
-            Some("VENDOR_UNAVAILABLE"),
-            Some(messages::VENDOR_UNAVAILABLE),
-        );
-        return json_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            messages::VENDOR_UNAVAILABLE,
-        );
+        return vendor_unavailable_response(state, tracker, &route, &vendors).await;
     };
     tracker.set_vendor(&attempt_vendor.id);
 
@@ -988,6 +1021,8 @@ async fn handle_inner(
         .count();
     let max_attempts = match route.mode {
         RouteMode::Locked => 1,
+        // 唯一候选按锁定供应商处理，失败原样返回；下一次请求仍向它转发。
+        RouteMode::Dynamic if candidate_count == 1 => 1,
         RouteMode::Dynamic => plan_max_attempts(
             body_buffered,
             method.as_str(),
@@ -1047,12 +1082,13 @@ async fn handle_inner(
         let response = match outcome {
             Ok(response) => response,
             Err(error) => {
+                let error_message = upstream_error_message(&error);
                 tracker.record_attempt(
                     &attempt_vendor,
                     attempt_started_at,
                     now_ms(),
                     None,
-                    Some(&error.to_string()),
+                    Some(&error_message),
                 );
                 // 连接失败：没有响应可回放。
                 // 必须先算「还有没有候选」再取健康锁：`has_next` 内部也要取同一把锁，
@@ -1060,7 +1096,7 @@ async fn handle_inner(
                 let next_available =
                     has_next(state, &vendors, &route, &attempt_vendor, &attempted).await;
                 state
-                    .record_vendor_failure(&attempt_vendor, &error.to_string(), settings.circuit)
+                    .record_vendor_failure(&attempt_vendor, &error_message, settings.circuit)
                     .await;
                 let action = decide_after_failure(
                     &FailureContext {
@@ -1095,15 +1131,15 @@ async fn handle_inner(
                             attempt_vendor = next;
                             continue;
                         }
-                        tracker.set_error(Some("UPSTREAM_ERROR"), Some(&error.to_string()));
-                        return json_error(StatusCode::BAD_GATEWAY, &error.to_string());
+                        tracker.set_error(Some("UPSTREAM_ERROR"), Some(&error_message));
+                        return json_error(StatusCode::BAD_GATEWAY, &error_message);
                     }
                     FailureAction::NoNext(_) | FailureAction::Stop => {
                         let message = if error.is_timeout() {
                             tracker.mark_timeout();
                             messages::UPSTREAM_TIMEOUT.to_owned()
                         } else {
-                            error.to_string()
+                            error_message
                         };
                         tracker.set_error(Some("UPSTREAM_ERROR"), Some(&message));
                         return json_error(StatusCode::BAD_GATEWAY, &message);
@@ -1264,6 +1300,80 @@ async fn handle_inner(
         Some(messages::NO_AVAILABLE_VENDOR),
     );
     json_error(StatusCode::BAD_GATEWAY, messages::NO_AVAILABLE_VENDOR)
+}
+
+/// 未选中上游时保持供应商为空，但明确区分候选池配置与暂时熔断。
+async fn vendor_unavailable_response(
+    state: &GatewayState,
+    tracker: &mut RequestTracker,
+    route: &VendorRoute,
+    vendors: &[ApiVendor],
+) -> Response<Body> {
+    let candidates: Vec<_> = vendors
+        .iter()
+        .filter(|vendor| crate::failover::is_configured_candidate(vendor, route.provider_id))
+        .collect();
+    let retry_after = if route.mode == RouteMode::Dynamic && candidates.len() > 1 {
+        let health = state.health.lock().await;
+        candidates
+            .iter()
+            .filter_map(|vendor| {
+                health
+                    .get(&vendor.id)?
+                    .health
+                    .circuit_until
+                    .as_ref()?
+                    .to_unix_millis()
+            })
+            .min()
+            .map(|until| (until.saturating_sub(now_ms()).max(1) + 999) / 1000)
+    } else {
+        None
+    };
+    let (code, message) = if let Some(seconds) = retry_after {
+        (
+            "VENDOR_CIRCUIT_OPEN",
+            format!(
+                "{} 的 {} 家候选供应商均处于熔断冷却期，本次请求未转发。约 {seconds} 秒后可重试；也可启用其他供应商。",
+                route.provider_id.as_str(),
+                candidates.len()
+            ),
+        )
+    } else if route.mode == RouteMode::Locked {
+        (
+            "VENDOR_UNAVAILABLE",
+            "锁定的供应商已停用、被删除或配置不完整，本次请求未转发。请手动切换供应商或解除锁定。"
+                .to_owned(),
+        )
+    } else {
+        (
+            "VENDOR_UNAVAILABLE",
+            format!(
+                "{} 没有参与候选池且 API Key、端点配置完整的供应商，本次请求未转发。请检查该平台的供应商配置。",
+                route.provider_id.as_str()
+            ),
+        )
+    };
+    tracker.set_error(Some(code), Some(&message));
+    let mut response = json_error(StatusCode::SERVICE_UNAVAILABLE, &message);
+    if let Some(seconds) = retry_after
+        && let Ok(value) = seconds.to_string().parse()
+    {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+    response
+}
+
+/// reqwest 的顶层 Display 隐藏了 DNS、TLS、连接拒绝等真正的失败原因。
+fn upstream_error_message(error: &reqwest::Error) -> String {
+    let mut message = error.to_string();
+    let mut cause = std::error::Error::source(error);
+    while let Some(error) = cause {
+        message.push_str(": ");
+        message.push_str(&error.to_string());
+        cause = error.source();
+    }
+    message
 }
 
 /// 当前时间（毫秒）。
@@ -2168,7 +2278,10 @@ mod tests {
     async fn a_custom_failure_response_is_applied_only_after_retries_are_exhausted() {
         let upstream = failing_upstream().await;
         let mut source = RecordingSource::new(
-            vec![vendor("v1", &upstream.uri(), 1)],
+            vec![
+                vendor("v1", &upstream.uri(), 1),
+                vendor("v2", &upstream.uri(), 2),
+            ],
             GatewaySettings {
                 enabled: true,
                 port: 0,
@@ -2199,11 +2312,11 @@ mod tests {
             response.text().await.expect("body"),
             r#"{"error":"please try later"}"#
         );
-        assert_eq!(received(&upstream).await, 2);
+        assert_eq!(received(&upstream).await, 4);
         let record = wait_for_record(&source).await;
         assert_eq!(record.outcome, GatewayOutcome::Error);
         assert_eq!(record.upstream_status, Some(429));
-        assert_eq!(record.retry_count, 1);
+        assert_eq!(record.retry_count, 3);
         handle.shutdown().await;
     }
 
@@ -2450,6 +2563,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn empty_vendor_switches_are_rejected_and_never_notified() {
+        let (state, recorder) = state_with_switch_recorder();
+        let route = sample_route();
+        state.register_route(route.clone()).await;
+        for id in ["", "  "] {
+            assert!(state.switch_route_vendor("r1", id, None).await.is_none());
+            state.notify_failover(&route, &VendorId::from(id));
+        }
+        assert!(recorder.notices().is_empty());
+        assert_eq!(
+            state
+                .routes
+                .read()
+                .await
+                .get("r1")
+                .expect("route")
+                .vendor_id,
+            "v1"
+        );
+    }
+
+    #[tokio::test]
     async fn changing_the_mode_notifies_with_a_reason() {
         let (state, recorder) = state_with_switch_recorder();
         state.register_route(sample_route()).await;
@@ -2563,6 +2698,174 @@ mod tests {
             "{}",
             record.path
         );
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_sole_candidate_keeps_receiving_requests_after_its_circuit_opens() {
+        let upstream = failing_upstream().await;
+        let mut disabled = vendor("v2", "http://127.0.0.1:1", 2);
+        disabled.enabled = false;
+        let mut other = vendor("claude-only", "http://127.0.0.1:1", 3);
+        other.provider_id = ProviderId::Claude;
+        let source = Arc::new(RecordingSource::new(
+            vec![vendor("v1", &upstream.uri(), 1), disabled, other],
+            GatewaySettings {
+                enabled: true,
+                port: 0,
+                failure_threshold: 3,
+                circuit: CircuitConfig {
+                    failure_threshold: 1,
+                    duration: Duration::from_secs(60),
+                },
+                ..GatewaySettings::default()
+            },
+        ));
+        let state = Arc::new(GatewayState::new(source.clone()).expect("state"));
+        state.register_route(sample_route()).await;
+        let handle = serve(state.clone()).await.expect("serve");
+        for expected_requests in 1..=2 {
+            let response = post(&state.address().await, "t").await;
+            assert_eq!(response.status(), 429);
+            response.bytes().await.expect("body");
+            let record = wait_for_record(&source).await;
+            assert_eq!(record.vendor_id.as_str(), "v1");
+            assert_eq!(record.upstream_status, Some(429));
+            assert_eq!(record.retry_count, 0, "唯一候选按锁定供应商处理");
+            assert!(!record.switched);
+            assert_eq!(received(&upstream).await, expected_requests);
+            assert_eq!(
+                state.health_snapshot().await[0].status,
+                aivc_core::gateway::GatewayVendorHealthStatus::Open
+            );
+        }
+        // 保留 dynamic 模式，未来启用另一家供应商时仍可故障转移。
+        assert_eq!(
+            state.routes.read().await.get("r1").expect("route").mode,
+            RouteMode::Dynamic
+        );
+        upstream.reset().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("recovered"))
+            .mount(&upstream)
+            .await;
+        let response = post(&state.address().await, "t").await;
+        assert_eq!(response.status(), 200);
+        response.bytes().await.expect("body");
+        assert_eq!(wait_for_record(&source).await.outcome, GatewayOutcome::Ok);
+        assert_eq!(
+            state.health_snapshot().await[0].status,
+            aivc_core::gateway::GatewayVendorHealthStatus::Healthy
+        );
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn all_open_candidates_report_cooldown_without_switching_to_an_empty_vendor() {
+        let upstream = healthy_upstream("recovered").await;
+        let active = vendor("v1", &upstream.uri(), 1);
+        let second = vendor("v2", &upstream.uri(), 2);
+        let mut disabled = vendor("v3", &upstream.uri(), 3);
+        disabled.enabled = false;
+        let source = Arc::new(RecordingSource::new(
+            vec![active.clone(), second.clone(), disabled],
+            GatewaySettings {
+                enabled: true,
+                port: 0,
+                ..GatewaySettings::default()
+            },
+        ));
+        let state = Arc::new(GatewayState::new(source.clone()).expect("state"));
+        state.register_route(sample_route()).await;
+        let notices = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = notices.clone();
+        state.set_switch_hook(Arc::new(move |notice| {
+            sink.lock().expect("notices").push(notice.clone());
+        }));
+        for candidate in [&active, &second] {
+            state.health.lock().await.record_failure(
+                candidate,
+                "connection refused",
+                CircuitConfig {
+                    failure_threshold: 1,
+                    duration: Duration::from_secs(60),
+                },
+                now_ms(),
+            );
+        }
+        let handle = serve(state.clone()).await.expect("serve");
+        let response = post(&handle.address, "t").await;
+        assert_eq!(response.status(), 503);
+        let retry_after: i64 = response.headers()[header::RETRY_AFTER]
+            .to_str()
+            .expect("header")
+            .parse()
+            .expect("seconds");
+        assert!((1..=60).contains(&retry_after));
+        let body = response.text().await.expect("body");
+        assert!(body.contains("2 家候选供应商均处于熔断冷却期"), "{body}");
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.error_code.as_deref(), Some("VENDOR_CIRCUIT_OPEN"));
+        assert!(record.vendor_id.as_str().is_empty());
+        assert!(record.upstream_status.is_none());
+        assert!(!record.switched);
+        assert!(source.attempts.lock().expect("attempts")[0].is_empty());
+        assert!(notices.lock().expect("notices").is_empty());
+        assert_eq!(
+            state
+                .routes
+                .read()
+                .await
+                .get("r1")
+                .expect("route")
+                .vendor_id,
+            "v1"
+        );
+        assert!(
+            upstream
+                .received_requests()
+                .await
+                .expect("requests")
+                .is_empty()
+        );
+
+        // 不等待一分钟：注入已到期的熔断，验证下一条请求能恢复探测。
+        state.health.lock().await.record_failure(
+            &active,
+            "old failure",
+            CircuitConfig {
+                failure_threshold: 1,
+                duration: Duration::from_secs(1),
+            },
+            now_ms() - 2_000,
+        );
+        let response = post(&handle.address, "t").await;
+        assert_eq!(response.status(), 200);
+        response.bytes().await.expect("body");
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.vendor_id.as_str(), "v1");
+        assert_eq!(record.outcome, GatewayOutcome::Ok);
+        assert!(record.error_code.is_none());
+        assert_eq!(
+            state.health_snapshot().await[0].status,
+            aivc_core::gateway::GatewayVendorHealthStatus::Healthy
+        );
+        handle.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn another_platform_cannot_fill_an_empty_candidate_pool() {
+        let mut other = vendor("claude-only", "http://127.0.0.1:1", 1);
+        other.provider_id = ProviderId::Claude;
+        let (handle, source) = start_recording(vec![other], "tok").await;
+        let response = post(&handle.address, "tok").await;
+        assert_eq!(response.status(), 503);
+        assert!(!response.headers().contains_key(header::RETRY_AFTER));
+        let body = response.text().await.expect("body");
+        assert!(body.contains("codex 没有参与候选池"), "{body}");
+        let record = wait_for_record(&source).await;
+        assert_eq!(record.error_code.as_deref(), Some("VENDOR_UNAVAILABLE"));
+        assert!(record.vendor_id.as_str().is_empty());
         handle.shutdown().await;
     }
 
@@ -3192,7 +3495,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_connection_failure_fails_over_to_a_healthy_vendor() {
         let second = healthy_upstream("from-second").await;
-        let (handle, _source) = start_with_thresholds(
+        let (handle, source) = start_with_thresholds(
             vec![
                 // 1 号端口不会有服务在听。
                 vendor("v1", "http://127.0.0.1:1", 1),
@@ -3207,6 +3510,16 @@ mod tests {
         let response = post(&handle.address, "tok").await;
         assert_eq!(response.status(), 200);
         assert_eq!(response.text().await.expect("正文"), "from-second");
+        wait_for_record(&source).await;
+        let attempts = source.attempts.lock().expect("attempts").clone();
+        let message = attempts[0][0]
+            .error_message
+            .as_deref()
+            .expect("connection error");
+        assert!(
+            message.contains("connect") && message.contains("os error"),
+            "{message}"
+        );
         handle.shutdown().await;
     }
 

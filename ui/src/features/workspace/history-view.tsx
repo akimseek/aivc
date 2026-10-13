@@ -3,6 +3,7 @@ import type { AiMessage, AiSession } from "../../types";
 import { BranchPanel } from "./branch-panel";
 import { HISTORY_MESSAGE_LIMIT } from "../../app/use-console";
 import { displayTitle, formatTokens, messageCountLabel, roleLabel } from "../../app/session-display";
+import { flattenConversationTurns } from "./conversation";
 
 /**
  * 历史视图：会话头 + 血缘条 + 消息线程。
@@ -28,6 +29,9 @@ export function HistoryView({
   session,
   messageTotal,
   messages,
+  provider = "codex",
+  messageOffset = 0,
+  canBranch = true,
   hasEarlier,
   loadingMore,
   onLoadEarlier,
@@ -40,6 +44,9 @@ export function HistoryView({
   session: AiSession | null;
   messageTotal: number | null;
   messages: AiMessage[];
+  provider?: "codex" | "claude" | "gemini" | "qoder";
+  messageOffset?: number;
+  canBranch?: boolean;
   hasEarlier: boolean;
   loadingMore: boolean;
   onLoadEarlier: () => void;
@@ -124,16 +131,14 @@ export function HistoryView({
           </div>
         )}
 
-        {messages.map((message, index) => (
+        {flattenConversationTurns(messages, messageOffset, provider).map(({ entry, branchAnchor: anchor }) => (
           <HistoryMessage
-            key={`${message.sourceLine ?? index}`}
-            message={message}
+            key={`${entry.message.sourceLine ?? entry.index}`}
+            message={entry.message}
             onBranch={
-              // 只有带原始行号的消息才能分支——后端要靠行号定位到原始记录，
-              // 拿可见序号去截会截错位置。
-              message.sourceLine === undefined
+              !canBranch || anchor === undefined
                 ? undefined
-                : () => onBranch(message.sourceLine!, session.id)
+                : () => onBranch(anchor, session.id)
             }
           />
         ))}

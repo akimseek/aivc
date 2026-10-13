@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** 面板头：标题 + 一句说明 + 右侧操作区。十个面板共用，保证「每个面板第一眼长得一样」。 */
+/** 面板头：标题 + 一句说明 + 右侧操作区。各设置面板共用，保证「每个面板第一眼长得一样」。 */
 export function PanelHeader({
   title,
   description,

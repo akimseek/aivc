@@ -142,17 +142,32 @@ describe("MessagesModal", () => {
     expect(props.onOpenSession).toHaveBeenCalledWith(child);
   });
 
-  it("点「从此处分支」回传原始行号", async () => {
-    const { view, props } = setup();
+  it("每轮只在最后一个节点显示「从此处分支」，锚点取最后一条助手回复", async () => {
+    const { view, props } = setup({ total: messages.length });
     const branchButtons = [...view.container.querySelectorAll("button")].filter(
       (item) => item.textContent?.trim() === "从此处分支"
     );
-    // 两条消息都带行号，因此都有入口。
-    expect(branchButtons).toHaveLength(2);
+    expect(branchButtons).toHaveLength(1);
     await act(async () => {
       branchButtons[0]!.click();
     });
-    expect(props.onBranch).toHaveBeenCalledWith(3);
+    expect(props.onBranch).toHaveBeenCalledWith(4);
+  });
+
+  it("过滤非会话合成节点，并保留每轮的最后节点", () => {
+    const { view } = setup({
+      total: 4,
+      messages: [
+        { role: "user", text: "<turn_aborted>" },
+        { role: "user", text: "真实问题", sourceLine: 7 },
+        { role: "assistant", text: "回答", sourceLine: 8 },
+        { role: "tool", text: "工具记录", sourceLine: 9 }
+      ]
+    });
+    expect(view.container.textContent).not.toContain("<turn_aborted>");
+    expect(view.container.textContent).toContain("真实问题");
+    expect(view.container.textContent).toContain("工具记录");
+    expect([...view.container.querySelectorAll("button")].filter((item) => item.textContent?.trim() === "从此处分支")).toHaveLength(1);
   });
 
   it("没行号的消息不给分支入口", () => {
@@ -160,13 +175,14 @@ describe("MessagesModal", () => {
     const { view } = setup({
       messages: [
         { role: "user", text: "有行号", sourceLine: 7 },
-        { role: "user", text: "没行号" }
+        { role: "assistant", text: "有回复" },
+        { role: "user", text: "无助手回复", sourceLine: 9 }
       ]
     });
     const branchButtons = [...view.container.querySelectorAll("button")].filter(
       (item) => item.textContent?.trim() === "从此处分支"
     );
-    expect(branchButtons).toHaveLength(1);
+    expect(branchButtons).toHaveLength(0);
   });
 
   it("平台不支持分支时整条消息都不给入口", () => {
@@ -378,7 +394,10 @@ describe("MessagesModalContainer 的分支接线", () => {
           offset: 0,
           hasMore: false,
           messageCount: 1,
-          messages: [{ role: "user", text: "第一句", sourceLine: 9 }]
+          messages: [
+            { role: "user", text: "第一句", sourceLine: 9 },
+            { role: "assistant", text: "回答", sourceLine: 10 }
+          ]
         })
       }
     };
@@ -405,6 +424,29 @@ describe("MessagesModalContainer 的分支接线", () => {
         .find((item) => item.textContent?.trim() === "从此处分支")!
         .click();
     });
-    expect(onBranch).toHaveBeenCalledWith(9, "modal-session");
+    expect(onBranch).toHaveBeenCalledWith(10, "modal-session", "codex:local");
+  });
+
+  it.each(["claude", "gemini"] as const)("%s 翻页后按后端绝对偏移分支，失败时保留弹框", async (provider) => {
+    window.__TAURI__ = { core: { invoke: async () => ({
+      offset: 100, hasMore: false, messageCount: 102,
+      messages: [{ role: "user", text: "第101条" }, { role: "assistant", text: "第102条" }]
+    }) } };
+    const onBranch = vi.fn().mockResolvedValue(false);
+    const onClose = vi.fn();
+    const view = render(<MessagesModalContainer session={session({ id: "source" })}
+      target={{ id: `${provider}:local`, provider, label: "本机", kind: "local", available: true }}
+      resolveParent={() => undefined} listChildren={async () => []}
+      onClose={onClose} onOpenSession={vi.fn()} onBranch={onBranch} onExport={vi.fn()} />);
+    await waitFor(() => expect(view.container.textContent).toContain("第102条"));
+    await act(async () => {
+      const buttons = [...view.container.querySelectorAll("button")].filter((button) => button.textContent === "从此处分支");
+      buttons[0]!.click();
+      buttons[0]!.click();
+    });
+    expect(onBranch).toHaveBeenCalledTimes(1);
+    expect(onBranch).toHaveBeenCalledWith(102, "source", `${provider}:local`);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(view.container.textContent).toContain("分支创建失败");
   });
 });

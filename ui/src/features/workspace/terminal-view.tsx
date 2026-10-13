@@ -42,6 +42,7 @@ export function TerminalView({
   hidden,
   uiStates,
   onOutput,
+  onInputFocus,
   registerSink,
   unregisterSink,
   onError,
@@ -53,6 +54,7 @@ export function TerminalView({
   hidden: boolean;
   uiStates: Record<string, TerminalUiState>;
   onOutput: (terminalId: string) => void;
+  onInputFocus?: (terminalId: string, mode: "composer" | "terminal") => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
@@ -93,6 +95,7 @@ export function TerminalView({
                   */
                   focusRequest={ui?.focusRequest ?? 0}
                   onOutput={() => onOutput(item.id)}
+                  onInputFocus={(mode) => onInputFocus?.(item.id, mode)}
                   registerSink={registerSink}
                   unregisterSink={unregisterSink}
                   onError={onError}

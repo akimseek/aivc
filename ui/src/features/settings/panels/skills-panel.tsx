@@ -98,7 +98,7 @@ export function SkillsPanel({
   if (!targetId) {
     // 这个分支是可达的（没选目标时导航仍然能点进来）。面板头要跟着一起出来——
     // 只剩一句裸提示的话，用户会以为自己离开了设置中心。与 `gateway-panel.tsx`
-    // 的等待态、`diagnostics-panel.tsx` 的空目标分支同一处理。
+    // 的等待态同一处理。
     return (
       <>
         <PanelHeader

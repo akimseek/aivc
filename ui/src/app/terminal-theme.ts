@@ -32,13 +32,19 @@ export function terminalThemeFor(resolved: "light" | "dark"): ITheme {
       background: "#0d0f17",
       foreground: "#e2e8f0",
       cursor: "#10b981",
-      selectionBackground: "rgba(16, 185, 129, 0.28)"
+      selectionBackground: "rgba(16, 185, 129, 0.28)",
+      scrollbarSliderBackground: "rgba(148, 163, 184, 0.55)",
+      scrollbarSliderHoverBackground: "rgba(148, 163, 184, 0.75)",
+      scrollbarSliderActiveBackground: "rgba(148, 163, 184, 0.9)"
     };
   }
   return {
     background: "#f8fafc",
     foreground: "#1e293b",
     cursor: "#0f172a",
-    selectionBackground: "rgba(5, 150, 105, 0.22)"
+    selectionBackground: "rgba(5, 150, 105, 0.22)",
+    scrollbarSliderBackground: "rgba(71, 85, 105, 0.5)",
+    scrollbarSliderHoverBackground: "rgba(71, 85, 105, 0.7)",
+    scrollbarSliderActiveBackground: "rgba(71, 85, 105, 0.85)"
   };
 }

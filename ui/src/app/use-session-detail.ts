@@ -27,7 +27,10 @@ export function useSessionDetail(
 ) {
   const [page, setPage] = useState(1);
   const [messages, setMessages] = useState<AiMessage[]>([]);
+  const [nextMessageRole, setNextMessageRole] = useState<AiMessage["role"]>();
+  const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   /** 每次「重新加载」自增，用来强制重跑同一个页码。 */
@@ -39,6 +42,8 @@ export function useSessionDetail(
   useEffect(() => {
     setPage(1);
     setMessages([]);
+    setNextMessageRole(undefined);
+    setHasMore(false);
     setTotal(0);
     setError("");
   }, [session?.id, target?.id]);
@@ -52,6 +57,8 @@ export function useSessionDetail(
       */
       seqRef.current += 1;
       setMessages([]);
+      setNextMessageRole(undefined);
+      setHasMore(false);
       setTotal(0);
       setLoading(false);
       return;
@@ -64,7 +71,7 @@ export function useSessionDetail(
         target.id,
         session.id,
         offset,
-        pageSize
+        pageSize + 1
       );
       /*
         后发的请求可能先回：不是最新一次就整段丢弃，**连收尾都不做**。
@@ -72,7 +79,10 @@ export function useSessionDetail(
         messages / total / error 同理，旧响应一律不许再碰。
       */
       if (seq !== seqRef.current) return;
-      setMessages(result.messages);
+      setMessages(result.messages.slice(0, pageSize));
+      setNextMessageRole(result.messages[pageSize]?.role);
+      setHasMore(result.hasMore);
+      setOffset(result.offset);
       /**
        * 后端每次都带 `messageCount`，但**只认非零值**。
        *
@@ -86,6 +96,8 @@ export function useSessionDetail(
       // 失败按同一规则丢弃：旧请求的失败不该报错，更不该清掉已落地的新结果。
       if (seq !== seqRef.current) return;
       setMessages([]);
+      setNextMessageRole(undefined);
+      setHasMore(false);
       setError(errorText(problem));
     } finally {
       if (seq === seqRef.current) setLoading(false);
@@ -100,6 +112,9 @@ export function useSessionDetail(
     page,
     pageSize,
     messages,
+    nextMessageRole,
+    hasMore,
+    offset,
     total,
     loading,
     error,

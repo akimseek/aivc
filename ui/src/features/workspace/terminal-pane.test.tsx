@@ -47,7 +47,10 @@ vi.mock("@xterm/xterm", () => {
   class FakeTerminal {
     /** 组件会在主题变化时原地替换它（不重建终端）。 */
     options: { theme?: unknown } = {};
-    buffer = { active: { length: 0, getLine: () => null } };
+    buffer = {
+      active: { type: "normal", baseY: 0, length: 0, getLine: () => null },
+      onBufferChange() { return { dispose() {} }; }
+    };
     loadAddon() {}
     open(element: unknown) {
       openSpy(element);
@@ -69,6 +72,8 @@ vi.mock("@xterm/xterm", () => {
     onData() {
       return { dispose() {} };
     }
+    onWriteParsed() { return { dispose() {} }; }
+    onResize() { return { dispose() {} }; }
   }
   return { Terminal: FakeTerminal };
 });
@@ -189,6 +194,21 @@ describe("TerminalPane 的焦点请求", () => {
       <TerminalPane {...props({ active: false, focusRequest: 1, composerVisible: true })} />
     );
     expect(focusSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("TerminalPane 的自管输入草稿", () => {
+  it("切换到其他标签时仍保留当前终端的输入内容", () => {
+    const view = render(<TerminalPane {...props({ composerVisible: true })} />);
+    const area = view.container.querySelector("textarea.composer-text") as HTMLTextAreaElement;
+    expect(area).toBeTruthy();
+
+    fireEvent.change(area, { target: { value: "跨标签仍应保留" } });
+    view.rerender(<TerminalPane {...props({ active: false, composerVisible: true })} />);
+
+    expect((view.container.querySelector("textarea.composer-text") as HTMLTextAreaElement).value).toBe(
+      "跨标签仍应保留"
+    );
   });
 });
 

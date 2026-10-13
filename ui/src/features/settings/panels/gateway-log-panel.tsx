@@ -11,7 +11,8 @@ import {
   Toolbar,
   ToolbarSpacer,
   errorText,
-  useAsyncData
+  useAsyncData,
+  usePreservedScroll
 } from "../../../components";
 import * as api from "../../../ipc/commands";
 import { PanelHeader } from "../panel-header";
@@ -57,6 +58,7 @@ export function GatewayLogPanel({
   const [picker, setPicker] = useState({ range: "7d" as UsageRangeKey, start: "", end: "" });
   const [outcome, setOutcome] = useState<"" | "ok" | "error" | "timeout" | "client-aborted">("");
   const [page, setPage] = useState(1);
+  const { ref: panelRef, captureScroll } = usePreservedScroll();
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const vendors = useAsyncData(api.listVendors, { errorMessage: "供应商列表读取失败", onError });
@@ -114,8 +116,11 @@ export function GatewayLogPanel({
       ...(outcome ? { outcome } : {}),
       periodStart: bounds.start,
       periodEnd: bounds.end
+    }).then((result) => {
+      captureScroll();
+      return result;
     });
-  }, [page, pageSize, outcome, picker.range, picker.start, picker.end]);
+  }, [page, pageSize, outcome, picker.range, picker.start, picker.end, captureScroll]);
 
   const logs = useAsyncData(load, { errorMessage: "日志查询失败", onError });
   const reloadLogs = logs.reload;
@@ -197,7 +202,7 @@ export function GatewayLogPanel({
   }, [page, logs, onNotify, onError]);
 
   return (
-    <div className="observability-panel">
+    <div className="observability-panel" ref={panelRef}>
       {/* 面板头统一：标题、说明与「重新查询」从卡片头搬到这里（卡片本体只管内容）。 */}
       <PanelHeader
         title="请求日志"
@@ -248,13 +253,13 @@ export function GatewayLogPanel({
             「全选当前页」就是字面意思：勾上**这一页**的条目。
             翻页会清空勾选（见 `gotoPage`），因此不存在「跨页累计」这种状态。
           */}
-          <Button small onClick={toggleAll} disabled={items.length === 0}>
+          <Button small onClick={toggleAll} disabled={logs.loading || items.length === 0}>
             {allSelected ? "取消全选" : "全选当前页"}
           </Button>
           <Button
             small
             variant="danger"
-            disabled={selected.size === 0}
+            disabled={logs.loading || selected.size === 0}
             onClick={() => void removeSelected()}
           >
             删除选中（{selected.size}）
@@ -270,8 +275,9 @@ export function GatewayLogPanel({
 
       {/* 标题里报的是**匹配总数**（不是本页条数）：分页之后两者会不一样，
           而用户要的是「这个条件下到底有多少条」。 */}
-      <Card title={`结果（共 ${total} 条）`}>
-        {logs.loading ? (
+      <Card title={`结果（共 ${total} 条）${logs.loading && logs.data ? " · 查询中…" : ""}`}>
+        {/* 翻页和刷新期间保留已有表格，避免加载占位压缩内容并重置滚动位置。 */}
+        {logs.loading && !logs.data ? (
           <LoadingBlock label="正在查询日志…" />
         ) : logs.error ? (
           <EmptyState message="日志查询失败。" hint={logs.error} />
@@ -283,7 +289,7 @@ export function GatewayLogPanel({
         ) : (
           /* `dense`：日志一行信息不多但会很长，行距收一档、单元格居中；
              时间与状态码走等宽数字，同一列才对得齐。 */
-          <table className="data-table dense">
+          <table className="data-table dense" aria-busy={logs.loading}>
             <thead>
               <tr>
                 <th>选择</th>
@@ -302,6 +308,7 @@ export function GatewayLogPanel({
                   <td>
                     <input
                       type="checkbox"
+                      disabled={logs.loading}
                       checked={selected.has(entry.requestId)}
                       aria-label={`选择 ${entry.requestId}`}
                       onChange={() => toggle(entry.requestId)}
@@ -309,7 +316,7 @@ export function GatewayLogPanel({
                   </td>
                   <td className="mono ui-num">{formatLogTime(entry.createdAt)}</td>
                   <td>{entry.providerId}</td>
-                  <td>{vendorName(vendors.data ?? [], entry.vendorId)}</td>
+                  <td>{entry.vendorId ? vendorName(vendors.data ?? [], entry.vendorId) : "未转发"}</td>
                   <td>
                     <Badge small tone={outcomeTone(entry.outcome)}>
                       {outcomeLabel(entry.outcome)}
@@ -333,7 +340,7 @@ export function GatewayLogPanel({
                             </li>
                           ))}
                         </ol>
-                      ) : <p>此记录没有上游尝试明细。</p>}
+                      ) : <p>{entry.vendorId ? "此记录没有上游尝试明细。" : "请求在网关阶段结束，未向供应商发起请求。"}</p>}
                     </details>
                   </td>
                 </tr>

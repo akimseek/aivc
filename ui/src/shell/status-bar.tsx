@@ -1,11 +1,10 @@
-import { gatewayPortLabel } from "../app/gateway-address";
 import { formatWhen } from "../app/session-display";
 import { terminalInputButtonTitle, type TerminalInputMode } from "../features/workspace/composer/composer-text";
 import { VendorRoutePicker } from "../features/workbench/vendor-route-picker";
 import type { useTerminals } from "../app/use-terminals";
 import { Icon, ToolbarSpacer } from "../components";
 import * as api from "../ipc/commands";
-import type { AiSession, AiTarget, GatewayPortStatus } from "../types";
+import type { AiSession, AiTarget } from "../types";
 
 /**
  * 状态栏（28px）。
@@ -41,7 +40,6 @@ export function StatusBar({
   target,
   terminals,
   activeTerminalId,
-  gateway,
   inputMode,
   onToggleInputMode,
   onNotify
@@ -66,7 +64,6 @@ export function StatusBar({
    * 用**真实类型**而不是手抄的子集：抄漏字段名的话，「后端发的字段名与界面读的不一致」
    * 这件事会被类型系统放过去，两边都编译得过，运行时那一格永远是错的。
    */
-  gateway: GatewayPortStatus | null;
   inputMode: TerminalInputMode;
   onToggleInputMode: () => void;
   /** 一句话反馈（复制会话编号之后说一声）。 */
@@ -85,8 +82,6 @@ export function StatusBar({
    * 判断逻辑在 `gateway-address.ts`，与工作台共用——两边各写一遍的话，
    * 一处算错只有一格显示不对，很难发现。
    */
-  const gatewayText = gatewayPortLabel(gateway);
-
   /** 当前**前台**那一路终端。供应商选择器与输入模式胶囊都讲的是它。 */
   const activeTerminal = terminals.terminals.find((item) => item.id === activeTerminalId);
 
@@ -137,10 +132,6 @@ export function StatusBar({
         </span>
       )}
 
-      <span className="status-gateway">
-        网关 <b>{gatewayText}</b>
-      </span>
-
       {/* 输入模式：写的是**当前在哪**（与输入区那个按钮相反——那个写的是点下去会切到哪），
           因为这一格是状态指示，而输入区那个是动作按钮。 */}
       <button
@@ -151,7 +142,7 @@ export function StatusBar({
         title={terminalInputButtonTitle(inputMode)}
       >
         <Icon name={inputMode === "composer" ? "chat" : "keyboard"} size={12} />
-        <span>{inputMode === "composer" ? "自管输入" : "终端原生输入"}</span>
+        <span>{inputMode === "composer" ? "\u81ea\u7ba1\u8f93\u5165" : "\u7ec8\u7aef\u8f93\u5165"}</span>
       </button>
     </footer>
   );

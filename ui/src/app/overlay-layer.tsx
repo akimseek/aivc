@@ -9,6 +9,7 @@ import { SessionContextMenu } from "../features/sessions/session-context-menu";
 import { SessionDuplicateDialog, SessionRenameDialog } from "../features/sessions/session-title-dialogs";
 import { SessionSettingsDialog } from "../features/sessions/session-settings-dialog";
 import { TabContextMenu } from "../features/workspace/tab-context-menu";
+import { supportsBranch } from "./provider-capabilities";
 
 /** 新会话对话框的草稿。 */
 export type NewSessionDraft = {
@@ -32,6 +33,7 @@ export type OverlaysState = {
   tabMenu: { key: string; x: number; y: number } | null;
   titleDialog: { kind: "rename" | "duplicate"; session: AiSession } | null;
   detailSession: AiSession | null;
+  detailTarget?: AiTarget | null;
   settingsOpen: boolean;
   settingsTab: SettingsTab;
 };
@@ -100,7 +102,7 @@ export type OverlaysActions = {
    * 带 `sessionId`：消息弹框开着的未必是**当前选中**的那一条（侧栏卡片上的
    * 「消息与分支」能为非选中会话开弹框），只读选中值会把分支分到别的会话上。
    */
-  branchFromMessage: (sourceLine: number, sessionId?: string) => void;
+  branchFromMessage: (anchor: number, sessionId: string, targetId?: string) => Promise<boolean>;
   /**
    * 导出**消息弹框里那一条**会话。
    *
@@ -306,10 +308,10 @@ export function AppOverlays({
           「要看哪一条」——关掉就回到原来的视图。 */}
       <MessagesModalContainer
         session={state.detailSession}
-        target={targets.find((item) => item.id === targetId) ?? null}
-        canBranch={canBranch}
+        target={state.detailTarget ?? targets.find((item) => item.id === targetId) ?? null}
+        canBranch={state.detailTarget ? supportsBranch(providers, state.detailTarget.provider) : canBranch}
         resolveParent={resolveSession}
-        listChildren={(parentSessionId) => api.listSessionChildren(parentSessionId, targetId)}
+        listChildren={(parentSessionId) => api.listSessionChildren(parentSessionId, state.detailTarget?.id ?? targetId)}
         onClose={actions.closeDetail}
         onBranch={actions.branchFromMessage}
         onOpenSession={actions.resumeSession}
@@ -327,7 +329,6 @@ export function AppOverlays({
           providerId={providerId}
           providers={providers}
           targetId={targetId}
-          targets={targets}
           selectedTarget={selectedTarget}
           initialTab={state.settingsTab}
           version={appVersion}

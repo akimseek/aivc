@@ -88,6 +88,11 @@ pub struct PageFolder {
 }
 
 impl PageFolder {
+    /// 已消费的去重可见消息数；分支截断与分页必须使用相同口径。
+    pub(crate) const fn visible_count(&self) -> u64 {
+        self.visible_index
+    }
+
     /// 构造。
     ///
     /// `anchor` 为 [`PageCursor::Offset`] 时可传入已索引的锚点；首屏会忽略它。

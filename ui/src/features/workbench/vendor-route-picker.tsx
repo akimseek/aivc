@@ -234,7 +234,7 @@ export function VendorRoutePicker({
           {/* 健康快照取到了 = 网关回答了这次请求，于是可以说「在线」。 */}
           {health && (
             <span className="vendor-pop-net">
-              <StatusDot tone="ok" pulse size={7} />
+              <StatusDot tone="ok" size={7} />
               网关在线
             </span>
           )}

@@ -31,6 +31,7 @@ export type { ListRowProps } from "./list";
 export { Pager } from "./pager";
 export { Pagination } from "./pagination";
 export { useListPagination } from "./use-list-pagination";
+export { usePreservedScroll } from "./use-preserved-scroll";
 export { ContextMenu, ContextMenuItem } from "./context-menu";
 export { IconButton } from "./icon-button";
 export { FoldableText, FOLD_CHARS } from "./foldable-text";

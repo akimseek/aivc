@@ -114,7 +114,7 @@ export function EnvironmentPanel({
 
   // 两个早返回分支都要带面板头：它们都会真的出现（没选平台时、检测结果还没回来时），
   // 只剩一句裸提示的话，用户会以为自己离开了设置中心。与 `gateway-panel.tsx` 的
-  // 「读取网关状态…」、`diagnostics-panel.tsx` 的空目标分支同一处理。
+  // 与 `gateway-panel.tsx` 的「读取网关状态…」等待态同一处理。
   if (!providerId) {
     return (
       <>

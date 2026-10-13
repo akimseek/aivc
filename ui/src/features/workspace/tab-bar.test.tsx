@@ -128,7 +128,7 @@ describe("TabBar", () => {
     const { pills } = setup();
     const first = pills()[0]!.querySelector(".status-dot-pin")!;
     expect(first.className).toContain("dot-ok");
-    expect(first.className).toContain("pulse");
+    expect(first.className).not.toContain("pulse");
 
     const second = pills()[1]!.querySelector(".status-dot-pin")!;
     expect(second.className).toContain("dot-warn");

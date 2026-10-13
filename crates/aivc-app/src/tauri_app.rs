@@ -738,6 +738,17 @@ pub const fn window_spec() -> WindowSpec {
 mod window_spec_tests {
     use super::*;
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn the_default_window_icon_has_enough_resolution_for_the_taskbar() {
+        // Tauri 2 的 ICO 解码器使用首个条目；16px 首图会被任务栏放大而变模糊。
+        // 验证最终生成的上下文，防止重新生成 ICO 时又把小尺寸排到最前。
+        let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        let icon = context.default_window_icon().expect("默认窗口图标");
+        assert!(icon.width() >= 256, "窗口图标宽度不足：{}", icon.width());
+        assert!(icon.height() >= 256, "窗口图标高度不足：{}", icon.height());
+    }
+
     #[test]
     fn the_window_spec_matches_the_desktop_reference() {
         // parity 矩阵 A1：尺寸、最小尺寸、标题、背景色。

@@ -616,7 +616,16 @@ impl CommandRouter {
             "vendor:list" => to_value(VendorCommands::list(ctx, &args).await?),
             "vendor:save" => to_value(VendorCommands::save(ctx, &args).await?),
             "vendor:delete" => to_value(VendorCommands::delete(ctx, &args).await?),
-            "vendor:set-enabled" => to_value(VendorCommands::set_enabled(ctx, &args).await?),
+            "vendor:set-enabled" => {
+                let enabled = require_boolean(args.get("enabled"), "enabled")?;
+                let vendor = VendorCommands::set_enabled(ctx, &args).await?;
+                if !enabled {
+                    if let Some(gateway) = &self.gateway {
+                        gateway.reconcile_disabled_vendor(&vendor.id).await;
+                    }
+                }
+                to_value(vendor)
+            }
             "vendor:enable" => Ok(VendorCommands::enable(ctx, &args).await?),
             "vendor:write-configs" => Ok(VendorCommands::write_configs(ctx, &args).await?),
 

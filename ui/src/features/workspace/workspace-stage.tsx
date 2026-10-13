@@ -33,6 +33,7 @@ export function WorkspaceStage({
   terminals,
   uiStates,
   onOutput,
+  onInputFocus,
   registerSink,
   unregisterSink,
   onError,
@@ -41,6 +42,9 @@ export function WorkspaceStage({
   session,
   messageTotal,
   messages,
+  provider = "codex",
+  messageOffset = 0,
+  canBranch = true,
   hasEarlier,
   loadingMore,
   onLoadEarlier,
@@ -55,6 +59,7 @@ export function WorkspaceStage({
   terminals: TerminalSession[];
   uiStates: Record<string, TerminalUiState>;
   onOutput: (terminalId: string) => void;
+  onInputFocus?: (terminalId: string, mode: "composer" | "terminal") => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
@@ -70,6 +75,9 @@ export function WorkspaceStage({
   session: AiSession | null;
   messageTotal: number | null;
   messages: AiMessage[];
+  provider?: "codex" | "claude" | "gemini" | "qoder";
+  messageOffset?: number;
+  canBranch?: boolean;
   hasEarlier: boolean;
   loadingMore: boolean;
   onLoadEarlier: () => void;
@@ -89,6 +97,7 @@ export function WorkspaceStage({
           hidden={stage.kind !== "terminal"}
           uiStates={uiStates}
           onOutput={onOutput}
+          onInputFocus={onInputFocus}
           registerSink={registerSink}
           unregisterSink={unregisterSink}
           onError={onError}
@@ -102,6 +111,9 @@ export function WorkspaceStage({
           session={session}
           messageTotal={messageTotal}
           messages={messages}
+          provider={provider}
+          messageOffset={messageOffset}
+          canBranch={canBranch}
           hasEarlier={hasEarlier}
           loadingMore={loadingMore}
           onLoadEarlier={onLoadEarlier}

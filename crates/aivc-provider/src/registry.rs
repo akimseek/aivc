@@ -169,10 +169,10 @@ pub trait SessionProvider: Send + Sync {
 
 /// 支持「从此处分支」。
 pub trait Branchable: SessionProvider {
-    /// 从指定原始 JSONL 行创建分支。
+    /// 从指定消息创建分支。
     ///
-    /// `message_line` 是**原始 JSONL 的绝对行号**，不是可见消息序号——两者在过滤掉
-    /// 合成消息后并不相等。
+    /// Codex 的锚点为原始 JSONL 行号，保留该消息所属整轮；Claude/Gemini 为从 1 起的
+    /// 去重可见消息序号（含系统消息，与分页口径一致），保留到该消息。
     fn branch_session<'a>(
         &'a self,
         ctx: &'a ProviderContext,

@@ -111,10 +111,32 @@ describe("useSessionDetail", () => {
     );
     const { get } = await renderDetail(50);
     await waitFor(() => {
-      expect(runtime.calls[0]).toEqual({ offset: 0, limit: 50 });
+      expect(runtime.calls[0]).toEqual({ offset: 0, limit: 51 });
       expect(get().messages).toHaveLength(1);
       expect(get().total).toBe(120);
     });
+  });
+
+  it("额外读取一条边界消息，但不把它显示在当前页", async () => {
+    const runtime = fakeRuntime(
+      new Map([[
+        0,
+        {
+          offset: 0,
+          messages: [
+            ...Array.from({ length: 50 }, (_, index) => ({ role: "assistant", text: `p1-${index}` })),
+            { role: "user", text: "下一轮" }
+          ],
+          hasMore: true,
+          messageCount: 120
+        }
+      ]])
+    );
+    const { get } = await renderDetail(50);
+    await waitFor(() => expect(get().messages).toHaveLength(50));
+    expect(get().nextMessageRole).toBe("user");
+    expect(get().hasMore).toBe(true);
+    expect(runtime.calls[0]).toEqual({ offset: 0, limit: 51 });
   });
 
   it("翻到第 3 页时 offset = (3-1) × 每页", async () => {

@@ -377,8 +377,10 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setSelectedId((current) => (fresh.some((s) => s.id === current) ? current : ""));
         setSelectedIds([]);
         setError("");
+        return true;
       } catch (problem) {
         if (seq === requestSeqRef.current) setError(errorText(problem));
+        return false;
       } finally {
         if (seq === requestSeqRef.current) setSearching(false);
       }
@@ -400,24 +402,25 @@ export function useConsole(options: { notify?: Notify } = {}) {
   /* ── 消息：选中会话后取**最后一页**，再按需往前翻 ── */
   useEffect(() => {
     // 换会话/目标即作废在途的翻页（见 `messagesSeqRef` 的说明）。
-    messagesSeqRef.current += 1;
+    const seq = ++messagesSeqRef.current;
     if (!targetId || !selectedId) {
       setMessages([]);
       setMessageStart(0);
       setMessageTotal(null);
+      setError("");
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
         const page = await api.getSessionMessagesPage(targetId, selectedId, -1, MESSAGE_PAGE_SIZE);
-        if (cancelled) return;
+        if (cancelled || seq !== messagesSeqRef.current) return;
         setMessages(page.messages);
         setMessageStart(page.offset);
         // 0 表示后端也拿不到总数——那时界面回退到列表的下界。
         setMessageTotal(page.messageCount > 0 ? page.messageCount : null);
       } catch (problem) {
-        if (!cancelled) setError(errorText(problem));
+        if (!cancelled && seq === messagesSeqRef.current) setError(errorText(problem));
       }
     })();
     return () => {
@@ -743,28 +746,46 @@ export function useConsole(options: { notify?: Notify } = {}) {
   /**
    * 从某条消息处创建分支。
    *
-   * `messageLine` 必须是**原始 JSONL 行号**：后端要靠它精确定位到原始记录。
-   * 过滤后的可见序号会截错位置，因此界面上只有带 `sourceLine` 的消息才提供这个动作。
+   * 锚点由界面按平台提供：Codex 用原始行号，Claude/Gemini 用绝对可见序号。
    *
    * `sessionId` 省略时从**当前选中**的那条分出去。消息弹框会显式传编号：它开着的
    * 未必是选中项（侧栏卡片上的「消息与分支」就能为非选中会话开弹框），只读选中值
    * 会把分支分到**别的会话**上去——与 [`exportCurrent`] 同一条理由、同一种做法。
    */
+  const branchPendingRef = useRef(false);
+  const currentTargetIdRef = useRef(targetId);
+  useEffect(() => { currentTargetIdRef.current = targetId; }, [targetId]);
   const branchFromMessage = useCallback(
-    async (messageLine: number, sessionId?: string) => {
+    async (messageLine: number, sessionId?: string, sourceTargetId = targetId) => {
       const id = sessionId ?? selectedId;
-      if (!targetId || !id) return;
+      if (!sourceTargetId || !id || branchPendingRef.current) return null;
+      branchPendingRef.current = true;
       try {
-        const branch = await api.branchSession(targetId, id, messageLine);
-        await loadSessions(targetId, view, query);
-        setSelectedId(branch.id);
+        const branch = await api.branchSession(sourceTargetId, id, messageLine);
+        if (!branch.id || branch.id === id) throw new Error("分支编号无效，已停止打开原会话。");
+        let refreshed = true;
+        if (sourceTargetId === currentTargetIdRef.current) {
+          setView("active");
+          setQuery("");
+          refreshed = (await loadSessions(sourceTargetId, "active", "")) !== false;
+          // 列表有延迟或刷新失败时仍保留已经创建的分支。
+          if (sourceTargetId === currentTargetIdRef.current) {
+            setSessions((current) => [branch, ...current.filter((item) => item.id !== branch.id)]);
+            setSelectedId(branch.id);
+          }
+        }
         setError("");
-        notify("已创建新的分支会话。");
+        notify(refreshed ? "已创建新的分支会话。" : "分支已创建，但会话列表刷新失败，请稍后手动刷新。");
+        return branch;
       } catch (problem) {
         setError(`分支失败：${errorText(problem)}`);
+        notify(`分支失败：${errorText(problem)}`);
+        return null;
+      } finally {
+        branchPendingRef.current = false;
       }
     },
-    [targetId, selectedId, view, query, loadSessions, notify]
+    [targetId, selectedId, loadSessions, notify]
   );
 
   /** 在系统文件管理器里打开当前会话所在的目录。 */
@@ -923,6 +944,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
       if (plan.target) selectTarget(plan.target);
       setSelectedId(session.id);
       setPane("sessions");
+      setError("");
       /*
         从**收藏夹**打开一条会话时回到当前会话列表。
 
@@ -960,6 +982,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
     setSelectedId,
     selectedSession: sessions.find((session) => session.id === selectedId) ?? null,
     messages,
+    messageStart,
     messageTotal,
     hasEarlier: messageStart > 0,
     loadEarlierMessages,

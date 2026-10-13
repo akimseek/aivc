@@ -57,6 +57,7 @@ export function ComposerInput({
   vendorId,
   targetId,
   onSent,
+  onFocus,
   onError
 }: {
   terminalId: string;
@@ -70,6 +71,7 @@ export function ComposerInput({
   targetId?: string;
   /** 提交成功后的回调：让父组件把焦点还给终端或记住「已提交」。 */
   onSent?: (text: string) => void;
+  onFocus?: () => void;
   onError: (message: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -398,25 +400,14 @@ export function ComposerInput({
           value={text}
           placeholder="在这里写完整的提示词，Enter 发送、Shift+Enter 换行。粘贴长内容会自动收成标记，截图可以直接粘进来。"
           onChange={(event) => setText(event.target.value)}
+          onFocus={onFocus}
           onPaste={onPaste}
           onKeyDown={onKeyDown}
         />
 
         <div className={`composer-actions${dragging ? " dragging" : ""}`}>
-          {/* 模型选择：这一路没有可列的清单时它自己什么都不渲染（判据在 `models.ts`）。 */}
-          <ModelSelect
-            terminalId={terminalId}
-            providerId={providerId}
-            vendorId={vendorId}
-            targetId={targetId}
-            onSent={onSent}
-            onError={onError}
-          />
-
           {/*
-            附件入口是**一个按钮带一个下拉**，而不是两个并排的按钮：
-            工具行左边现在归模型选择，再加两个按钮会把这一行撑成一排控件。
-            两个动作本身没变（见 `addImages` / `addFiles`）。
+            附件入口放在工具行左侧，菜单保留添加图片和添加文件两个动作。
 
             用原生 `button` 而不是 `Button`：`Popover` 需要一个能测位置的锚点，
             而组件层的 `Button` 不透传 `ref`。
@@ -465,8 +456,15 @@ export function ComposerInput({
             {dragging ? "松手即添加" : blocks.length > 0 ? `已收起 ${blocks.length} 段长内容` : ""}
           </span>
           <span className="spacer" />
-          {/* 快捷方式写在按钮旁边：这是这一块最需要被记住的一件事。 */}
-          <span className="row-meta">Enter 发送</span>
+          {/* 模型选择放在发送按钮左侧；没有模型来源时不渲染。 */}
+          <ModelSelect
+            terminalId={terminalId}
+            providerId={providerId}
+            vendorId={vendorId}
+            targetId={targetId}
+            onSent={onSent}
+            onError={onError}
+          />
           <Button
             small
             variant="primary"

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   AiProviderSummary,
+  AiMessage,
   AiSession,
   AiTarget,
   GatewayPortStatus
@@ -147,6 +148,9 @@ function fakeRuntime(options: {
   session: AiSession;
   /** 本机目标下 `shell:path-exists` 的回答。 */
   localExists: boolean;
+  branch?: AiSession;
+  branchFails?: boolean;
+  messages?: AiMessage[];
 }) {
   const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
 
@@ -167,7 +171,10 @@ function fakeRuntime(options: {
       case "codex:list-sessions":
         return [options.session];
       case "codex:get-session-messages-page":
-        return { offset: 0, messages: [], hasMore: false, messageCount: 0 };
+        return { offset: 0, messages: options.messages ?? [], hasMore: false, messageCount: options.messages?.length ?? 0 };
+      case "codex:branch-session":
+        if (options.branchFails) throw new Error("无法创建分支");
+        return options.branch;
       case "codex:list-session-children":
         // 历史视图的血缘条会拉一次子分支；不答数组会让它拿到 `null`（真后端不会）。
         return [];
@@ -248,6 +255,28 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("恢复会话的调用链（App 级）", () => {
+  it("消息弹框创建分支后在新标签恢复新编号，原会话仍在", async () => {
+    const branch = { ...session("D:\\work"), id: "branch-1", title: "新分支" };
+    const runtime = fakeRuntime({ target: LOCAL_TARGET, session: session("D:\\work"), localExists: true,
+      branch, messages: [
+        { role: "user", text: "分支点", sourceLine: 7 },
+        { role: "assistant", text: "回答", sourceLine: 8 }
+      ] });
+    const view = render(<App />);
+    await resumeViaSidebar(view.container, LOCAL_TARGET);
+    await waitFor(() => expect(runtime.invoked("terminal:start")).toHaveLength(1));
+    fireEvent.click(screen.getByTitle("查看这条会话的消息与分支"));
+    const button = await screen.findByRole("button", { name: "从此处分支" });
+    fireEvent.click(button);
+    await waitFor(() => expect(runtime.invoked("terminal:start")).toHaveLength(2));
+    expect(runtime.invoked("codex:branch-session")).toEqual([{ targetId: LOCAL_TARGET.id, sessionId: "sess-resume-1", messageLine: 8 }]);
+    expect(runtime.invoked("terminal:start")[1]).toMatchObject({ targetId: LOCAL_TARGET.id, sessionId: "branch-1", cwd: "D:\\work" });
+    await waitFor(() => expect(view.container.querySelector(".messages-overlay")).toBeNull());
+    expect(view.container.textContent).toContain("新分支");
+    expect(view.container.textContent).toContain("要恢复的会话");
+    await settle();
+  });
+
   it("假后端的 WSL 判据与后端 `wsl_distro_of` 的形制一致", () => {
     // 这张表就是「各平台前缀 + 该平台的目标形制」的清单，照 `aivc-core/src/target.rs`
     // 抄写；后端改了形制，这里跟着改——改不动就说明生产里那两处会错判。

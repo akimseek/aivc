@@ -579,9 +579,9 @@ fn qoder_args(params: &CommandParams, extra: &[String]) -> Vec<String> {
     args
 }
 
-/// Codex 的参数（恢复会话 → `-C` → 用户参数）。
+/// Codex 的参数：内嵌终端使用 inline 模式，保留 xterm 回滚历史。
 fn codex_args_for(params: &CommandParams, extra: &[String], cwd: &str) -> Vec<String> {
-    match params.session_id.as_deref() {
+    let mut args = match params.session_id.as_deref() {
         // 「恢复会话」固定带 `--all`：它让 Codex 在全部历史里找会话，而不只是当前目录。
         Some(id) => vec!["resume".to_owned(), "--all".to_owned(), id.to_owned()],
         None if params.use_cwd_flag && params.cwd.is_some() => {
@@ -590,7 +590,13 @@ fn codex_args_for(params: &CommandParams, extra: &[String], cwd: &str) -> Vec<St
             args
         }
         None => extra.to_vec(),
+    };
+    // Alternate screen has no terminal scrollback. Both local and WSL
+    // launches use this helper, including resumed sessions.
+    if !args.iter().any(|arg| arg == "--no-alt-screen") {
+        args.insert(0, "--no-alt-screen".to_owned());
     }
+    args
 }
 
 /// WSL 下「先建目录再进入」的前缀。
@@ -1052,7 +1058,7 @@ mod tests {
         with_cwd.cwd = Some("/work".to_owned());
         with_cwd.use_cwd_flag = true;
         let command = build_codex_command(&with_cwd, None, &["--flag".to_owned()], false);
-        assert_eq!(command.args, ["-C", "/work", "--flag"]);
+        assert_eq!(command.args, ["--no-alt-screen", "-C", "/work", "--flag"]);
         assert_eq!(command.cwd, "/work");
     }
 

@@ -131,6 +131,8 @@ export function useTerminals() {
   const pendingPrompts = useRef<Map<string, string>>(new Map());
   /** 各终端待处理的提醒（等待确认等）。用户在界面上看过就该清掉。 */
   const [attention, setAttention] = useState<Record<string, TerminalAttention>>({});
+  /** 相同状态事件只弹一次系统通知；提醒清除或内容变化后才允许再次弹出。 */
+  const lastNotifiedAttentionRef = useRef<Map<string, string>>(new Map());
   /** 各终端的输入侧界面状态（模式与输入框可见性）。见 [`TerminalUiState`]。 */
   const [uiStates, setUiStates] = useState<Record<string, TerminalUiState>>({});
   /**
@@ -189,17 +191,27 @@ export function useTerminals() {
     let unlisten: (() => void) | undefined;
     void api
       .listen<TerminalStatusPayload>(api.CHANNEL_TERMINAL_STATUS, (payload) => {
+        if (payload.attention) {
+          const signature = [
+            payload.attention.kind,
+            payload.attention.title,
+            payload.attention.detail ?? ""
+          ].join("\u0000");
+          if (lastNotifiedAttentionRef.current.get(payload.terminalId) !== signature) {
+            lastNotifiedAttentionRef.current.set(payload.terminalId, signature);
+            void api.notify(
+              payload.attention.title,
+              payload.attention.detail ?? "切回应用可继续。"
+            );
+          }
+        } else {
+          lastNotifiedAttentionRef.current.delete(payload.terminalId);
+        }
         setAttention((current) => {
           const next = { ...current };
           if (payload.attention) {
             // 盖一个界面侧的时间戳，只用于**排序**（最新的在最上面）。
             next[payload.terminalId] = { ...payload.attention, updatedAt: Date.now() };
-            // **顺带发一条系统通知**：标签上的小点只在窗口可见时有用，
-            // 而「程序在等你确认」恰恰常常发生在用户切到别的窗口之后。
-            void api.notify(
-              payload.attention.title,
-              payload.attention.detail ?? "切回应用可继续。"
-            );
           } else {
             // 状态变回「运行中/已完成」时提醒就不再成立，必须清掉——
             // 否则标签上的小点会一直亮着，用户会以为还有事没处理。
@@ -267,6 +279,7 @@ export function useTerminals() {
             delete next[payload.terminalId];
             return next;
           });
+          lastNotifiedAttentionRef.current.delete(payload.terminalId);
         }
       )
       .then((fn) => {
@@ -298,7 +311,7 @@ export function useTerminals() {
       }>(api.CHANNEL_GATEWAY_VENDOR_SWITCHED, (payload) => {
         // `terminalId` 与 `routeId` 是同一个值；两个都给是让前端用哪个都行。
         const id = payload.terminalId || payload.routeId;
-        if (!id) return;
+        if (!id || !payload.vendorId?.trim()) return;
         const mode: VendorRouteMode = payload.mode === "locked" ? "locked" : "dynamic";
         const reason = (payload.reason ?? "manual") as VendorSwitch["reason"];
         setTerminals((current) =>
@@ -488,6 +501,15 @@ export function useTerminals() {
     []
   );
 
+  /** 记录真实 DOM 焦点，不改变输入框可见性，也不触发抢焦点请求。 */
+  const noteInputFocus = useCallback((id: string, mode: TerminalInputMode) => {
+    setUiStates((current) => {
+      const state = current[id];
+      if (!state || state.inputMode === mode) return current;
+      return { ...current, [id]: { ...state, inputMode: mode } };
+    });
+  }, []);
+
   /**
    * 收到输出。
    *
@@ -555,6 +577,7 @@ export function useTerminals() {
         delete next[id];
         return next;
       });
+      lastNotifiedAttentionRef.current.delete(id);
       // 输入侧状态跟着终端一起走：留着的话，同一个编号（不会复用，但列表会变）的
       // 旧模式会在状态栏上显示出来。
       setUiStates((current) => {
@@ -590,6 +613,7 @@ export function useTerminals() {
     closeTerminal,
     clearAttention,
     setInputMode,
+    noteInputFocus,
     noteOutput,
     registerSink,
     unregisterSink,

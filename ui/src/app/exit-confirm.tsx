@@ -85,13 +85,11 @@ export function ExitConfirm({ onError }: { onError: (message: string) => void })
       title="退出 AI 可视化控制台"
       size="sm"
       onClose={cancel}
+      showCloseButton
       // 点遮罩不关闭用 `Dialog` 的默认值：这个框的每个选项都会改变应用状态，
       // 误点一下遮罩不该被当成回答。
       footer={
         <>
-          <Button disabled={busy} onClick={() => void choose("cancel")}>
-            取消
-          </Button>
           <Button disabled={busy} onClick={() => void choose("minimize")}>
             最小化到托盘
           </Button>

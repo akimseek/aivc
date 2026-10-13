@@ -52,7 +52,7 @@ function setup(overrides: {
       messages={
         overrides.messages ?? [
           message({ role: "user", text: "帮我看看这个报错" }),
-          message({ role: "assistant", text: "先跑一下测试" }),
+          message({ role: "assistant", text: "先跑一下测试", sourceLine: 11 }),
           message({ role: "tool", text: "$ npm test", sourceLine: 12 })
         ]
       }
@@ -100,16 +100,29 @@ describe("HistoryView", () => {
     expect(view.container.querySelector(".history-head")!.textContent).not.toContain("继续会话");
   });
 
-  it("只有带原始行号的消息能分支", () => {
+  it("每轮只在最后节点显示分支，锚点取最后一条助手回复", () => {
     const { view, onBranch } = setup();
     const blocks = [...view.container.querySelectorAll(".history-message")];
-    // 前两条没有行号：不渲染分支动作。
     expect(blocks[0]!.querySelector(".history-branch")).toBeNull();
     expect(blocks[1]!.querySelector(".history-branch")).toBeNull();
 
     fireEvent.click(blocks[2]!.querySelector(".history-branch")!);
     // 行号 + **这条视图的会话编号**：分支要分到正在看的这条上。
-    expect(onBranch).toHaveBeenCalledWith(12, session.id);
+    expect(onBranch).toHaveBeenCalledWith(11, session.id);
+  });
+
+  it("过滤掉合成的非会话内容节点", () => {
+    const { view } = setup({
+      messages: [
+        message({ role: "user", text: "<permissions instructions>内部提示" }),
+        message({ role: "user", text: "真实问题", sourceLine: 7 }),
+        message({ role: "assistant", text: "回答", sourceLine: 8 })
+      ]
+    });
+    expect(view.container.textContent).not.toContain("内部提示");
+    expect(view.container.textContent).toContain("真实问题");
+    expect(view.container.textContent).toContain("回答");
+    expect(view.container.querySelectorAll(".history-branch")).toHaveLength(1);
   });
 
   it("有更早的消息时才给加载入口，加载中则禁用", () => {

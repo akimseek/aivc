@@ -9,5 +9,8 @@
 //! ——改了界面要先在 `ui/` 里跑 `npm run build`。
 
 fn main() {
+    // ICO 同时用于 EXE 的原生资源。修改图标后必须重新运行资源编译，
+    // 否则文件管理器及固定到任务栏的快捷方式仍会读取旧图标。
+    println!("cargo:rerun-if-changed=icons/icon.ico");
     tauri_build::build();
 }

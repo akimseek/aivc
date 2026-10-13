@@ -57,6 +57,7 @@ export function TerminalPane({
   focusRequest = 0,
   /** 收到一段输出。**在数据回调里调**——这是「恢复的会话把输入框放出来」的唯一时机。 */
   onOutput,
+  onInputFocus,
   registerSink,
   unregisterSink,
   onError,
@@ -86,6 +87,7 @@ export function TerminalPane({
   running: boolean;
   composerVisible: boolean;
   onOutput: () => void;
+  onInputFocus?: (mode: "composer" | "terminal") => void;
   registerSink: (id: string, sink: TerminalSink) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
@@ -110,6 +112,8 @@ export function TerminalPane({
    */
   const onOutputRef = useRef(onOutput);
   onOutputRef.current = onOutput;
+  const onInputFocusRef = useRef(onInputFocus);
+  onInputFocusRef.current = onInputFocus;
 
   /** 文本右键菜单。`canCopy` 与要复制的文本都在右键那一刻取定，见 `onRightMouseCapture`。 */
   const [textMenu, setTextMenu] = useState<{
@@ -226,6 +230,9 @@ export function TerminalPane({
       cursorBlink: true,
       fontFamily: TERMINAL_FONT_FAMILY,
       fontSize: 13,
+      scrollback: 10000,
+      // xterm and FitAddon share this width when reserving scrollbar space.
+      overviewRuler: { width: 12 },
       // 主题由 props 决定（xterm 读不到 CSS 变量，值在 `terminal-theme.ts`）。
       theme: terminalThemeFor(resolvedTheme)
     });
@@ -234,6 +241,17 @@ export function TerminalPane({
     term.open(host);
     termRef.current = term;
     fitRef.current = fit;
+
+    // Alternate-screen TUIs own their history; xterm has no scrollback there.
+    // Only keep the scrollbar visible when the active buffer really can scroll.
+    const syncScrollback = () => {
+      const buffer = term.buffer.active;
+      host.dataset.scrollback = String(buffer.type === "normal" && buffer.baseY > 0);
+    };
+    syncScrollback();
+    const parsedSub = term.onWriteParsed(syncScrollback);
+    const bufferSub = term.buffer.onBufferChange(syncScrollback);
+    const resizeSub = term.onResize(syncScrollback);
 
     // 输出：把这一路的字节接进 xterm。
     registerSink(terminalId, (bytes) => {
@@ -254,6 +272,8 @@ export function TerminalPane({
     const dataSub = term.onData((data) => {
       void api.writeTerminal(terminalId, data).catch(() => undefined);
     });
+    const onHostFocus = () => onInputFocusRef.current?.("terminal");
+    host.addEventListener("focusin", onHostFocus);
 
     /**
      * 右键：拦掉浏览器菜单，开自己的「复制 / 粘贴」；同时**屏蔽鼠标上报**。
@@ -324,10 +344,15 @@ export function TerminalPane({
     return () => {
       window.cancelAnimationFrame(initial);
       observer.disconnect();
+      parsedSub.dispose();
+      bufferSub.dispose();
+      resizeSub.dispose();
+      delete host.dataset.scrollback;
       host.removeEventListener("mousedown", onRightMouseCapture, true);
       host.removeEventListener("mouseup", onRightMouseUpCapture, true);
       host.removeEventListener("contextmenu", onContextMenu);
       dataSub.dispose();
+      host.removeEventListener("focusin", onHostFocus);
       unregisterSink(terminalId);
       term.dispose();
       termRef.current = null;
@@ -526,7 +551,14 @@ export function TerminalPane({
           onClose={closeSearch}
         />
       )}
-      {active && composerVisible && (
+      {/*
+        Keep each terminal's composer mounted while its pane is hidden. The
+        terminal view keeps every pane alive so PTY output is not lost; the
+        draft must follow the same lifetime. Rendering it only for the active
+        pane unmounted the textarea on every tab switch and discarded text,
+        attachments, and pasted blocks.
+      */}
+      {composerVisible && (
         <ComposerInput
           terminalId={terminalId}
           providerId={providerId}
@@ -542,6 +574,7 @@ export function TerminalPane({
               }
             });
           }}
+          onFocus={() => onInputFocusRef.current?.("composer")}
           onError={onError}
         />
       )}

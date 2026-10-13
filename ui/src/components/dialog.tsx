@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 import { hasLayerAbove } from "./overlay-stack";
+import { Icon } from "./icon";
 
 /**
  * 同类 `Dialog` 之间的实例栈。
@@ -49,6 +50,7 @@ export function Dialog({
   children,
   footer,
   onClose,
+  showCloseButton = false,
   closeOnOverlay = false,
   focusPanel = true,
   panelClassName,
@@ -61,6 +63,7 @@ export function Dialog({
   children: ReactNode;
   footer: ReactNode;
   onClose: () => void;
+  showCloseButton?: boolean;
   closeOnOverlay?: boolean;
   focusPanel?: boolean;
   /** 面板的附加类名（用于个别对话框的专属布局）。 */
@@ -128,6 +131,11 @@ export function Dialog({
       >
         <header className="dialog-header">
           <strong>{title}</strong>
+          {showCloseButton && (
+            <button type="button" className="dialog-close" aria-label="关闭" title="关闭" onClick={onClose}>
+              <Icon name="close" size={15} />
+            </button>
+          )}
         </header>
 
         {children}

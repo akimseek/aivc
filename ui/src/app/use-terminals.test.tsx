@@ -194,6 +194,42 @@ describe("useTerminals 的事件装配", () => {
     expect(view.result.current.attention[id]).toBeUndefined();
   });
 
+  it("相同提醒在重复状态事件或切换标签时只发一次系统通知", async () => {
+    const view = await render(() => useTerminals());
+    const id = await openTerminal(view.result);
+    const payload = {
+      terminalId: id,
+      status: "awaiting-confirmation",
+      attention: {
+        kind: "awaiting-confirmation",
+        title: "本轮已完成",
+        detail: "切回应用可继续。"
+      }
+    };
+
+    await act(async () => {
+      runtime.emit("terminal:status", payload);
+      runtime.emit("terminal:status", payload);
+    });
+
+    const notifications = runtime
+      .invocations()
+      .filter((item) => (item.args as { command?: string } | undefined)?.command === "terminal:attention-notification");
+    expect(notifications).toHaveLength(1);
+
+    await act(async () => {
+      runtime.emit("terminal:status", {
+        ...payload,
+        attention: { ...payload.attention, detail: "新的确认请求" }
+      });
+    });
+    expect(
+      runtime.invocations().filter(
+        (item) => (item.args as { command?: string } | undefined)?.command === "terminal:attention-notification"
+      )
+    ).toHaveLength(2);
+  });
+
   it("接收端挂上之前到达的输出，挂上时按顺序补发", async () => {
     // 这条把 router 与 hook 的装配串起来：`TerminalPane` 是动态加载的，
     // shell 的提示符正好打在「终端已启动、接收端还没挂上」那个窗口里。
@@ -328,6 +364,23 @@ describe("useTerminals 的事件装配", () => {
     expect(state.find((item) => item.id === first)!.vendorId).toBe("vendor-b");
     expect(state.find((item) => item.id === first)!.vendorMode).toBe("locked");
     expect(state.find((item) => item.id === second)!.vendorId).toBeUndefined();
+  });
+
+  it("空供应商切换事件不会覆盖当前供应商", async () => {
+    const view = await render(() => useTerminals());
+    const id = await openTerminal(view.result);
+    await act(async () => {
+      runtime.emit("gateway:vendor-switched", { terminalId: id, vendorId: "vendor-a", mode: "dynamic" });
+    });
+    for (const vendorId of ["", "  ", undefined]) {
+      await act(async () => {
+        runtime.emit("gateway:vendor-switched", { terminalId: id, vendorId, reason: "failure", mode: "locked" });
+      });
+      const terminal = view.result.current.terminals.find((item) => item.id === id)!;
+      expect(terminal.vendorId).toBe("vendor-a");
+      expect(terminal.vendorMode).toBe("dynamic");
+      expect(terminal.lastSwitch).toEqual({ vendorId: "vendor-a", reason: "manual" });
+    }
   });
 
   it("只是模式变化时不标成「已自动切换」", async () => {

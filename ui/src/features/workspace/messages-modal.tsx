@@ -5,6 +5,7 @@ import type { AiMessage, AiSession, AiTarget, ExportFormat } from "../../types";
 import { BranchPanel, shortId, type BranchPanelProps } from "./branch-panel";
 import { displayTitle, formatWhen, roleLabel } from "../../app/session-display";
 import { useSessionDetail } from "../../app/use-session-detail";
+import { flattenConversationTurns } from "./conversation";
 
 /**
  * 消息与分支弹框：把一条会话**停下来看完**。
@@ -44,6 +45,11 @@ export function MessagesModal({
   onReload,
   onBranch,
   canBranch = true,
+  provider = "codex",
+  messageOffset = (page - 1) * pageSize,
+  pageHasMore = false,
+  nextMessageRole,
+  branching = false,
   onOpenSession,
   branchParent,
   branchChildren,
@@ -72,6 +78,11 @@ export function MessagesModal({
    * 行号的消息下面都挂一个点下去必然报错的按钮。
    */
   canBranch?: boolean;
+  provider?: AiTarget["provider"];
+  messageOffset?: number;
+  pageHasMore?: boolean;
+  nextMessageRole?: AiMessage["role"];
+  branching?: boolean;
   /** 血缘条里点父 / 子会话时打开它（由上层决定怎么打开）。 */
   onOpenSession: (session: AiSession) => void;
   branchParent: BranchPanelProps["resolveParent"];
@@ -187,16 +198,20 @@ export function MessagesModal({
               hint="文件可能是空的，或消息都被解析规则过滤掉了。"
             />
           ) : (
-            messages.map((message, index) => (
+            flattenConversationTurns(
+              messages,
+              messageOffset,
+              provider,
+              nextMessageRole === undefined ? !pageHasMore : nextMessageRole === "user"
+            ).map(({ entry, branchAnchor: anchor }) => (
               <MessageCard
-                key={`${message.sourceLine ?? index}`}
-                message={message}
+                key={`${entry.message.sourceLine ?? entry.index}`}
+                message={entry.message}
+                branchHint="保留这一轮会话的全部上下文，创建独立分支"
                 onBranch={
-                  // 两个条件都要：平台支持分支，且这条消息有原始行号
-                  // （后端要靠行号定位原始记录）。
-                  !canBranch || message.sourceLine === undefined
+                  !canBranch || branching || anchor === undefined
                     ? undefined
-                    : () => onBranch(message.sourceLine!)
+                    : () => onBranch(anchor)
                 }
               />
             ))
@@ -275,7 +290,7 @@ export function MessagesModal({
  * 我 = 蓝底、AI = 强调色底：同一条时间线里两个头像必须**一眼可辨**。
  * 工具 / 系统不是对话，用中性底。
  */
-function MessageCard({ message, onBranch }: { message: AiMessage; onBranch?: () => void }) {
+function MessageCard({ message, onBranch, branchHint }: { message: AiMessage; onBranch?: () => void; branchHint?: string }) {
   const mine = message.role === "user";
   const avatar = mine ? "我" : message.role === "assistant" ? "AI" : roleLabel(message.role).slice(0, 1);
 
@@ -294,7 +309,7 @@ function MessageCard({ message, onBranch }: { message: AiMessage; onBranch?: () 
           )}
           {/* 悬停才显形：分支是低频动作，常驻会干扰阅读。 */}
           {onBranch && (
-            <button type="button" className="messages-branch" onClick={onBranch}>
+            <button type="button" className="messages-branch" onClick={onBranch} title={branchHint}>
               从此处分支
             </button>
           )}
@@ -349,11 +364,14 @@ export function MessagesModalContainer({
    * 带 `sessionId`：分支必须分到**弹框里这条**会话上。弹框开着的未必是列表里
    * 选中的那一条（侧栏卡片就能为非选中会话开弹框），上层只读选中值会分错。
    */
-  onBranch: (sourceLine: number, sessionId: string) => void;
+  onBranch: (anchor: number, sessionId: string, targetId?: string) => void | Promise<boolean>;
   onExport: (format: ExportFormat) => void;
 }) {
   const [pageSize, setPageSize] = useState(50);
   const detail = useSessionDetail(target, session, pageSize);
+  const [branching, setBranching] = useState(false);
+  const branchPending = useRef(false);
+  const [branchError, setBranchError] = useState("");
 
   if (!session) return null;
 
@@ -366,7 +384,12 @@ export function MessagesModalContainer({
       page={detail.page}
       pageSize={pageSize}
       loading={detail.loading}
-      error={detail.error}
+      error={branchError || detail.error}
+      provider={target?.provider}
+      messageOffset={detail.offset}
+      pageHasMore={detail.hasMore}
+      nextMessageRole={detail.nextMessageRole}
+      branching={branching}
       onPageChange={detail.setPage}
       onPageSizeChange={(size) => {
         setPageSize(size);
@@ -375,12 +398,21 @@ export function MessagesModalContainer({
         detail.setPage(1);
       }}
       onReload={detail.reload}
-      onBranch={(sourceLine) => {
-        // 分支会去开一路终端，弹框这时要让开。
-        // **显式带上弹框这条会话的编号**：它不是选中项时（侧栏卡片开弹框），
-        // 上层读选中值会分到别的会话上去。
-        onBranch(sourceLine, session.id);
-        onClose();
+      onBranch={async (anchor) => {
+        if (branchPending.current) return;
+        branchPending.current = true;
+        setBranching(true);
+        setBranchError("");
+        try {
+          const succeeded = await onBranch(anchor, session.id, target?.id);
+          if (succeeded !== false) onClose();
+          else setBranchError("分支创建失败，请查看错误提示后重试。");
+        } catch (error) {
+          setBranchError(String(error));
+        } finally {
+          branchPending.current = false;
+          setBranching(false);
+        }
       }}
       canBranch={canBranch}
       onOpenSession={(next) => {

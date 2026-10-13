@@ -96,7 +96,7 @@ describe("ExitConfirm", () => {
     const text = view.container.textContent ?? "";
     expect(text).toContain("退出 AI 可视化控制台");
     expect(text).toContain("最小化后应用会继续在后台运行");
-    expect(button("取消")).toBeTruthy();
+    expect(view.container.querySelector(".dialog-close")).toBeTruthy();
     expect(button("最小化到托盘")).toBeTruthy();
     expect(button("直接退出").className).toContain("danger");
   });
@@ -116,7 +116,6 @@ describe("ExitConfirm", () => {
   it("三个按钮各自回传自己的选择", async () => {
     // 分开渲染：成功回答之后这个框就收起来了。
     const choices: Array<[string, string]> = [
-      ["取消", "cancel"],
       ["最小化到托盘", "minimize"],
       ["直接退出", "quit"]
     ];
@@ -132,10 +131,10 @@ describe("ExitConfirm", () => {
   });
 
   it("回答失败时**留在屏幕上**并报错——收起会让这次询问像从未发生过", async () => {
-    const { fail, onError, button, view } = await setup();
+    const { fail, onError, view } = await setup();
     fail();
     await act(async () => {
-      button("取消").click();
+      view.container.querySelector<HTMLButtonElement>(".dialog-close")!.click();
     });
     await waitFor(() => expect(onError).toHaveBeenCalledWith("后端拒绝了这次回答"));
     expect(view.container.querySelector(".dialog-panel")).toBeTruthy();

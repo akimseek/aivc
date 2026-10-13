@@ -207,6 +207,42 @@ describe("VendorsPanel：配置模板", () => {
 });
 
 describe("VendorsPanel：分页", () => {
+  it("候选池切换后的慢速刷新保留当前页、表格及分页节点", async () => {
+    const existing = Array.from({ length: 23 }, (_, index) =>
+      vendor({ id: `v${index}`, name: `供应商 ${index + 1}` })
+    );
+    fakeRuntime(existing);
+    const invoke = window.__TAURI__!.core!.invoke!;
+    let reads = 0;
+    let finish!: (value: unknown[]) => void;
+    window.__TAURI__!.core!.invoke = async (command, args) => {
+      const payload = args as { command?: string };
+      if (payload.command === "vendor:list" && ++reads > 1) {
+        return new Promise<unknown[]>((resolve) => { finish = resolve; });
+      }
+      return invoke(command, args);
+    };
+    const view = render(<VendorsPanel providerId="codex" providers={PROVIDERS} onError={vi.fn()} />);
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(10));
+    fireEvent.click(view.getByRole("button", { name: "下一页" }));
+    const table = view.container.querySelector("table")!;
+    const pager = view.getByRole("navigation", { name: "供应商分页" });
+    const poolSwitch = view.getByRole("switch", { name: "供应商 11已参与候选池" });
+    fireEvent.click(poolSwitch);
+    await waitFor(() => expect(finish).toBeTruthy());
+    expect(view.container.querySelector("table")).toBe(table);
+    expect(view.getByRole("navigation", { name: "供应商分页" })).toBe(pager);
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(pager.textContent).toContain("第 2 / 3 页");
+    expect(view.queryByText("正在读取供应商…")).toBeNull();
+    await act(async () => {
+      finish(existing.map((item) => item.id === "v10" ? { ...item, enabled: false } : item));
+    });
+    expect(view.getByRole("switch", { name: "供应商 11未参与候选池" })).toBe(poolSwitch);
+    expect(view.container.querySelector("table")).toBe(table);
+    expect(pager.textContent).toContain("第 2 / 3 页");
+  });
+
   it("默认每页 10 条，支持首末页、上一页和下一页", async () => {
     const { view, rows } = setup({
       existing: Array.from({ length: 23 }, (_, index) => vendor({ id: `v${index}`, name: `供应商 ${index + 1}` }))

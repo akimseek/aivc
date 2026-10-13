@@ -347,6 +347,18 @@ impl RouteRegistry {
         self.routes.get_mut(route_id)
     }
 
+    /// 返回绑定指定供应商的本地动态路由。
+    #[must_use]
+    pub fn route_ids_for_vendor(&self, vendor_id: &str) -> Vec<String> {
+        self.routes
+            .values()
+            .filter(|route| {
+                !route.external && route.mode == RouteMode::Dynamic && route.vendor_id == vendor_id
+            })
+            .map(|route| route.route_id.clone())
+            .collect()
+    }
+
     /// 移除路由。
     pub fn remove(&mut self, route_id: &str) -> Option<VendorRoute> {
         let route = self.routes.remove(route_id)?;

@@ -20,11 +20,10 @@ const TAB_IDS: SettingsTab[] = [
   "skills",
   "environment",
   "presets",
-  "diagnostics",
   "about"
 ];
 
-/** 每页的标题（spec §10 的表里那十个）。 */
+/** 每页的标题。 */
 const TAB_LABELS = [
   "供应商管理",
   "网关",
@@ -34,12 +33,11 @@ const TAB_LABELS = [
   "平台技能 (Skills)",
   "运行时环境",
   "工作区预设",
-  "系统诊断",
   "关于控制台"
 ];
 
 describe("设置中心导航", () => {
-  it("十个面板恰好各出现一次，顺序与 spec §10 的名单一致", () => {
+  it("九个面板恰好各出现一次，顺序与设置中心名单一致", () => {
     expect(SETTINGS_TAB_IDS).toEqual(TAB_IDS);
   });
 

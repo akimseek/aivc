@@ -106,8 +106,6 @@ export function TabBar({
             >
               <StatusDot
                 tone={dotTone(item)}
-                // 「跑着」才脉动：它是唯一一种**此刻在进行**的状态。
-                pulse={item.state === "running"}
                 size={7}
                 title={attention ? "等待确认" : undefined}
               />

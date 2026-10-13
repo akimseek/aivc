@@ -10,7 +10,6 @@ export type SettingsTab =
   | "skills"
   | "environment"
   | "presets"
-  | "diagnostics"
   | "about";
 
 export type SettingsGroup = {
@@ -21,7 +20,7 @@ export type SettingsGroup = {
 };
 
 /**
- * 分组不是装饰：十个扁平标签在 224px 的导航列里读不出结构，
+ * 分组不是装饰：多个扁平标签在 224px 的导航列里读不出结构，
  * 而「服务与路由」（改行为）与「观测与审计」（只看不改）是两类动作。
  */
 export const SETTINGS_GROUPS: SettingsGroup[] = [
@@ -51,8 +50,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     tabs: [
       { id: "skills", label: "平台技能 (Skills)" },
       { id: "environment", label: "运行时环境" },
-      { id: "presets", label: "工作区预设" },
-      { id: "diagnostics", label: "系统诊断" }
+      { id: "presets", label: "工作区预设" }
     ]
   },
   {

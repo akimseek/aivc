@@ -339,12 +339,7 @@ select {
  * 用户的眼睛应当落在内容上，导航是「背景」。基底差比任何边框都更能表达分区。
  */
 
-/*
- * 侧栏头：一行（标题 / 新建 / 折叠）+ 网关胶囊。
- *
- * 用两行而不是一行塞下全部：网关胶囊说的是**运行状态**，与「新建会话」这种动作
- * 不是一类东西，挤在同一行会让标题那一行看起来像工具栏。
- */
+/* 侧栏头：网关状态与折叠按钮共用一行，避免在会话列表上方浪费一整行空间。 */
 .sidebar-head {
   display: flex;
   flex-direction: column;
@@ -365,6 +360,7 @@ select {
   font-size: var(--ui-text-lg);
   font-weight: 700;
   letter-spacing: -0.015em;
+  display: none;
 }
 
 /*
@@ -380,7 +376,8 @@ select {
   display: flex;
   align-items: center;
   gap: var(--ui-space-2);
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
   padding: var(--ui-space-1) var(--ui-space-2);
   border: 1px solid var(--ui-accent-border);
   border-radius: var(--ui-radius-md);
@@ -418,7 +415,7 @@ select {
 
 /* 端口贴到右端：同一个侧栏里两行胶囊的左边缘对齐，数字才有列的感觉。 */
 .gateway-pill-port {
-  margin-left: auto;
+  margin-left: 0;
 }
 
 
@@ -1083,8 +1080,31 @@ select {
 .history-scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-muted) var(--ui-bg-activity);
   padding: 22px 26px 40px;
+}
+
+.history-scroll::-webkit-scrollbar,
+.messages-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.history-scroll::-webkit-scrollbar-track,
+.messages-scroll::-webkit-scrollbar-track {
+  background: var(--ui-bg-activity);
+  border-radius: 999px;
+}
+
+.history-scroll::-webkit-scrollbar-thumb,
+.messages-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid var(--ui-bg-activity);
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: var(--ui-muted);
 }
 
 .load-earlier {
@@ -1147,8 +1167,7 @@ select {
   font-size: var(--ui-text-xs);
 }
 
-/* 分支动作：默认不显眼，悬停到消息上才出现——
-   它是低频动作，常驻会干扰阅读。 */
+/* 每轮的分支入口常显，用户无需悬停才能发现操作。 */
 .history-branch {
   border: 0;
   background: transparent;
@@ -1157,13 +1176,6 @@ select {
   cursor: pointer;
   font-size: 11px;
   font-weight: 600;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.history-message:hover .history-branch,
-.history-branch:focus-visible {
-  opacity: 1;
 }
 
 .history-branch:hover {
@@ -1196,8 +1208,7 @@ select {
   white-space: nowrap;
 }
 
-/* 分支动作：默认不显眼，悬停到消息上才出现——
-   它是低频动作，常驻会干扰阅读。 */
+/* 每轮的分支入口常显，用户无需悬停才能发现操作。 */
 .messages-branch {
   border: 0;
   background: transparent;
@@ -1206,17 +1217,6 @@ select {
   cursor: pointer;
   font-size: 11px;
   font-weight: 600;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-/* 分支动作：默认不显眼，悬停到消息上才出现——
-   它是低频动作，常驻会干扰阅读。
-   `:focus-visible` 那一条是给键盘用户的：不加的话 Tab 停在按钮上时它是透明的
-   （与 `.history-branch` 同一处理）。 */
-.messages-item:hover .messages-branch,
-.messages-branch:focus-visible {
-  opacity: 1;
 }
 
 .messages-branch:hover {
@@ -1427,19 +1427,9 @@ select {
 
 /* ── 工作台侧栏 ──────────────────────────────────────── */
 
-/*
- * 工作台比会话侧栏宽 30px：卡片里是「标签 + 数字 + 进度条」几种信息并排，
- * 310px 会把读数和条挤到换行。宽度写在侧栏自己身上（`.app-body` 那一列是 `auto`），
- * 与会话侧栏同一个道理。
- *
- * 折叠态走 `.sidebar.hidden`（宽度归零），那个节点上**没有** `workbench-pane` 类，
- * 因此这条规则不会把折叠态又撑开。
- *
- * 类名是 `workbench-pane` 而**不是** `workbench`：后者是会话头用量胶囊的类
- * （见上面「工作台要点」那一段），挂在侧栏上会让那四条声明渗进整棵工作台子树。
- */
+/* 工作台与会话使用同一个固定侧栏宽度。活动栏切换时主工作区因此不会横向跳动。 */
 .sidebar.workbench-pane {
-  width: 340px;
+  width: 310px;
 }
 
 /*
@@ -1753,7 +1743,11 @@ select {
 .messages-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-muted) var(--ui-bg-activity);
   display: flex;
   flex-direction: column;
   gap: var(--ui-space-4);
@@ -2090,6 +2084,32 @@ select {
 .terminal-mount {
   flex: 1;
   min-height: 0;
+}
+
+/* xterm 6 uses its own scrollbar. Keep it visible only when the normal
+   buffer has scrollback; alternate-screen history belongs to the CLI. */
+.terminal-mount .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  border-radius: 999px;
+  background: var(--ui-bg-activity);
+}
+
+.terminal-mount .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--ui-muted);
+  background-clip: padding-box;
+}
+
+.terminal-mount .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,
+.terminal-mount .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
+  background-color: var(--ui-faint);
+}
+
+.terminal-mount[data-scrollback="true"] .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  opacity: 1;
+  pointer-events: auto;
+  transition: none;
+  z-index: 11;
 }
 
 /* ── 自管输入 ────────────────────────────────────────── */
@@ -2622,8 +2642,30 @@ select {
 }
 
 .dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: var(--ui-text-md);
   font-weight: 700;
+}
+
+.dialog-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: calc(var(--ui-space-2) * -1);
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: var(--ui-muted);
+  cursor: pointer;
+}
+
+.dialog-close:hover {
+  background: var(--ui-bg-activity);
+  color: var(--ui-text);
 }
 
 .dialog-footer {
@@ -3500,8 +3542,7 @@ select {
    与 `.observability-panel` / `.vendor-panel` / `.gateway-panel` 同一做法。 */
 .skills-panel,
 .environment-panel,
-.presets-panel,
-.diagnostics-panel {
+.presets-panel {
   display: grid;
   gap: var(--ui-space-4);
   align-content: start;

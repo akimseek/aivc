@@ -1119,7 +1119,7 @@ impl CodexProvider {
                     "thread/fork",
                     // `lastTurnId` 在创建原生分支的同时原子地完成截断；
                     // 分页线程不接受 `thread/rollback`，因此只能走这个参数。
-                    serde_json::json!({ "threadId": parent_id, "lastTurnId": turn }),
+                    serde_json::json!({ "threadId": parent_id, "lastTurnId": turn, "excludeTurns": true }),
                     APP_SERVER_TIMEOUT,
                 )
                 .await?;
@@ -1208,14 +1208,14 @@ impl CodexProvider {
         ctx: &ProviderContext,
         target: &Target,
         fork: &ForkResult,
-        parent_file_path: &str,
+        parent: &Session,
     ) {
         let layout = Self::layout(target);
         if fork.file_path.is_empty() || fork.thread_id.is_empty() {
             return;
         }
         // 绝不能把父会话文件当成失败分支删掉。
-        if fork.file_path == parent_file_path {
+        if super::branch::same_path(&fork.file_path, &parent.file_path, &layout) {
             return;
         }
         if !layout.is_strictly_inside(&fork.file_path, &layout.sessions_root()) {
@@ -1238,6 +1238,10 @@ impl CodexProvider {
             std::slice::from_ref(&fork.file_path),
         )
         .await;
+        // 非分支身份（例如 CLI 错误返回父编号）不能删除其元数据。
+        if fork.thread_id == parent.id.as_str() {
+            return;
+        }
         let _ = ctx
             .session_metadata()
             .delete(&target.id, &SessionId::from(fork.thread_id.clone()))
@@ -1257,8 +1261,21 @@ impl Branchable for CodexProvider {
             let session = self.get_session_summary(ctx, target, id).await?;
             // 先把消息行号映射成轮次编号：官方接口只认轮次。
             let turn_id =
-                find_branch_turn_id(&ctx.store_for(target), &session.file_path, message_line)
-                    .await?;
+                match find_branch_turn_id(&ctx.store_for(target), &session.file_path, message_line)
+                    .await
+                {
+                    Ok(turn_id) => turn_id,
+                    Err(Error::Session(SessionError::BranchAnchorStale)) => {
+                        // 老版本日志没有轮次编号；文件路径仍严格校验选中的消息行。
+                        let branch = self
+                            .branch_via_file(ctx, target, &session, message_line)
+                            .await?;
+                        return self
+                            .record_branch(ctx, target, &session, message_line, branch)
+                            .await;
+                    }
+                    Err(error) => return Err(error),
+                };
 
             match self
                 .fork_via_app_server(ctx, target, &session, &turn_id)
@@ -1276,12 +1293,45 @@ impl Branchable for CodexProvider {
                             parsed,
                             &fork,
                         )?;
+                        // 旧 CLI 可能忽略未知的 lastTurnId，返回完整复制。验证实际上下文，
+                        // 避免把选中轮次之后的内容悄悄带进分支。
+                        let source = ctx.store_for(target).read_text(&session.file_path).await?;
+                        let expected_text = build_branch_session_text(
+                            &source,
+                            branch.id.as_str(),
+                            &ctx.clock().now(),
+                            message_line,
+                        )?;
+                        let expected = parse_content(
+                            SessionFileInfo {
+                                file_path: branch.file_path.clone(),
+                                mtime_ms: 0.0,
+                                change_ms: None,
+                                size: expected_text.len() as u64,
+                            },
+                            &expected_text,
+                            ParseMode::Full,
+                        )
+                        .ok_or(SessionError::DuplicateFailed)?;
+                        if !branch
+                            .preview
+                            .iter()
+                            .map(|m| (&m.role, &m.text))
+                            .eq(expected.preview.iter().map(|m| (&m.role, &m.text)))
+                        {
+                            return Err(SessionError::ForkUnavailable.into());
+                        }
                         self.record_branch(ctx, target, &session, message_line, branch)
                             .await
                     }
                     .await;
                     if outcome.is_err() {
-                        self.cleanup_failed_fork(ctx, target, &fork, &session.file_path)
+                        self.cleanup_failed_fork(ctx, target, &fork, &session).await;
+                        let branch = self
+                            .branch_via_file(ctx, target, &session, message_line)
+                            .await?;
+                        return self
+                            .record_branch(ctx, target, &session, message_line, branch)
                             .await;
                     }
                     outcome

@@ -153,6 +153,7 @@ export function App() {
    * 旧平台就是这么分的（`session-detail-modal.tsx`），两者是两种动作而不是二选一。
    */
   const [detailSession, setDetailSession] = useState<AiSession | null>(null);
+  const [detailTarget, setDetailTarget] = useState<AiTarget | null>(null);
   /** 标签右键菜单的位置与目标标签。`null` 表示没打开。 */
   const [tabMenu, setTabMenu] = useState<{ key: string; x: number; y: number } | null>(null);
   /**
@@ -419,10 +420,11 @@ export function App() {
       prompt?: string;
       sessionId?: string;
       title?: string;
+      target?: AiTarget;
     }) => {
       try {
         const id = await terminals.openTerminal(
-          selectedTarget,
+          options?.target ?? selectedTarget,
           options?.cwd ?? selectedSessionRef.current?.cwd,
           options?.cliArgs,
           options?.prompt,
@@ -523,6 +525,7 @@ export function App() {
         }
         await openTerminal({
           cwd: plan.cwd,
+          target,
           sessionId: session.id,
           // 标签直接叫这条会话的名字：用户点的是「会话甲」，标签上却写「终端」会很怪。
           title: displayTitle(session)
@@ -536,6 +539,15 @@ export function App() {
     // 引用，`SessionCard` 的 memo（P1-I）在真实树上失效。
     [console.openAt, openTerminal, workspace.selectSession]
   );
+
+  const beginBranch = useCallback(async (anchor: number, sessionId: string, sourceTargetId = console.targetId) => {
+    const target = detailTarget?.id === sourceTargetId ? detailTarget : console.targets.find((item) => item.id === sourceTargetId);
+    if (!target) return false;
+    const branch = await console.branchFromMessage(anchor, sessionId, target.id);
+    if (!branch) return false;
+    await beginResumeSession(target, branch);
+    return true;
+  }, [console.targetId, console.targets, console.branchFromMessage, beginResumeSession, detailTarget]);
 
   /**
    * 两点共用：按编号还原出完整会话（侧栏只回传编号，它不持有会话内容）。
@@ -619,7 +631,10 @@ export function App() {
   const openSessionMenu = useCallback((x: number, y: number, sessionId: string) => {
     setMenu({ x, y, sessionId });
   }, []);
-  const openSessionDetail = useCallback((session: AiSession) => setDetailSession(session), []);
+  const openSessionDetail = useCallback((session: AiSession) => {
+    setDetailSession(session);
+    setDetailTarget(selectedTarget);
+  }, [selectedTarget]);
 
   /**
    * 「继续会话」这一刻有没有意义。
@@ -674,7 +689,7 @@ export function App() {
    *
    * 没有会话可看时传 `undefined`——按钮显示为禁用，而不是「点得动但什么都不发生」。
    */
-  const openMessages = activeSession ? () => setDetailSession(activeSession) : undefined;
+  const openMessages = activeSession ? () => openSessionDetail(activeSession) : undefined;
 
   /**
    * 「消息与分支」上的条数。
@@ -816,7 +831,6 @@ export function App() {
                 「新建会话」与工作区那个 +Codex 同一个入口；
                 「消息与分支」打开会话详情——两者都在侧栏里，动作本身留在这一层。
               */
-              onNewSession={beginNewSession}
               onDetail={openSessionDetail}
               // 网关胶囊：设置中心的网关页（端口、启停、健康都在那里）。
               onOpenGateway={() => openSettings("gateway")}
@@ -844,6 +858,7 @@ export function App() {
               // （输入模式不再往下传：切换入口在状态栏，输入区已经没有那个按钮。）
               uiStates={terminals.uiStates}
               onOutput={terminals.noteOutput}
+              onInputFocus={terminals.noteInputFocus}
               registerSink={terminals.registerSink}
               unregisterSink={terminals.unregisterSink}
               onError={console.setError}
@@ -896,6 +911,9 @@ export function App() {
               session={console.selectedSession}
               messageTotal={console.messageTotal}
               messages={console.messages}
+              provider={selectedTarget?.provider}
+              messageOffset={console.messageStart}
+              canBranch={supportsBranch(console.providers, console.providerId)}
               hasEarlier={console.hasEarlier}
               loadingMore={console.loadingMore}
               onLoadEarlier={() => void console.loadEarlierMessages()}
@@ -905,9 +923,7 @@ export function App() {
                 把历史视图从活动标签改回列表选中项），动作只认交出来的编号，视图再
                 换口径时这里不必跟着动，也不会出现「标题讲这条、分支分给那条」。
               */
-              onBranch={(sourceLine, sessionId) =>
-                void console.branchFromMessage(sourceLine, sessionId)
-              }
+              onBranch={(anchor, sessionId) => void beginBranch(anchor, sessionId)}
               onOpenSession={(session) => {
                 const target =
                   console.targets.find(
@@ -931,7 +947,6 @@ export function App() {
             target={selectedTarget}
             terminals={terminals}
             activeTerminalId={activeTerminalId}
-            gateway={console.gateway}
             // 还没有输入侧状态时按初值显示：新会话就是「自管输入」。
             inputMode={activeUi?.inputMode ?? "composer"}
             /*
@@ -961,6 +976,7 @@ export function App() {
           tabMenu,
           titleDialog,
           detailSession,
+          detailTarget,
           settingsOpen,
           settingsTab
         }}
@@ -1058,8 +1074,7 @@ export function App() {
           resumeSession: (session) => {
             if (selectedTarget) void beginResumeSession(selectedTarget, session);
           },
-          branchFromMessage: (sourceLine, sessionId) =>
-            void console.branchFromMessage(sourceLine, sessionId),
+          branchFromMessage: beginBranch,
           // 消息弹框里导出的必须是**弹框里那条**：`runExport` 显式带编号，
           // 否则它会去读「当前选中」，而选中项未必是弹框正开着的那条会话。
           exportDetail: (session, format) => void runExport(format, session),

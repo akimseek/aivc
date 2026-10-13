@@ -116,7 +116,7 @@ export const SessionCard = memo(function SessionCard({
       title={title}
     >
       <div className="session-card-top">
-        <StatusDot tone={running ? "ok" : "idle"} pulse={running} size={8} />
+        <StatusDot tone={running ? "ok" : "idle"} size={8} />
         {selectable && (
           <input
             type="checkbox"

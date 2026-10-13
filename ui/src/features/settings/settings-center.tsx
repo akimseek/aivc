@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-import { DiagnosticsPanel } from "./panels/diagnostics-panel";
 import { EnvironmentPanel } from "./panels/environment-panel";
 import { GatewayPanel } from "./panels/gateway-panel";
 import { PresetsPanel } from "./panels/presets-panel";
@@ -21,7 +20,7 @@ export type { SettingsTab } from "./settings-nav";
  * 设置中心（模态两栏）。
  *
  * 左列是分组导航，右列是面板。与旧的扁平九标签覆盖层相比，差别只在**信息架构**：
- * 九个扁平标签收进四个组、多出「关于」页承接菜单栏迁移过来的动作（spec §11）。
+ * 面板标签收进四个组，「关于」页承接菜单栏迁移过来的动作（spec §11）。
  * 面板本身全部原样复用——它们的业务逻辑与测试是既有资产，重排发生在批次二。
  *
  * # 为什么自绘外壳而不套 `Dialog`
@@ -34,7 +33,6 @@ export function SettingsCenter({
   providerId,
   providers,
   targetId,
-  targets,
   selectedTarget,
   initialTab = "vendors",
   version,
@@ -54,8 +52,6 @@ export function SettingsCenter({
    */
   providers: AiProviderSummary[];
   targetId: string;
-  /** 全部目标：诊断页要把每个目标的状态列出来。 */
-  targets: AiTarget[];
   /** 当前选中的目标。环境面板的「WSL 会话目录」卡只在 WSL 且平台支持会话设置时显示。 */
   selectedTarget: AiTarget | null;
   initialTab?: SettingsTab;
@@ -191,16 +187,6 @@ export function SettingsCenter({
               />
             )}
             {tab === "presets" && <PresetsPanel onError={onError} onNotify={onNotify} />}
-            {tab === "diagnostics" && (
-              <DiagnosticsPanel
-                targets={targets}
-                selectedTargetId={targetId}
-                // 能力矩阵从平台摘要取，因此这里也要传进去。
-                providers={providers}
-                selectedProviderId={providerId}
-                onError={onError}
-              />
-            )}
             {tab === "about" && (
               <AboutPanel
                 version={version}

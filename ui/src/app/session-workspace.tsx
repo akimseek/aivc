@@ -28,6 +28,7 @@ export function SessionWorkspace({
   terminalItems,
   uiStates,
   onOutput,
+  onInputFocus,
   registerSink,
   unregisterSink,
   onError,
@@ -46,6 +47,9 @@ export function SessionWorkspace({
   session,
   messageTotal,
   messages,
+  provider = "codex",
+  messageOffset = 0,
+  canBranch = true,
   hasEarlier,
   loadingMore,
   onLoadEarlier,
@@ -69,6 +73,7 @@ export function SessionWorkspace({
   uiStates: Record<string, TerminalUiState>;
   /** 某一路收到了输出（用于把藏着的输入框放出来）。 */
   onOutput: (terminalId: string) => void;
+  onInputFocus?: (terminalId: string, mode: "composer" | "terminal") => void;
   registerSink: (id: string, sink: (data: Uint8Array) => void) => void;
   unregisterSink: (id: string) => void;
   onError: (message: string) => void;
@@ -100,6 +105,9 @@ export function SessionWorkspace({
   session: AiSession | null;
   messageTotal: number | null;
   messages: AiMessage[];
+  provider?: "codex" | "claude" | "gemini" | "qoder";
+  messageOffset?: number;
+  canBranch?: boolean;
   hasEarlier: boolean;
   loadingMore: boolean;
   onLoadEarlier: () => void;
@@ -130,6 +138,7 @@ export function SessionWorkspace({
         terminals={terminalItems}
         uiStates={uiStates}
         onOutput={onOutput}
+        onInputFocus={onInputFocus}
         registerSink={registerSink}
         unregisterSink={unregisterSink}
         onError={onError}
@@ -138,6 +147,9 @@ export function SessionWorkspace({
         session={session}
         messageTotal={messageTotal}
         messages={messages}
+        provider={provider}
+        messageOffset={messageOffset}
+        canBranch={canBranch}
         hasEarlier={hasEarlier}
         loadingMore={loadingMore}
         onLoadEarlier={onLoadEarlier}

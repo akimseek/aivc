@@ -9,9 +9,8 @@
 //!
 //! 1. **元数据只保留第一条**，并改写为新编号；后续元数据记录全部丢弃（它们描述的是
 //!    源会话的后续状态）。
-//! 2. **`$set.messages` 补丁按消息过滤**：不可见记录（系统消息等）无条件保留，可见
-//!    记录保留到 `keep_count` 为止。
-//! 3. **单条消息记录**：可见的计数；额度用尽后**立即停止读取**，其后的记录（含不可见\n//!    的）一律丢弃。\n//!\n//! 第 3 条容易被误解成「不可见记录总是保留」——实际只在额度用尽**之前**成立。
+//! 2. **消息计数与分页一致**：包含系统消息，排除合成块，连续重复消息只计一次。
+//! 3. **截到选中消息即停止**：包括 `$set.messages` 数组内的截断，后续记录全部丢弃。
 //!
 //! # 结尾必须补一条 `$set`
 //!
@@ -20,7 +19,9 @@
 
 use serde_json::{Value, json};
 
+use crate::paging::{LinePolicy, PageFolder};
 use aivc_core::error::{Result, SessionError};
+use aivc_core::session::PageCursor;
 use aivc_core::time::Timestamp;
 
 use super::parser::{SYNTHETIC_PREFIX, extract_text, gemini_role};
@@ -40,8 +41,7 @@ pub fn is_metadata_record(value: &Value) -> bool {
 
 /// 判断一条记录是否是**可见对话消息**（用户或助手，且有非合成正文）。
 ///
-/// 注意 `system` 类（`info` / `warning` / `error`）不算可见消息：它们不占分支额度，
-/// 但也不会被丢弃。
+/// 仅用于识别对话正文；分支计数还包含系统消息，统一交给分页折叠器。
 #[must_use]
 pub fn is_visible_record(value: &Value) -> bool {
     let Some(object) = value.as_object() else {
@@ -91,9 +91,12 @@ pub fn build_branch_text(
     now: &Timestamp,
     keep_count: u64,
 ) -> Result<String> {
+    if keep_count == 0 {
+        return Err(SessionError::BranchNeedsContext.into());
+    }
     let mut lines: Vec<String> = Vec::new();
     let mut rewritten_meta = false;
-    let mut visible: u64 = 0;
+    let mut counter = PageFolder::new(PageCursor::Latest, 1, None, LinePolicy::Gemini);
 
     for raw_line in source_text.split('\n') {
         let line = raw_line.trim_end_matches('\r');
@@ -119,12 +122,10 @@ pub fn build_branch_text(
         {
             let mut kept: Vec<Value> = Vec::new();
             for message in messages {
-                if !is_visible_record(message) {
-                    // 不可见记录无条件保留。
-                    kept.push(message.clone());
-                } else if visible < keep_count {
-                    visible += 1;
-                    kept.push(message.clone());
+                counter.push_line(&serialize(message, ""), 0, 0);
+                kept.push(message.clone());
+                if counter.visible_count() >= keep_count {
+                    break;
                 }
             }
             let mut next = item.clone();
@@ -134,20 +135,15 @@ pub fn build_branch_text(
                 map.insert("$set".to_owned(), Value::Object(next_patch));
             }
             lines.push(serialize(&next, line));
-            if visible >= keep_count {
+            if counter.visible_count() >= keep_count {
                 break;
             }
             continue;
         }
 
-        if is_visible_record(&item) {
-            if visible >= keep_count {
-                break;
-            }
-            visible += 1;
-        }
+        counter.push_line(line, 0, 0);
         lines.push(line.to_owned());
-        if visible >= keep_count {
+        if counter.visible_count() >= keep_count {
             break;
         }
     }
@@ -155,7 +151,7 @@ pub fn build_branch_text(
     if !rewritten_meta {
         return Err(SessionError::GeminiMissingMetadata.into());
     }
-    if visible < keep_count {
+    if counter.visible_count() < keep_count {
         return Err(SessionError::GeminiInsufficientContext.into());
     }
     lines.push(serialize(
@@ -316,9 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn branching_keeps_invisible_records_without_consuming_the_quota() {
-        // 不可见记录不占额度，因此它们可以在额度用尽**之前**任意出现。
-        // （额度用尽后立即停止读取，之后的记录一律丢弃——这是现网语义。）
+    fn branching_counts_system_messages_like_the_messages_page() {
         let source = [
             meta("old-id"),
             r#"{"type":"info","content":"系统提示"}"#.to_owned(),
@@ -326,8 +320,8 @@ mod tests {
             assistant("回答一"),
         ]
         .join("\n");
-        let text = build_branch_text(&source, "b", &stamp(), 1).expect("branch");
-        assert!(text.contains("系统提示"), "不可见记录不占额度");
+        let text = build_branch_text(&source, "b", &stamp(), 2).expect("branch");
+        assert!(text.contains("系统提示"));
         assert!(text.contains("第一条"));
         assert!(!text.contains("回答一"), "额度用尽后停止读取");
     }
@@ -355,7 +349,7 @@ mod tests {
         .join("\n");
         let text = build_branch_text(&source, "b", &stamp(), 1).expect("branch");
         assert!(text.contains("补丁一"));
-        assert!(text.contains("补丁系统"), "不可见记录必须保留");
+        assert!(!text.contains("补丁系统"), "分支点之后的系统消息也必须截掉");
         assert!(!text.contains("补丁二"), "超出额度的可见消息必须剔除");
     }
 
@@ -367,6 +361,20 @@ mod tests {
         let record: Value = serde_json::from_str(last).unwrap();
         // Gemini 按 lastUpdated 排序；不刷新会让新文件回到源会话的旧位置。
         assert_eq!(record["$set"]["lastUpdated"], "2026-09-16T12:34:56.789Z");
+    }
+
+    #[test]
+    fn branching_position_matches_deduplicated_patches_and_system_messages() {
+        let source = [meta("old"),
+            r#"{"$set":{"messages":[{"type":"user","content":"第一条"},{"type":"user","content":"第一条"},{"type":"info","content":"系统提示"},{"type":"gemini","content":"选中的回答"},{"type":"user","content":"后续"}]}}"#.into()].join("\n");
+        let text = build_branch_text(&source, "b", &stamp(), 3).unwrap();
+        assert!(text.contains("选中的回答"));
+        assert!(!text.contains("后续"));
+        let mut page = PageFolder::new(PageCursor::Latest, 10, None, LinePolicy::Gemini);
+        for line in text.lines() {
+            page.push_line(line, 0, 0);
+        }
+        assert_eq!(page.visible_count(), 3);
     }
 
     #[test]

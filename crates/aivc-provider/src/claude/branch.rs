@@ -21,7 +21,8 @@ use serde_json::{Value, json};
 
 use aivc_core::error::{Result, SessionError};
 
-use super::parser::is_countable_message;
+use crate::paging::{LinePolicy, PageFolder};
+use aivc_core::session::PageCursor;
 
 /// 改写一条记录的 `sessionId`。
 ///
@@ -40,7 +41,7 @@ pub fn rewrite_session_id(record: Value, new_id: &str) -> Value {
 /// 构造分支文本：保留到第 `keep_message_count` 条可见消息为止。
 ///
 /// 截断点是**消息计数**而不是行号：最后一条保留消息之后的所有记录都被丢弃
-/// （包括同一条消息的附属记录），这正是「从这条消息之后重新开始」的语义。
+/// （包括同一条消息的附属记录）。计数复用分页的去重规则。
 ///
 /// 可保留消息不足时返回 [`SessionError::BranchInsufficientMessages`]——静默产出一个
 /// 不完整的分支比明确失败更糟：用户会以为分支成功，却发现上下文缺了一截。
@@ -53,7 +54,7 @@ pub fn build_branch_text(
         return Err(SessionError::BranchNeedsContext.into());
     }
     let mut output: Vec<String> = Vec::new();
-    let mut kept: u64 = 0;
+    let mut counter = PageFolder::new(PageCursor::Latest, 1, None, LinePolicy::Claude);
 
     for raw_line in source_text.split('\n') {
         let line = raw_line.trim_end_matches('\r');
@@ -68,18 +69,15 @@ pub fn build_branch_text(
         if !record.is_object() {
             continue;
         }
-        let countable = is_countable_message(&record);
+        counter.push_line(trimmed, 0, 0);
         let rewritten = rewrite_session_id(record, branch_id);
         output.push(serde_json::to_string(&rewritten).unwrap_or_else(|_| trimmed.to_owned()));
-        if countable {
-            kept += 1;
-            if kept >= keep_message_count {
-                break;
-            }
+        if counter.visible_count() >= keep_message_count {
+            break;
         }
     }
 
-    if kept < keep_message_count {
+    if counter.visible_count() < keep_message_count {
         return Err(SessionError::BranchInsufficientMessages.into());
     }
     Ok(format!("{}\n", output.join("\n")))
@@ -147,6 +145,16 @@ mod tests {
         // 字段类型不对时也不得改写。
         let record: Value = serde_json::from_str(r#"{"type":"user","sessionId":42}"#).unwrap();
         assert_eq!(rewrite_session_id(record, "new")["sessionId"], 42);
+    }
+
+    #[test]
+    fn branching_uses_the_deduplicated_messages_page_position() {
+        let source = [user("t1", "第一条"), user("t1", "第一条"),
+            r#"{"type":"user","isMeta":true,"sessionId":"old","message":{"role":"user","content":"元信息"}}"#.into(),
+            assistant("t2", "选中的回答"), user("t3", "后续")].join("\n");
+        let text = build_branch_text(&source, "branch", 2).unwrap();
+        assert!(text.contains("选中的回答"));
+        assert!(!text.contains("后续"));
     }
 
     #[test]

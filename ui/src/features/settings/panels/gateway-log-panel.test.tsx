@@ -54,6 +54,20 @@ function entry(id: string) {
 }
 
 describe("请求日志实时刷新", () => {
+  it("未选出供应商的失败显示未转发，保留熔断原因", async () => {
+    fakeRuntime((command) => {
+      if (command === "vendor:list") return [];
+      if (command === "gateway:query-logs") return {
+        items: [{ ...entry("blocked"), vendorId: "", outcome: "error", errorCode: "VENDOR_CIRCUIT_OPEN", errorMessage: "候选供应商均处于熔断冷却期，本次请求未转发。", attempts: [] }],
+        total: 1, page: 1, pageSize: 20
+      };
+      return {};
+    });
+    const view = render(<GatewayLogPanel onError={vi.fn()} />);
+    await waitFor(() => expect(view.getByText("未转发")).toBeTruthy());
+    expect(view.getByText("候选供应商均处于熔断冷却期，本次请求未转发。")).toBeTruthy();
+    expect(view.getByText("请求在网关阶段结束，未向供应商发起请求。")).toBeTruthy();
+  });
   it("收到请求记录事件后显示每条请求，并在卸载时解绑", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const entries: ReturnType<typeof entry>[] = [];
@@ -200,6 +214,45 @@ describe("GatewayLogPanel：清空全部日志", () => {
 });
 
 describe("GatewayLogPanel：分页", () => {
+  it("慢速翻页及重查保留表格和分页节点，加载期间禁用旧数据操作", async () => {
+    let finish!: (value: unknown) => void;
+    let hold = false;
+    fakeRuntime((command, args) => {
+      if (command === "vendor:list") return [];
+      if (command === "gateway:query-logs") {
+        if (hold) return new Promise((resolve) => { finish = resolve; });
+        return { items: Array.from({ length: 20 }, (_, i) => entry(`r${i + 1}`)), total: 40, page: args?.page, pageSize: PAGE_SIZE };
+      }
+      return null;
+    });
+    const view = render(<GatewayLogPanel onError={vi.fn()} />);
+    await waitFor(() => expect(view.container.querySelectorAll("tbody tr")).toHaveLength(20));
+    const table = view.container.querySelector("table")!;
+    const pager = view.getByRole("navigation", { name: "请求日志分页" });
+    hold = true;
+    fireEvent.click(view.getByRole("button", { name: "下一页" }));
+    await waitFor(() => expect(finish).toBeTruthy());
+    expect(view.container.querySelector("table")).toBe(table);
+    expect(view.getByRole("navigation", { name: "请求日志分页" })).toBe(pager);
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(20);
+    expect(table.getAttribute("aria-busy")).toBe("true");
+    expect(view.queryByText("正在查询日志…")).toBeNull();
+    expect(buttonNamed(view.container, "全选当前页").disabled).toBe(true);
+    expect(buttonNamed(view.container, "删除选中").disabled).toBe(true);
+    expect(table.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true);
+    const secondPage = { items: Array.from({ length: 20 }, (_, i) => entry(`r${i + 21}`)), total: 40, page: 2, pageSize: PAGE_SIZE };
+    await act(async () => { finish(secondPage); });
+    expect(view.container.querySelector("table")).toBe(table);
+    expect(table.querySelector('input[aria-label="选择 r21"]')).toBeTruthy();
+    expect(table.getAttribute("aria-busy")).toBe("false");
+    const firstRow = table.querySelector("tbody tr");
+    fireEvent.click(view.getByRole("button", { name: "重新查询" }));
+    await waitFor(() => expect(table.getAttribute("aria-busy")).toBe("true"));
+    expect(table.querySelector("tbody tr")).toBe(firstRow);
+    expect(view.getByRole("navigation", { name: "请求日志分页" })).toBe(pager);
+    await act(async () => { finish(secondPage); });
+  });
+
   it("一条汇总日志展示重试次数、供应商尝试顺序与错误摘要", async () => {
     fakeRuntime((command) => {
       if (command === "vendor:list") return [];

@@ -2,8 +2,8 @@
 //!
 //! # 候选选择的两种语义
 //!
-//! - [`choose_vendor`]：**首次**选择。排除已熔断的供应商，首选供应商优先，其余按
-//!   `sort` 升序。
+//! - [`choose_vendor`]：**首次**选择。只有一家配置完整的候选时按锁定供应商处理，
+//!   忽略熔断；多家时排除已熔断的供应商，首选供应商优先，其余按 `sort` 升序。
 //! - [`choose_next_vendor`]：**失败后**换一家。这里**不能**排除已熔断的供应商来构建
 //!   候选列表——当前供应商刚失败、可能已进入熔断，但仍需要它在完整排序中的位置，
 //!   才能从它的下一个 `sort` 值开始环形选择。排除动作发生在**挑选**阶段。
@@ -273,7 +273,7 @@ pub fn compare_vendor_order(left: &ApiVendor, right: &ApiVendor) -> std::cmp::Or
 
 /// 首次选择供应商。
 ///
-/// 排除已熔断的；首选供应商优先，其余按 [`compare_vendor_order`]。
+/// 唯一候选忽略熔断；多家时排除已熔断的，首选优先，其余按 [`compare_vendor_order`]。
 #[must_use]
 pub fn choose_vendor<'a, F>(
     vendors: &'a [ApiVendor],
@@ -287,8 +287,11 @@ where
     let mut candidates: Vec<&ApiVendor> = vendors
         .iter()
         .filter(|vendor| is_configured_candidate(vendor, provider_id))
-        .filter(|vendor| !is_open(&vendor.id))
         .collect();
+    if candidates.len() == 1 {
+        return candidates.first().copied();
+    }
+    candidates.retain(|vendor| !is_open(&vendor.id));
     candidates.sort_by(|left, right| {
         // 首选供应商排在最前，其余按 sort 升序。
         let preferred = |vendor: &ApiVendor| {
@@ -336,7 +339,7 @@ where
         if attempted_ids.iter().any(|id| id == &candidate.id) {
             continue;
         }
-        if is_open(&candidate.id) {
+        if candidates.len() > 1 && is_open(&candidate.id) {
             continue;
         }
         return Some(candidate);
@@ -427,6 +430,52 @@ mod tests {
         assert_eq!(chosen.map(|item| item.id.as_str()), Some("b"));
         // 全部熔断时没有候选。
         assert!(choose_vendor(&vendors, ProviderId::Codex, None, |_| true).is_none());
+    }
+
+    #[test]
+    fn the_only_configured_candidate_is_used_even_when_its_circuit_is_open() {
+        let mut incomplete = vendor("incomplete", 2, true);
+        incomplete.api_key.clear();
+        let mut other = vendor("other-platform", 3, true);
+        other.provider_id = ProviderId::Claude;
+        let mut vendors = vec![
+            vendor("only", 1, true),
+            incomplete,
+            other,
+            vendor("off", 4, false),
+        ];
+        assert_eq!(
+            choose_vendor(&vendors, ProviderId::Codex, None, |_| true).map(|v| v.id.as_str()),
+            Some("only")
+        );
+        // 新增可用候选后立即恢复多供应商策略，不把路由永久改成 locked。
+        vendors.push(vendor("new", 5, true));
+        assert_eq!(
+            choose_vendor(&vendors, ProviderId::Codex, Some("only"), |id| id.as_str()
+                == "only")
+            .map(|v| v.id.as_str()),
+            Some("new")
+        );
+    }
+
+    #[test]
+    fn a_sole_remaining_failover_candidate_ignores_circuit_but_not_attempt_history() {
+        let vendors = vec![vendor("remaining", 1, true)];
+        assert_eq!(
+            choose_next_vendor(&vendors, ProviderId::Codex, "removed", &[], |_| true)
+                .map(|v| v.id.as_str()),
+            Some("remaining")
+        );
+        assert!(
+            choose_next_vendor(
+                &vendors,
+                ProviderId::Codex,
+                "removed",
+                &[VendorId::from("remaining")],
+                |_| true
+            )
+            .is_none()
+        );
     }
 
     #[test]

@@ -105,8 +105,7 @@ export const purgeSessions = (targetId: string, sessions: SessionMutationRef[]) 
 /**
  * 从某条消息处创建分支。
  *
- * `messageLine` 是**原始 JSONL 行号**（不是过滤后的可见序号）：后端要靠它精确定位到
- * 原始记录，用可见序号会截错位置。
+ * `messageLine`：Codex 使用原始 JSONL 行号；Claude/Gemini 使用从 1 起的绝对可见消息序号。
  */
 export const branchSession = (targetId: string, sessionId: string, messageLine: number) =>
   invoke<AiSession>("codex:branch-session", { targetId, sessionId, messageLine });

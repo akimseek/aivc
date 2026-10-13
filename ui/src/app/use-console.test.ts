@@ -297,6 +297,70 @@ describe("branchFromMessage 分给哪条会话", () => {
   const branchArgs = (calls: { command: string; args: Record<string, unknown> }[]) =>
     calls.find((call) => call.command === "codex:branch-session")?.args;
 
+  it("按明确来源目标创建；不污染当前另一目标的列表", async () => {
+    const calls = recordingRuntime({ "codex:branch-session": () => session("b1") });
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    let branch;
+    await act(async () => { branch = await result.current.branchFromMessage(17, "parent", "claude:wsl:Ubuntu"); });
+    expect(branch).toMatchObject({ id: "b1" });
+    expect(branchArgs(calls)).toEqual({ targetId: "claude:wsl:Ubuntu", sessionId: "parent", messageLine: 17 });
+    expect(result.current.sessions).toEqual([]);
+  });
+
+  it("刷新失败仍返回并保留已创建的分支", async () => {
+    recordingRuntime({
+      "codex:branch-session": () => session("b1"),
+      "codex:list-sessions": () => { throw new Error("刷新失败"); }
+    });
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => {
+      expect(await result.current.branchFromMessage(4, "parent")).toMatchObject({ id: "b1" });
+    });
+    expect(result.current.sessions.some((item) => item.id === "b1")).toBe(true);
+    expect(result.current.selectedId).toBe("b1");
+    expect(result.current.error).toBe("");
+  });
+
+  it("拒绝父会话编号，避免打开原会话", async () => {
+    recordingRuntime({ "codex:branch-session": () => session("parent") });
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => { expect(await result.current.branchFromMessage(4, "parent")).toBeNull(); });
+    expect(result.current.error).toContain("分支编号无效");
+  });
+
+  it("创建在途时连点只产生一个分支", async () => {
+    let release!: (value: AiSession) => void;
+    const calls = recordingRuntime({ "codex:branch-session": () => new Promise<AiSession>((resolve) => { release = resolve; }) });
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    await act(async () => {
+      const first = result.current.branchFromMessage(4, "parent");
+      expect(await result.current.branchFromMessage(4, "parent")).toBeNull();
+      release(session("b1"));
+      await first;
+    });
+    expect(calls.filter((call) => call.command === "codex:branch-session")).toHaveLength(1);
+  });
+
+  it("创建期间切换目标，不把旧目标分支插进新目标列表", async () => {
+    let release!: (value: AiSession) => void;
+    recordingRuntime({ "codex:branch-session": () => new Promise<AiSession>((resolve) => { release = resolve; }) });
+    const { result } = renderHook(() => useConsole());
+    act(() => result.current.selectTarget("codex:local"));
+    let pending!: Promise<AiSession | null>;
+    act(() => { pending = result.current.branchFromMessage(4, "parent"); });
+    act(() => result.current.selectTarget("codex:wsl:Ubuntu"));
+    await act(async () => { release(session("b1")); expect(await pending).toMatchObject({ id: "b1" }); });
+    expect(result.current.targetId).toBe("codex:wsl:Ubuntu");
+    expect(result.current.sessions).toEqual([]);
+    expect(result.current.selectedId).toBe("");
+  });
+
   it("显式传入的会话编号优先——弹框开着的那条未必是选中项", async () => {
     const calls = recordingRuntime({
       "codex:branch-session": () => session("分支-1")

@@ -8,7 +8,7 @@ import { SettingsCenter } from "./settings-center";
 /**
  * 设置中心外壳。
  *
- * 最要紧的一条：**十个面板各自都真的有分支能被打开**。只断言「导航里有十项」
+ * 最要紧的一条：**九个面板各自都真的有分支能被打开**。只断言「导航里有九项」
  * 拦不住「点了没反应」那类缺陷——少写一个面板分支时，导航看起来仍然完好。
  *
  * # 用假 Tauri 核心而不是 mock 面板
@@ -122,7 +122,6 @@ function setup(
       providerId={overrides.providerId ?? "codex"}
       providers={overrides.providers ?? PROVIDERS}
       targetId={overrides.targetId ?? "codex:wsl:Ubuntu"}
-      targets={[wslTarget]}
       selectedTarget={overrides.selectedTarget === undefined ? wslTarget : overrides.selectedTarget}
       version={overrides.version ?? "0.1.0"}
       onOpenSessionSettings={onOpenSessionSettings}
@@ -157,13 +156,12 @@ describe("SettingsCenter 导航", () => {
     "平台技能 (Skills)": "这个目标下还没有技能。",
     运行时环境: "环境正常，没有需要注意的问题。",
     工作区预设: "还没有工作区预设。",
-    系统诊断: "命令状态",
     关于控制台: "React 19"
   };
 
-  it("十个面板各有一个可点的入口，且每一个打开的都是它自己那一页", async () => {
+  it("九个面板各有一个可点的入口，且每一个打开的都是它自己那一页", async () => {
     const { view, items } = setup();
-    expect(items()).toHaveLength(10);
+    expect(items()).toHaveLength(9);
 
     for (const item of items()) {
       const label = (item.textContent ?? "").trim();
@@ -190,8 +188,8 @@ describe("SettingsCenter 导航", () => {
     expect(items().filter((item) => item.hasAttribute("aria-current"))).toHaveLength(1);
   });
 
-  it("**十个面板每一个都套了 `.panel-header`**（标题 + 说明），不靠各页自己拼", async () => {
-    // 面板头统一是批次二的要求：只有十个都真的用上，用户在页与页之间才不会
+  it("**九个面板每一个都套了 `.panel-header`**（标题 + 说明），不靠各页自己拼", async () => {
+    // 面板头统一是批次二的要求：只有九个都真的用上，用户在页与页之间才不会
     // 一会儿看到卡片头、一会儿看到裸标题。
     const { view, items } = setup();
     for (const item of items()) {
@@ -210,8 +208,7 @@ describe("SettingsCenter 导航", () => {
 
   it("**早返回分支也带面板头**：没有目标的技能页 / 没有平台的环境页", async () => {
     // 这两个分支都会真的出现（没选目标、没选平台时导航仍然能点进来），而此前它们
-    // 只剩一句裸提示——与 `gateway-panel` 的等待态、`diagnostics-panel` 的空目标
-    // 分支处理不一致，用户会以为自己离开了设置中心。
+    // 只剩一句裸提示——与 `gateway-panel` 的等待态处理不一致，用户会以为自己离开了设置中心。
     const { view, button } = setup({ providerId: "", targetId: "" });
 
     await act(async () => {

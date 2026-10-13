@@ -86,14 +86,8 @@ pub async fn find_branch_turn_id(
                 let payload = object.get("payload").cloned().unwrap_or(Value::Null);
 
                 // 记住最近一个轮次起点。
-                if kind == "event_msg"
-                    && payload.get("type").and_then(Value::as_str) == Some("task_started")
-                {
-                    payload
-                        .get("turn_id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .clone_into(&mut active_turn_id);
+                if let Some(turn_id) = record_turn_id(&value) {
+                    turn_id.clone_into(&mut active_turn_id);
                 }
 
                 if line_number != message_line {
@@ -157,7 +151,7 @@ pub fn canonicalize_forked_session(
 ///
 /// 本机按分隔符归一化并在 Windows 上忽略大小写（`path.resolve` 的语义近似）；
 /// WSL 侧用 POSIX 归一化。
-fn same_path(left: &str, right: &str, layout: &CodexLayout) -> bool {
+pub(super) fn same_path(left: &str, right: &str, layout: &CodexLayout) -> bool {
     match layout.kind() {
         aivc_core::ports::StoreKind::Local => {
             let normalize = |value: &str| {
@@ -228,7 +222,7 @@ pub fn build_duplicate_session_text(
     Ok(format!("{}\n", lines.join("\n")))
 }
 
-/// 构造分支后的会话文本：保留到 `message_line` 为止的内容并重写编号。
+/// 构造分支后的会话文本：保留选中消息所属整轮并重写编号。
 ///
 /// 这是**不使用 app-server 时的回退路径**：官方服务不可用（未安装、版本过旧、
 /// 启动超时）时，用文件截断得到一份语义等价的分支。官方路径仍优先，因为它能原子地
@@ -239,13 +233,11 @@ pub fn build_branch_session_text(
     now: &Timestamp,
     message_line: u64,
 ) -> Result<String> {
-    if message_line == 0 {
-        return Err(SessionError::BranchNeedsContext.into());
-    }
+    let cutoff = branch_cutoff_line(source_text, message_line)?;
     let mut kept: Vec<&str> = Vec::new();
     for (index, raw_line) in source_text.split('\n').enumerate() {
         let line_number = index as u64 + 1;
-        if line_number > message_line {
+        if line_number > cutoff {
             break;
         }
         kept.push(raw_line.trim_end_matches('\r'));
@@ -253,6 +245,60 @@ pub fn build_branch_session_text(
     // 截断后的文本必然以换行结尾，否则 Codex 可能读不到最后一行。
     let truncated = format!("{}\n", kept.join("\n"));
     build_duplicate_session_text(&truncated, branch_id, now)
+}
+
+fn record_turn_id(value: &Value) -> Option<&str> {
+    let kind = value.get("type")?.as_str()?;
+    let payload = value.get("payload")?;
+    if kind == "turn_context"
+        || (kind == "event_msg" && payload.get("type")?.as_str()? == "task_started")
+    {
+        payload.get("turn_id")?.as_str().filter(|id| !id.is_empty())
+    } else {
+        None
+    }
+}
+
+/// 老日志没有轮次编号时退回消息截断；有轮次编号时与原生 fork 保持一致。
+fn branch_cutoff_line(source: &str, message_line: u64) -> Result<u64> {
+    if message_line == 0 {
+        return Err(SessionError::BranchNeedsContext.into());
+    }
+    let mut active_turn = None;
+    let mut selected_turn = None;
+    let mut selected = false;
+    let mut cutoff = 0;
+    for (index, line) in source.lines().enumerate() {
+        let line_number = index as u64 + 1;
+        let value = serde_json::from_str::<Value>(line).ok();
+        if let Some(id) = value.as_ref().and_then(record_turn_id) {
+            if selected && selected_turn.as_deref() != Some(id) {
+                break;
+            }
+            active_turn = Some(id.to_owned());
+        }
+        if line_number == message_line {
+            let message = value.as_ref().and_then(|value| {
+                extract_message(
+                    &value["payload"],
+                    value["type"].as_str().unwrap_or_default(),
+                )
+            });
+            if !message.is_some_and(|message| should_keep_message(&message.text)) {
+                return Err(SessionError::BranchAnchorNotMessage.into());
+            }
+            selected = true;
+            selected_turn.clone_from(&active_turn);
+        }
+        cutoff = line_number;
+        if selected && selected_turn.is_none() {
+            break;
+        }
+    }
+    if !selected {
+        return Err(SessionError::BranchAnchorStale.into());
+    }
+    Ok(cutoff)
 }
 
 #[cfg(test)]
@@ -658,10 +704,36 @@ mod tests {
     }
 
     #[test]
-    fn branching_beyond_the_file_keeps_everything() {
+    fn branching_beyond_the_file_rejects_a_stale_anchor() {
         let source = [meta("old"), user("唯一一条")].join("\n");
-        let text = build_branch_session_text(&source, "b", &stamp(), 99).expect("branch");
-        assert!(text.contains("唯一一条"));
+        assert!(build_branch_session_text(&source, "b", &stamp(), 99).is_err());
+    }
+
+    #[test]
+    fn file_fallback_keeps_the_selected_turn_and_stops_before_the_next_context() {
+        let source = [
+            meta("old"),
+            task_started("t1"),
+            user("选中"),
+            r#"{"type":"event_msg","payload":{"type":"agent_message","message":"本轮后续"}}"#
+                .into(),
+            r#"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}}"#.into(),
+            r#"{"type":"turn_context","payload":{"turn_id":"t2"}}"#.into(),
+            task_started("t2"),
+            user("下一轮"),
+        ]
+        .join("\n");
+        let text = build_branch_session_text(&source, "b", &stamp(), 3).unwrap();
+        assert!(text.contains("本轮后续"));
+        assert!(text.contains("task_complete"));
+        assert!(!text.contains("t2"));
+        assert!(!text.contains("下一轮"));
+    }
+
+    #[test]
+    fn file_fallback_rejects_metadata_as_a_branch_anchor() {
+        let source = [meta("old"), user("消息")].join("\n");
+        assert!(build_branch_session_text(&source, "b", &stamp(), 1).is_err());
     }
 
     #[test]

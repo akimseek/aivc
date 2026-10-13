@@ -140,7 +140,6 @@ export function SessionsSidebar({
   selectedTarget,
   onOpen,
   onMenu,
-  onNewSession,
   onDetail,
   onOpenGateway,
   providers,
@@ -155,8 +154,6 @@ export function SessionsSidebar({
   onOpen: (target: AiTarget, sessionId: string) => void;
   /** 右键菜单：坐标由侧栏回传，菜单开着鼠标的位置。 */
   onMenu: (x: number, y: number, sessionId: string) => void;
-  /** 「新建会话」：打开新会话对话框（与工作区那个 +Codex 同一个入口）。 */
-  onNewSession: () => void;
   /** 「消息与分支」：打开会话详情（消息列表与分支关系都在那里）。 */
   onDetail: (session: AiSession) => void;
   /** 网关胶囊：打开设置中心的**网关页**——端口、启停、为什么没起来都在那里。 */
@@ -208,8 +205,6 @@ export function SessionsSidebar({
    * Codex 的配置（跨平台数据污染），而且保存点了必然失败。
    */
   const canSessionSettings = supportsSessionSettings(providers, state.providerId);
-  /** 新建会话要有一个能进去的目标——与工作区那个按钮同一条判据（`canStartCodex`）。 */
-  const canStart = Boolean(selectedTarget?.available);
   /** 网关胶囊的状态色（`off` 落到状态点的 `idle`）。 */
   const gwTone = gatewayTone(gateway);
 
@@ -308,37 +303,24 @@ export function SessionsSidebar({
     <aside className="sidebar">
       <div className="sidebar-head">
         <div className="sidebar-head-row">
-          <h1 className="sidebar-title">会话</h1>
-          <ToolbarSpacer />
-          <Button
-            small
-            disabled={!canStart}
-            title={canStart ? "新建会话" : "请先选择一个可用的目标"}
-            onClick={onNewSession}
+          <button
+            type="button"
+            className={`gateway-pill tone-${gwTone}`}
+            title={`网关${gateway?.enabled ? "已启用" : "未启用"}：${gatewayPortLabel(gateway)}（点击打开设置中心网关页）`}
+            onClick={onOpenGateway}
           >
-            <Icon name="plus" size={13} />
-            新建会话
-          </Button>
+            <StatusDot
+              tone={gwTone === "ok" ? "ok" : gwTone === "warn" ? "warn" : "idle"}
+              size={8}
+            />
+            <span className="gateway-pill-label">网关</span>
+            <span className="gateway-pill-port ui-num ui-mono">{gatewayPortLabel(gateway)}</span>
+          </button>
+          <ToolbarSpacer />
           <IconButton label="折叠侧栏" onClick={onToggleCollapsed}>
             <Icon name="panel-left" size={16} />
           </IconButton>
         </div>
-        {/* 网关胶囊：网关有没有在跑、在哪个端口，是这一屏最常被问的一件事。
-            点它去**设置中心的网关页**——改端口、重启网关、看它为什么没起来都在那里。 */}
-        <button
-          type="button"
-          className={`gateway-pill tone-${gwTone}`}
-          title={`网关${gateway?.enabled ? "已启用" : "未启用"}：${gatewayPortLabel(gateway)}（点击打开设置中心网关页）`}
-          onClick={onOpenGateway}
-        >
-          <StatusDot
-            tone={gwTone === "ok" ? "ok" : gwTone === "warn" ? "warn" : "idle"}
-            pulse={gwTone === "ok"}
-            size={8}
-          />
-          <span className="gateway-pill-label">网关</span>
-          <span className="gateway-pill-port ui-num ui-mono">{gatewayPortLabel(gateway)}</span>
-        </button>
       </div>
 
       <div className="pickers">

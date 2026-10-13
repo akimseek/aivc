@@ -14,7 +14,8 @@ import {
   Toolbar,
   ToolbarSpacer,
   errorText,
-  useListPagination
+  useListPagination,
+  usePreservedScroll
 } from "../../../components";
 import { PanelHeader } from "../panel-header";
 import * as api from "../../../ipc/commands";
@@ -305,6 +306,7 @@ export function VendorsPanel({
   onNotify?: (message: string) => void;
 }) {
   const [vendors, setVendors] = useState<ApiVendor[]>([]);
+  const { ref: panelRef, captureScroll } = usePreservedScroll();
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<ProviderFilter>("all");
   /** 正在编辑的草稿；`id` 为空表示新建。`null` 表示表单未打开（显示主表）。 */
@@ -366,6 +368,7 @@ export function VendorsPanel({
         // 健康是可选增强：读不到就整列留空，不把它升级成一条错误。
         api.getVendorHealth().catch(() => [] as GatewayVendorHealth[])
       ]);
+      captureScroll();
       setVendors(list);
       setHealth(Array.isArray(healthList) ? healthList : []);
     } catch (error) {
@@ -373,7 +376,7 @@ export function VendorsPanel({
     } finally {
       setLoading(false);
     }
-  }, [onError]);
+  }, [onError, captureScroll]);
 
   useEffect(() => {
     void load();
@@ -665,7 +668,7 @@ export function VendorsPanel({
   const editing = draft !== null;
 
   return (
-    <div className="vendor-panel">
+    <div className="vendor-panel" ref={panelRef}>
       {/* 余额刷新这类一次性的结果：说完自己消失，也可以立刻收掉。 */}
 
       <PanelHeader
@@ -932,7 +935,8 @@ export function VendorsPanel({
             </span>
           </Toolbar>
 
-          {loading ? (
+          {/* 刷新时保留已有列表，避免内容高度骤减导致滚动位置被浏览器重置。 */}
+          {loading && vendors.length === 0 ? (
             <LoadingBlock label="正在读取供应商…" />
           ) : shown.length === 0 ? (
             <EmptyState
@@ -1092,7 +1096,7 @@ export function VendorsPanel({
               </table>
             </div>
           )}
-          {!loading && shown.length > 0 && (
+          {shown.length > 0 && (
             <Pagination {...pagination} label="供应商分页" />
           )}
         </>

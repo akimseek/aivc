@@ -480,21 +480,6 @@
   background: var(--ui-border-strong);
 }
 
-.status-dot-pin.pulse {
-  animation: dot-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.45;
-  }
-}
-
 .progress {
   width: 100%;
   height: 6px;

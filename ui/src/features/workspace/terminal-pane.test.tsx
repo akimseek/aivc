@@ -52,6 +52,7 @@ vi.mock("@xterm/xterm", () => {
       onBufferChange() { return { dispose() {} }; }
     };
     loadAddon() {}
+    attachCustomKeyEventHandler() {}
     open(element: unknown) {
       openSpy(element);
     }

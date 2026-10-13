@@ -242,6 +242,25 @@ export function TerminalPane({
     termRef.current = term;
     fitRef.current = fit;
 
+    // Intercept copying before xterm sends ETX and clears the selection.
+    // Without a selection, Ctrl+C keeps its normal terminal interrupt behavior.
+    term.attachCustomKeyEventHandler((event) => {
+      if (
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey ||
+        event.key.toLowerCase() !== "c" ||
+        !term.hasSelection()
+      ) {
+        return true;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.type === "keydown" && !event.repeat) {
+        copyToClipboard(term.getSelection());
+      }
+      return false;
+    });
+
     // Alternate-screen TUIs own their history; xterm has no scrollback there.
     // Only keep the scrollbar visible when the active buffer really can scroll.
     const syncScrollback = () => {
@@ -279,7 +298,7 @@ export function TerminalPane({
      * 右键：拦掉浏览器菜单，开自己的「复制 / 粘贴」；同时**屏蔽鼠标上报**。
      *
      * 终端是个 `canvas`，浏览器默认菜单对它没有意义（「在新标签页打开图片」之类），
-     * 因此必须拦掉。键盘路径仍在（选中 + Ctrl+Shift+C，xterm 原生处理），
+     * 因此必须拦掉。键盘复制由上面的自定义按键处理器负责，
      * 鼠标用户在这里拿到出口。
      *
      * # 为什么要在捕获阶段挡 mousedown（探针 `terminal-copy.js` 复现出的缺陷）
@@ -358,7 +377,7 @@ export function TerminalPane({
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [terminalId, registerSink, unregisterSink, onError]);
+  }, [terminalId, registerSink, unregisterSink, onError, copyToClipboard]);
   // 注意：`resolvedTheme` **不在**上面那份依赖里。放进去会在每次切主题时重建终端，
   // 而重建会把回滚缓冲清空——用户切主题时正在看的历史就没了。主题变化走下面那条。
 

@@ -36,22 +36,8 @@ use tokio::sync::mpsc;
 use crate::route::{NullRouteSource, RouteSource};
 use crate::validate::require_terminal_id;
 
-/// 一路终端的状态检测器句柄。
-///
-/// # 为什么必须是共享的
-///
-/// 检测器要同时看到**用户输入**（[`TerminalStatusDetector::mark_input`]，判定「一轮从哪
-/// 一刻开始」）与**输出**（[`TerminalStatusDetector::inspect_output`]）。这两者来自两个
-/// 互不相干的任务：`terminal:write`（渲染层写回）与输出泵。
-///
-/// 此前检测器是泵任务里的一个**局部变量**：`write` 根本够不到它，于是 `mark_input`
-/// **在生产代码里从未被调用过**。而 `inspect_output` 的第一件事就是
-/// `if !self.turn_active { return None }`——所以整套状态检测**一次都没有跑起来**：
-/// 「等待确认」「本轮已完成」「会话异常停止」全部静默。单元测试全绿，因为它们直接调
-/// 检测器，绕过了这条从未接上的线。
-///
-/// 只做输出侧检测也补不回来：没有「用户提交了什么」这个起点，就无法区分「新一轮开始了」
-/// 与「上一轮留在屏幕上的旧提示符」——后者会把每一帧重绘都误报成「本轮已完成」。
+/// Shared detector: input establishes the turn, parsed xterm snapshots identify
+/// its live state, and the output pump invalidates pending quiet observations.
 type DetectorHandle = Arc<Mutex<TerminalStatusDetector>>;
 
 /// 输出事件通道。
@@ -351,16 +337,44 @@ impl TerminalCommands {
         self.mark_input(&terminal_id, data);
         self.registry.write(&terminal_id, data).await
     }
-    /// 把用户输入告诉该终端的检测器，状态有变化就发事件。
-    ///
-    /// # 为什么必须在写进 PTY **之前**调用
-    ///
-    /// `mark_input` 干的正是「把检测器置为运行中」这件事，而 `inspect_output` 在非运行态
-    /// 直接返回。先写 PTY 的话，程序对这次输入产生的**第一批**输出有可能先被泵取走并检查——
-    /// 那一批会被整批丢掉，而它恰恰常常就带着提示符或确认请求。
-    ///
-    /// 检测器不存在（终端不是经由本处理器启动的）时**静默跳过**：写回本身才是这条命令的
-    /// 契约，检测只是搭车。
+
+    /// Inspect xterm's parsed live screen, never concatenated redraw fragments.
+    pub fn inspect_screen(&self, args: &Value) -> Result<Value> {
+        let terminal_id = require_string(args, "terminalId")?;
+        let text = args
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("text"))?;
+        if text.len() > 256 * 1024 {
+            return Err(invalid("text"));
+        }
+        let turn_id = args.get("turnId").and_then(Value::as_u64).unwrap_or(0);
+        let quiet = args.get("quiet").and_then(Value::as_bool).unwrap_or(false);
+        let input_ready = args
+            .get("inputReady")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let handle = self
+            .detectors
+            .lock()
+            .ok()
+            .and_then(|map| map.get(&terminal_id).cloned());
+        if let Some(handle) = handle {
+            let event = handle.lock().ok().and_then(|mut detector| {
+                detector.inspect_screen(text, turn_id, quiet, input_ready)
+            });
+            if let Some(event) = event {
+                emit(
+                    &self.emitter,
+                    CHANNEL_STATUS,
+                    status_payload(&terminal_id, &event),
+                );
+            }
+        }
+        Ok(Value::Null)
+    }
+    /// Mark input before writing to the PTY, so the output cannot overtake its
+    /// turn-start event. Protocol replies and draft edits do not begin turns.
     fn mark_input(&self, terminal_id: &str, data: &str) {
         let handle = self
             .detectors
@@ -457,38 +471,9 @@ struct Composed {
     rows: u16,
 }
 
-/// 把 PTY 输出泵到事件里，直到通道关闭。
-///
-/// 通道关闭意味着读取线程结束（PTY 已关闭），此时发一条退出事件。
-///
-/// # 顺带做状态检测
-///
-/// 检测器每路终端一个（它带缓冲，用于识别**被切分到多个数据块里**的提示文本——
-/// 逐块独立扫描会漏掉这种最常见的形态）。泵负责**输出侧**（`inspect_output`）；
-/// **输入侧**（`mark_input`）由写回路径负责，两边共用同一个检测器实例。
-///
-/// # 关于退出码
-///
-/// 泵只能观察到「通道关闭」，**退出码不经过输出通道**——它由收养任务
-/// （`SessionRegistry::spawn_reaper`）放进注册表，这里在通道关闭之后取走。
-///
-/// 取到码就喂 [`TerminalStatusDetector::mark_exit`]：非零退出才报「会话异常停止」。
-/// 取不到码说明这不是「进程自己结束」（用户主动关闭了终端），按 0 处理——正常结束，
-/// 静默。**这不是拿 0 糊弄**：`None` 在这里有确切含义，而主动关闭本就不该报异常。
-/**
- * 合批窗口：16 ms ≈ 一帧。
- *
- * # 为什么合批、为什么是「前沿发送 + 窗口」
- *
- * 高频输出（构建日志、`yes` 这类）此前是**每个 8 KiB 读块一条事件**——事件数
- * 与载荷的序列化成本一起堆在 webview 的 IPC 上（P1-L 评估）。合批把窗口内的
- * 后续块攒成一条，事件数按窗口摊薄；**第一条立即发**（前沿发送）——孤立的一次
- * 输出（命令回显、按键响应）与改动前**完全同延迟**，只有「连着来」的才被攒。
- *
- * 上限 64 KiB：连续大输出时不把单条事件的延迟堆到窗口之外。检测
- * （`inspect_output`）仍**逐块**进行，语义不变；攒下的块在窗口到点或通道关闭时
- * 一次发出（关闭时必发——**一条不丢**）。
- */
+/// Batch consecutive PTY writes for at most 16 ms, with a 64 KiB bound.
+/// xterm receives every original byte; screen parsing and status classification
+/// run through terminal:screen, independent of the transport batch boundaries.
 const OUTPUT_BATCH_WINDOW: std::time::Duration = std::time::Duration::from_millis(16);
 const OUTPUT_BATCH_MAX_BYTES: usize = 64 * 1024;
 
@@ -558,20 +543,11 @@ async fn pump_output(
                         deadline = None;
                     }
                 }
-                // 检测逐块进行，位置与原实现一致（数据事件之后）。用有损解码：
-                // 交互式输出含光标控制序列，它们本来就不是合法 UTF-8。
-                let text = String::from_utf8_lossy(&chunk).into_owned();
-                // 锁只在这一小块里持有：写回路径要能随时插进来标记输入。
-                let event = detector
-                    .lock()
-                    .ok()
-                    .and_then(|mut d| d.inspect_output(&text));
-                if let Some(event) = event {
-                    emit(
-                        &emitter,
-                        CHANNEL_STATUS,
-                        status_payload(&terminal_id, &event),
-                    );
+                // Raw PTY contains cursor movement and partial UTF-8. Only xterm
+                // can supply the actual screen; track activity here to reject
+                // a stale "quiet" screen while new output is already in flight.
+                if let Ok(mut detector) = detector.lock() {
+                    detector.note_output();
                 }
             }
             // 窗口到点：把攒下的块发出去。没有在攒批时这一支永远不就绪——
@@ -640,6 +616,7 @@ fn status_payload(terminal_id: &str, event: &TerminalStatusEvent) -> Value {
         "terminalId": terminal_id,
         "status": event.status.as_str(),
         "attention": event.attention,
+        "turnId": event.turn_id,
     })
 }
 
@@ -1255,7 +1232,7 @@ mod tests {
     /// 这两个断点互相独立，只修任何一个，关注提醒都依然是死的：
     ///
     /// 1. `mark_input` **在生产代码里从未被调用**——检测器是泵任务里的局部变量，写回路径
-    ///    够不到它。而 `inspect_output` 第一件事就是 `if !self.turn_active { return None }`，
+    ///    够不到它。而 `inspect_screen` 第一件事就是 `if !self.turn_active { return None }`，
     ///    于是输出侧检测每次都在第一行返回。
     /// 2. `terminal:status` 事件上的 `terminalId` 是**空串**——检测器 `publish` 时填的
     ///    `String::new()`，前端按 `terminalId` 分发，状态永远落到一个不存在的键上。

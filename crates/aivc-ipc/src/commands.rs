@@ -78,7 +78,7 @@ impl CommandDomain {
 /// 现网的会话命令统一挂在 `codex:` 前缀下，但它们**服务全部四个平台**——平台由
 /// `targetId` 区分（如 `claude:local`）。这是历史命名，改名会破坏前端与既有文档，
 /// 因此保留并在此说明。
-pub const COMMANDS: [(&str, CommandDomain); 99] = [
+pub const COMMANDS: [(&str, CommandDomain); 100] = [
     ("app:command", CommandDomain::App),
     ("app:exit-choice", CommandDomain::App),
     ("app:get-version", CommandDomain::App),
@@ -183,6 +183,7 @@ pub const COMMANDS: [(&str, CommandDomain); 99] = [
     ("skill:set-enabled", CommandDomain::Skill),
     ("terminal:attention-notification", CommandDomain::Terminal),
     ("terminal:resize", CommandDomain::Terminal),
+    ("terminal:screen", CommandDomain::Terminal),
     ("terminal:start", CommandDomain::Terminal),
     ("terminal:stop", CommandDomain::Terminal),
     ("terminal:write", CommandDomain::Terminal),
@@ -265,8 +266,8 @@ mod tests {
     #[test]
     fn the_command_count_is_stable() {
         // 前端契约的一部分：漏接或多接一条都会在这里暴露。
-        assert_eq!(COMMAND_COUNT, 99);
-        assert_eq!(command_names().len(), 99);
+        assert_eq!(COMMAND_COUNT, 100);
+        assert_eq!(command_names().len(), 100);
     }
 
     #[test]

@@ -5,6 +5,7 @@ import * as api from "../ipc/commands";
 import type { AiTarget, TerminalAttention, TerminalDataPayload, TerminalStatusPayload } from "../types";
 import {
   initialComposerVisible,
+  composeSubmission,
   shouldRevealComposer,
   type TerminalInputMode
 } from "../features/workspace/composer/composer-text";
@@ -76,6 +77,7 @@ export type TerminalUiState = {
 
 /** 一路终端。 */
 export type TerminalSession = {
+  turnId?: number;
   /** `terminalId`，同时用作标签的 key。 */
   id: string;
   title: string;
@@ -136,7 +138,7 @@ export function useTerminals(options: {
   /** 各终端待处理的提醒（等待确认等）。用户在界面上看过就该清掉。 */
   const [attention, setAttention] = useState<Record<string, TerminalAttention>>({});
   /** 同一终端、轮次和提醒只通知一次；切标签和清除界面标记不重置去重。 */
-  const lastNotifiedAttentionRef = useRef<Map<string, string>>(new Map());
+  const lastNotifiedAttentionRef = useRef<Map<string, { turnId: number; kinds: Set<string> }>>(new Map());
   /** 各终端的输入侧界面状态（模式与输入框可见性）。见 [`TerminalUiState`]。 */
   const [uiStates, setUiStates] = useState<Record<string, TerminalUiState>>({});
   /**
@@ -170,7 +172,8 @@ export function useTerminals(options: {
         const pending = pendingPrompts.current.get(payload.terminalId);
         if (pending !== undefined && bytes.length > 0) {
           pendingPrompts.current.delete(payload.terminalId);
-          void api.writeTerminal(payload.terminalId, `${pending}\r`).catch(() => undefined);
+          const submission = composeSubmission(pending, [], []);
+          if (submission) void api.writeTerminal(payload.terminalId, submission).catch(console.error);
         }
         // 接收端还没挂上时由 router 缓冲，`registerSink` 时补发——见它的文档。
         router.push(payload.terminalId, bytes);
@@ -185,23 +188,28 @@ export function useTerminals(options: {
     };
   }, [router]);
 
-  /* ── 状态：后端已经把检测做完了，前端只负责记住并显示 ──
-   *
-   * 检测放在后端是有意的：它需要跨数据块的缓冲（提示文本常被切成几块），
-   * 在前端做就要把同一套逻辑再写一遍。
-   */
+  // Lifecycle decisions come from the backend using xterm parsed live screens.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     void api
       .listen<TerminalStatusPayload>(api.CHANNEL_TERMINAL_STATUS, (payload) => {
+        const turnId = payload.turnId ?? 0;
+        let notified = lastNotifiedAttentionRef.current.get(payload.terminalId);
+        if (notified && notified.turnId > turnId) return;
+        setTerminals((current) => current.map((terminal) =>
+          terminal.id === payload.terminalId && terminal.turnId !== turnId
+            ? { ...terminal, turnId } : terminal
+        ));
+        if (!notified || notified.turnId !== turnId) {
+          notified = { turnId, kinds: new Set() };
+          lastNotifiedAttentionRef.current.set(payload.terminalId, notified);
+        }
         if (payload.attention) {
-          const signature = [
-            payload.turnId ?? 0,
-            payload.attention.kind
-          ].join("\u0000");
-          if (lastNotifiedAttentionRef.current.get(payload.terminalId) !== signature) {
-            lastNotifiedAttentionRef.current.set(payload.terminalId, signature);
+          if (!notified.kinds.has(payload.attention.kind)) {
+            // Consume foreground suppressions too: viewing an old attention
+            // and then switching tabs must never deliver it retroactively.
+            notified.kinds.add(payload.attention.kind);
             void api.notify(
               payload.attention.title,
               payload.attention.detail ?? "切回此会话可继续。",
@@ -209,10 +217,8 @@ export function useTerminals(options: {
                 terminalId: payload.terminalId,
                 isCurrentSession: activeTerminalRef?.current === payload.terminalId
               }
-            ).catch(() => undefined);
+            ).catch((error: unknown) => console.error("系统通知发送失败", error));
           }
-        } else {
-          lastNotifiedAttentionRef.current.delete(payload.terminalId);
         }
         setAttention((current) => {
           const next = { ...current };
@@ -423,7 +429,7 @@ export function useTerminals(options: {
         [id]: { inputMode: "composer", composerVisible: initialComposerVisible(sessionId) }
       }));
       if (prompt?.trim()) {
-        pendingPrompts.current.set(id, prompt.trim());
+        pendingPrompts.current.set(id, prompt);
       }
       try {
         const started = (await start(id)) as

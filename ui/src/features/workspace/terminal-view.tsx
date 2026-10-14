@@ -81,6 +81,7 @@ export function TerminalView({
                 <TerminalPane
                   key={item.id}
                   terminalId={item.id}
+                  turnId={item.turnId}
                   active={item.id === activeTerminalId}
                   running={item.running}
                   /*

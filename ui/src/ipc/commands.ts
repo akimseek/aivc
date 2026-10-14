@@ -720,7 +720,11 @@ export const saveImage = (dataUrl: string) =>
 /** 把一张图**按文件路径**放进系统剪贴板。预览里的「复制」用它。 */
 export const copyImage = (path: string) => invoke<null>("clipboard:write-image", { path });
 
-/** 发一条系统通知。权限缺失或系统静音时静默失败。 */
+export const reportTerminalScreen = (args: {
+  terminalId: string; turnId: number; text: string; quiet: boolean; inputReady: boolean;
+}) => invoke<null>("terminal:screen", args);
+
+/** 发一条系统通知；原生发送错误向调用方报告。 */
 export const notify = (
   title: string,
   detail?: string,
@@ -730,7 +734,7 @@ export const notify = (
     title,
     ...(detail ? { detail } : {}),
     ...context
-  }).catch(() => undefined);
+  });
 
 /** 网关端口状态。 */
 export const getGatewayPort = () => invoke<GatewayPortStatus>("gateway:get-port");

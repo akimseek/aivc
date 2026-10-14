@@ -98,7 +98,9 @@ export function composeSubmission(
   blocks: PastedBlock[],
   attachmentPaths: string[]
 ): string | null {
-  const expanded = expandBlocks(text, blocks).trim();
+  // Whitespace belongs to the prompt (including indentation and trailing lines).
+  // trim() is only used below to reject an empty submission.
+  const expanded = expandBlocks(text, blocks);
   const attachments = formatAttachments(attachmentPaths);
   /**
    * 只在**两边都有**时插换行。

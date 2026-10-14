@@ -1,28 +1,6 @@
-//! 终端状态检测器的差分测试：与现网 TypeScript 实现逐事件对拍。
-//!
-//! # 这个测试证明什么
-//!
-//! 单元测试证明「我的实现符合我以为的规则」；差分测试证明「我的实现与现网一致」。
-//! 后者才是「功能一致」这条要求的证据——单元测试写得再多，也可能整体地理解错了规则。
-//!
-//! # golden 从哪来
-//!
-//! `fixtures/status-golden.json` 由 `generate-status-golden.mjs` 用**现网的
-//! `terminal-status-detector.ts`** 跑同一批场景生成。因此本测试是**离线**的：不需要
-//! Node，也不需要现网源码，跑得和普通单测一样快。
-//!
-//! 场景定义在 `fixtures/status-scenarios.json`，生成脚本与这里读的是同一个文件——
-//! 两边不可能漂移。
-//!
-//! # 重新生成
-//!
-//! ```text
-//! node --experimental-transform-types crates/aivc-terminal/tests/generate-status-golden.mjs
-//! ```
+//! Legacy raw-PTY fixtures retained as regressions: redraw fragments must not
+//! complete turns. Lifecycle detection now consumes stable parsed live screens.
 
-// 集成测试是独立 crate，`clippy.toml` 里的测试豁免（allow-panic-in-tests）只覆盖
-// `#[cfg(test)]` 模块，不覆盖 `tests/` 目录。这里的 panic 就是测试失败的表达方式，
-// 因此整个文件放开该 lint。
 #![allow(clippy::panic)]
 
 use std::path::{Path, PathBuf};
@@ -143,7 +121,7 @@ fn run(scenario: &Scenario) -> Vec<GoldenEvent> {
                 detector.mark_input(input)
             }
         } else if let Some(output) = &step.output {
-            detector.inspect_output(output)
+            detector.inspect_screen(output, detector.turn_id(), false, false)
         } else if let Some(code) = step.exit {
             detector.mark_exit(code)
         } else {
@@ -180,41 +158,16 @@ fn both_fixtures_describe_the_same_scenarios() {
 }
 
 #[test]
-fn the_detector_matches_the_node_oracle() {
+fn raw_redraw_fixtures_cannot_complete_turns() {
     let scenarios: ScenarioFile = load("status-scenarios.json");
-    let golden: GoldenFile = load("status-golden.json");
-    assert!(
-        !golden.scenarios.is_empty(),
-        "golden 为空——夹具没有正确生成"
-    );
-
-    let mut mismatches = Vec::new();
-    for (scenario, expected) in scenarios.scenarios.iter().zip(&golden.scenarios) {
-        let actual = run(scenario);
-        // Startup failures intentionally differ from the old platform: an
-        // abnormal exit requires attention even before the first user prompt.
-        if scenario.name == "非零退出但从未输入" {
-            assert_eq!(actual.len(), 1);
-            assert_eq!(actual[0].status, "error");
-            continue;
-        }
-        if actual != expected.events {
-            mismatches.push(format!(
-                "场景「{}」（{}）\n  现网: {}\n  本实现: {}",
-                scenario.name,
-                scenario.provider_id,
-                serde_json::to_string(&expected.events).unwrap_or_default(),
-                serde_json::to_string(&actual).unwrap_or_default()
-            ));
-        }
+    for scenario in &scenarios.scenarios {
+        let events = run(scenario);
+        assert!(
+            events.iter().all(|event| event.status != "completed"),
+            "Raw redraws completed a turn: {}",
+            scenario.name
+        );
     }
-    assert!(
-        mismatches.is_empty(),
-        "{} / {} 个场景与现网不一致：\n\n{}",
-        mismatches.len(),
-        golden.scenarios.len(),
-        mismatches.join("\n\n")
-    );
 }
 
 #[test]

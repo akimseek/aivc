@@ -26,6 +26,7 @@
 pub mod exit;
 pub mod harden;
 pub mod logging;
+pub mod notification;
 pub mod shutdown;
 pub mod tauri_app;
 pub mod tray;

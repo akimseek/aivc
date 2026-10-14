@@ -222,6 +222,7 @@ impl CommandRouter {
             // 写入与调整尺寸都只回 `null`：前端不消费返回值。
             "terminal:write" => self.terminal.write(args).await.map(|()| Value::Null),
             "terminal:resize" => self.terminal.resize(args).await.map(|()| Value::Null),
+            "terminal:screen" => self.terminal.inspect_screen(args),
             "terminal:stop" => self.terminal.stop(args).await,
             other => Err(unknown(other)),
         }
@@ -542,9 +543,8 @@ impl CommandRouter {
                 Ok(Value::Null)
             }
             // --- 终端 ---
-            "terminal:start" | "terminal:write" | "terminal:resize" | "terminal:stop" => {
-                self.dispatch_terminal(command, &args).await
-            }
+            "terminal:start" | "terminal:write" | "terminal:resize" | "terminal:stop"
+            | "terminal:screen" => self.dispatch_terminal(command, &args).await,
             // --- 供应商查询 ---
             "vendor:list-models" => Ok(VendorCommands::list_models(ctx, &args).await?),
             // 主目录**显式传进去**：这条命令会读用户 HOME 下的配置文件。

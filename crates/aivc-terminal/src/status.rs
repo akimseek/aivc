@@ -1,23 +1,4 @@
-//! 终端状态检测：从 PTY 输出流中识别「等待确认 / 出错 / 本轮已完成」。
-//!
-//! # 为什么需要一个状态机而不是几条正则
-//!
-//! PTY 输出按**任意边界**到达——一行可能被切成三段，一段里也可能含多行。因此不能对
-//! 每一批数据单独跑正则：`Ask Codex to do anything` 的提示符完全可能被拆成两批。
-//! 检测器保留最近一段可识别文本，在**累积缓冲**上判定。
-//!
-//! # 「本轮已完成」的起点是提交，而不是打字
-//!
-//! 打字、粘贴草稿和终端协议应答都不能开始轮次。输入检测器保留草稿状态，只有括号粘贴
-//! 之外的回车才提交；确认界面的 Enter / y / n / Escape 只推进当前阶段。
-//!
-//! 提交后必须见过实际输出，再回到空闲提示符才能判定完成。控制序列、输入回显，以及
-//! 被切成多批的提示符本身都不算实际输出。确认和异常独立检测，不依赖是否已提交提示词。
-//!
-//! # 重复输入为什么不能重置缓冲
-//!
-//! 同一轮里用户可能再按几次回车（确认授权、补充按键）。若每次都重置缓冲，运行中的界面
-//! 重绘会把旧的空闲提示误判成「本轮已完成」。因此只有**新一轮**才清空缓冲。
+//! Terminal lifecycle detection from parsed live screens, never concatenated PTY redraws.
 
 use std::sync::Arc;
 
@@ -89,35 +70,6 @@ pub struct TerminalStatusEvent {
     /// 轮次编号（第几次提交输入）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<u64>,
-}
-
-/// 提示符的可见性追踪。
-///
-/// 三个标志合在一起才能回答「本轮是否完成」，因此收成一个结构而不是散在检测器上——
-/// 它们总是一起被重置、一起被读取。
-#[derive(Debug, Default, Clone, Copy)]
-struct PromptTracking {
-    /// 提示符曾经出现过。
-    was_visible: bool,
-    /// 提示符出现过之后又消失（说明有输出把界面推走了）。
-    disappeared: bool,
-    /// 见过不含提示符的输出。
-    saw_output_without_prompt: bool,
-}
-
-impl PromptTracking {
-    /// 回到本轮开始时的状态。
-    fn reset(&mut self) {
-        *self = Self::default();
-    }
-
-    /// 判定「本轮已完成」是否成立。
-    ///
-    /// 三个条件缺一不可：出现过、消失过、又出现。只看「现在可见」会把启动界面上的
-    /// 空闲提示立刻判定成「本轮已完成」。
-    const fn can_complete(self) -> bool {
-        self.saw_output_without_prompt && (!self.was_visible || self.disappeared)
-    }
 }
 
 /// Track raw PTY input across writes. Newlines inside bracketed paste are draft
@@ -202,15 +154,18 @@ impl InputTracking {
 #[derive(Debug)]
 pub struct TerminalStatusDetector {
     provider_id: ProviderId,
-    buffer: String,
     turn_active: bool,
     stopped: bool,
     input: InputTracking,
-    submitted_text: String,
     turn_id: u64,
     last_status: Option<TerminalStatus>,
     last_attention_key: String,
-    prompt: PromptTracking,
+    last_event_turn: u64,
+    saw_working: bool,
+    last_output: std::time::Instant,
+    idle_screen: Option<String>,
+    ready_for_submission: bool,
+    pending_attention: Option<(TerminalStatus, std::time::Instant)>,
 }
 
 impl TerminalStatusDetector {
@@ -219,15 +174,18 @@ impl TerminalStatusDetector {
     pub fn new(provider_id: ProviderId) -> Self {
         Self {
             provider_id,
-            buffer: String::new(),
             turn_active: false,
             stopped: false,
             input: InputTracking::default(),
-            submitted_text: String::new(),
             turn_id: 0,
             last_status: None,
             last_attention_key: String::new(),
-            prompt: PromptTracking::default(),
+            last_event_turn: 0,
+            saw_working: false,
+            last_output: std::time::Instant::now(),
+            idle_screen: None,
+            ready_for_submission: false,
+            pending_attention: None,
         }
     }
 
@@ -258,14 +216,11 @@ impl TerminalStatusDetector {
         }
         // 同一轮中的后续输入不应重置检测缓冲：运行中的界面重绘可能把旧的空闲提示
         // 误判成「本轮已完成」。等待确认是例外——响应确认意味着进入下一阶段。
-        if self.turn_active && !answering_confirmation {
+        if self.turn_active && !answering_confirmation && !self.ready_for_submission {
             return None;
         }
-        if !self.turn_active && !answering_confirmation {
+        if !answering_confirmation {
             self.turn_id += 1;
-        }
-        if let Some(text) = action.submission {
-            self.submitted_text = text;
         }
         if answering_confirmation {
             self.input.draft.clear();
@@ -278,73 +233,106 @@ impl TerminalStatusDetector {
         if !answering_confirmation {
             self.turn_active = true;
         }
-        self.buffer.clear();
-        self.prompt.reset();
+        self.saw_working = false;
+        self.ready_for_submission = false;
+        self.pending_attention = None;
+        self.idle_screen = None;
+        self.last_output = std::time::Instant::now();
         self.publish(TerminalStatus::Running, None)
     }
 
-    /// 检查一批 PTY 输出。
-    pub fn inspect_output(&mut self, data: &str) -> Option<TerminalStatusEvent> {
-        if self.stopped || data.is_empty() {
-            return None;
-        }
-        let cleaned = strip_ansi(data);
-        self.buffer.push_str(&cleaned);
-        truncate_front(&mut self.buffer, MAX_BUFFER_CHARS);
-
-        let prompt_visible = is_prompt(self.provider_id, &self.buffer);
-        if self.turn_active && !prompt_visible && self.has_progress_output() {
-            self.prompt.saw_output_without_prompt = true;
-            if self.prompt.was_visible {
-                self.prompt.disappeared = true;
-            }
-        }
-
-        let detection = detect_attention(self.provider_id, &self.buffer)?;
-        if detection.kind == TerminalStatus::Completed {
-            if !self.turn_active || self.turn_id == 0 {
-                return None;
-            }
-            // 提示符此刻不可见，说明还在输出——不能判定完成。
-            if !prompt_visible {
-                return None;
-            }
-            // 三条件缺一不可：出现过、消失过、又出现。
-            let can_complete = self.prompt.can_complete();
-            self.prompt.was_visible = true;
-            if !can_complete {
-                return None;
-            }
-        }
-        if matches!(
-            detection.kind,
-            TerminalStatus::Completed | TerminalStatus::Error
-        ) {
-            self.turn_active = false;
-        }
-        self.publish(detection.kind, Some(detection))
+    /// PTY activity invalidates pending quiet-screen completion.
+    pub fn note_output(&mut self) {
+        self.last_output = std::time::Instant::now();
     }
 
-    /// A split idle prompt or the submitted text being echoed is not evidence
-    /// that the assistant has started answering.
-    fn has_progress_output(&self) -> bool {
-        let prompt = match self.provider_id {
-            ProviderId::Codex => "Ask Codex to do anything",
-            ProviderId::Gemini => "Ask Gemini to do anything",
-            ProviderId::Claude => "Ask Claude to do anything",
-            ProviderId::Qoder => "Ask Qoder to do anything",
+    /// Inspect the parsed live screen. A turn id rejects delayed snapshots.
+    /// Quiet alone is never evidence of completion.
+    pub fn inspect_screen(
+        &mut self,
+        text: &str,
+        turn_id: u64,
+        quiet: bool,
+        input_ready: bool,
+    ) -> Option<TerminalStatusEvent> {
+        if self.stopped || turn_id != self.turn_id {
+            return None;
+        }
+        let busy = matches(
+            r"(?im)(?:esc|ctrl[+ -]?c|escape) to (?:interrupt|cancel|stop)|(?:^|\n)[^\w\n]{0,12}(?:reconnecting|working|thinking|reasoning|connecting|running)(?:\.{3}|…|\s*\()[^\n]{0,100}(?:\n|$)",
+            tail(text, PROMPT_TAIL_CHARS),
+        );
+        if busy {
+            self.idle_screen = None;
+            if self.turn_active {
+                self.saw_working = true;
+            }
+        }
+        // A user may submit the next prompt before the notification debounce
+        // expires. It still starts a new turn, rather than merging two turns.
+        self.ready_for_submission = self.turn_active
+            && self.saw_working
+            && input_ready
+            && !busy
+            && !is_confirmation_prompt(self.provider_id, text);
+        let attention = if is_confirmation_prompt(self.provider_id, text) {
+            Some(TerminalAttention {
+                kind: TerminalStatus::AwaitingConfirmation,
+                title: "等待确认".to_owned(),
+                detail: Some("终端正在等待你的确认或授权。".to_owned()),
+            })
+        } else if let Some(detail) =
+            find_error(tail(text, CONFIRMATION_TAIL_CHARS)).filter(|_| busy || !input_ready)
+        {
+            Some(TerminalAttention {
+                kind: TerminalStatus::Error,
+                title: "会话出现异常".to_owned(),
+                detail: Some(detail),
+            })
+        } else {
+            None
         };
-        self.buffer.lines().any(|line| {
-            let text = line.trim().trim_start_matches(['›', '❯', '>']).trim();
-            !text.is_empty()
-                && !prompt.starts_with(text)
-                && !(self.provider_id == ProviderId::Qoder
-                    && "Ask anything to do anything".starts_with(text))
-                && !self
-                    .submitted_text
-                    .lines()
-                    .any(|input| input.trim().starts_with(text))
-        })
+        if let Some(attention) = attention {
+            self.idle_screen = None;
+            // A retry spinner keeps producing output: waiting for total silence
+            // would suppress its errors forever. Stabilize the attention kind
+            // separately, independent of changing retry counts and redraws.
+            match self.pending_attention {
+                Some((kind, since)) if kind == attention.kind => {
+                    if since.elapsed() >= std::time::Duration::from_millis(800) {
+                        return self.publish(kind, Some(attention));
+                    }
+                }
+                _ => self.pending_attention = Some((attention.kind, std::time::Instant::now())),
+            }
+            return None;
+        }
+        self.pending_attention = None;
+        if !quiet || self.last_output.elapsed() < std::time::Duration::from_millis(1200) {
+            return None;
+        }
+        if busy {
+            return self.publish(TerminalStatus::Running, None);
+        }
+        if !self.turn_active || !self.saw_working || !input_ready {
+            self.idle_screen = None;
+            return None;
+        }
+        // Require the same screen on two quiet observations, after actual work.
+        if self.idle_screen.as_deref() != Some(text) {
+            self.idle_screen = Some(text.to_owned());
+            return None;
+        }
+        self.turn_active = false;
+        self.idle_screen = None;
+        self.publish(
+            TerminalStatus::Completed,
+            Some(TerminalAttention {
+                kind: TerminalStatus::Completed,
+                title: "本轮已完成".to_owned(),
+                detail: Some("切回此会话可查看结果。".to_owned()),
+            }),
+        )
     }
 
     /// 记录进程退出。
@@ -383,9 +371,13 @@ impl TerminalStatusDetector {
         let key = attention
             .as_ref()
             .map_or_else(String::new, |item| item.kind.as_str().to_owned());
-        if self.last_status == Some(status) && key == self.last_attention_key {
+        if self.last_status == Some(status)
+            && key == self.last_attention_key
+            && self.last_event_turn == self.turn_id
+        {
             return None;
         }
+        self.last_event_turn = self.turn_id;
         self.last_status = Some(status);
         self.last_attention_key = key;
         Some(TerminalStatusEvent {
@@ -509,6 +501,7 @@ fn find_error(text: &str) -> Option<String> {
         r"(?i)transport error[^\n]*",
         r"(?i)conversation interrupted[^\n]*",
         r"(?i)(?:fatal error|unhandled exception)[^\n]*",
+        r"(?im)^\s*(?:[■✕]\s*)?(?:unexpected status [45]\d\d|API Error:|error communicating with API)[^\n]*",
         r"(?i)(?:codex|gemini|claude|qoder)\s+(?:已退出|退出)[^\n]*",
     ];
     patterns.iter().find_map(|pattern| {
@@ -601,6 +594,22 @@ mod tests {
         TerminalStatusDetector::new(provider)
     }
 
+    fn snapshot(d: &mut TerminalStatusDetector, text: &str) -> Option<TerminalStatusEvent> {
+        d.last_output = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        let ready = is_prompt(d.provider_id, text);
+        let event = d.inspect_screen(text, d.turn_id(), true, ready);
+        if event.is_none() {
+            if let Some((kind, _)) = d.pending_attention {
+                d.pending_attention = Some((
+                    kind,
+                    std::time::Instant::now() - std::time::Duration::from_secs(1),
+                ));
+                return d.inspect_screen(text, d.turn_id(), true, ready);
+            }
+        }
+        event
+    }
+
     #[test]
     fn ansi_sequences_are_stripped() {
         assert_eq!(strip_ansi("\u{1b}[31mred\u{1b}[0m"), "red");
@@ -655,8 +664,7 @@ mod tests {
         // 响应确认意味着进入下一阶段，此时应当重置缓冲。
         let mut d = detector(ProviderId::Codex);
         d.mark_input("first\r").expect("first");
-        d.inspect_output("Do you want to proceed? (y/n)")
-            .expect("confirmation");
+        snapshot(&mut d, "Do you want to proceed? (y/n)").expect("confirmation");
         assert_eq!(d.last_status, Some(TerminalStatus::AwaitingConfirmation));
         let event = d.mark_input("y").expect("event");
         assert_eq!(event.status, TerminalStatus::Running);
@@ -667,7 +675,7 @@ mod tests {
     fn output_is_ignored_when_no_turn_is_running() {
         let mut d = detector(ProviderId::Codex);
         // 启动界面上的提示符不该产生任何事件。
-        assert!(d.inspect_output(CODEX_PROMPT).is_none());
+        assert!(snapshot(&mut d, CODEX_PROMPT).is_none());
     }
 
     #[test]
@@ -675,7 +683,7 @@ mod tests {
         // 关键：提示符可见但从未消失过 → 不能判定完成。
         let mut d = detector(ProviderId::Codex);
         d.mark_input("hello\r").expect("input");
-        assert!(d.inspect_output(CODEX_PROMPT).is_none(), "首次出现不算完成");
+        assert!(snapshot(&mut d, CODEX_PROMPT).is_none(), "首次出现不算完成");
     }
 
     #[test]
@@ -683,31 +691,31 @@ mod tests {
         let mut d = detector(ProviderId::Codex);
         d.mark_input("hello\r").expect("input");
         // 输出把提示符推走。
-        assert!(d.inspect_output("thinking...\n").is_none());
+        assert!(snapshot(&mut d, "Thinking (esc to interrupt)\n").is_none());
         // 提示符回来 → 完成。
-        let event = d.inspect_output(CODEX_PROMPT).expect("completed");
+        assert!(snapshot(&mut d, CODEX_PROMPT).is_none());
+        let event = snapshot(&mut d, CODEX_PROMPT).expect("completed");
         assert_eq!(event.status, TerminalStatus::Completed);
         assert!(!d.is_turn_active(), "完成后不再处于运行中");
     }
 
     #[test]
-    fn a_prompt_split_across_chunks_is_still_recognized() {
-        // PTY 输出按任意边界到达，因此判定必须基于累积缓冲。
+    fn a_prompt_visible_while_busy_never_completes() {
         let mut d = detector(ProviderId::Codex);
         d.mark_input("hello\r").expect("input");
-        d.inspect_output("output\n");
-        assert!(d.inspect_output("\n› Ask Codex to do ").is_none());
-        let event = d.inspect_output("anything\n").expect("completed");
-        assert_eq!(event.status, TerminalStatus::Completed);
+        let text = format!("Thinking (esc to interrupt)\n{CODEX_PROMPT}");
+        for _ in 0..3 {
+            assert!(snapshot(&mut d, &text).is_none());
+        }
+        assert!(d.is_turn_active());
     }
 
     #[test]
     fn errors_are_reported_with_their_detail() {
         let mut d = detector(ProviderId::Codex);
         d.mark_input("hello\r").expect("input");
-        let event = d
-            .inspect_output("stream disconnected before completion: broken pipe")
-            .expect("error");
+        let event =
+            snapshot(&mut d, "stream disconnected before completion: broken pipe").expect("error");
         assert_eq!(event.status, TerminalStatus::Error);
         let detail = event.attention.expect("attention").detail.expect("detail");
         assert!(detail.contains("stream disconnected"), "{detail}");
@@ -802,10 +810,11 @@ mod tests {
     fn duplicate_events_are_suppressed() {
         let mut d = detector(ProviderId::Codex);
         d.mark_input("hello\r").expect("input");
-        d.inspect_output("out\n");
-        d.inspect_output(CODEX_PROMPT).expect("first");
+        snapshot(&mut d, "Working (esc to interrupt)\n");
+        assert!(snapshot(&mut d, CODEX_PROMPT).is_none());
+        snapshot(&mut d, CODEX_PROMPT).expect("first");
         // 同样的状态与提醒不再重复发出。
-        assert!(d.inspect_output(CODEX_PROMPT).is_none());
+        assert!(snapshot(&mut d, CODEX_PROMPT).is_none());
     }
 
     #[test]
@@ -884,14 +893,10 @@ mod tests {
     }
 
     #[test]
-    fn a_carriage_return_does_not_break_prompt_detection() {
-        // PTY 用 `\r\n` 换行，判定前必须统一。
+    fn delayed_previous_turn_snapshots_are_ignored() {
         let mut d = detector(ProviderId::Codex);
         d.mark_input("hello\r").expect("input");
-        d.inspect_output("out\r\n");
-        let event = d
-            .inspect_output("\r\n› Ask Codex to do anything\r\n")
-            .expect("done");
-        assert_eq!(event.status, TerminalStatus::Completed);
+        assert!(d.inspect_screen(CODEX_PROMPT, 0, true, true).is_none());
+        assert!(d.is_turn_active());
     }
 }

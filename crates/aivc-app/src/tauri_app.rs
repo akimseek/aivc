@@ -25,7 +25,6 @@ use serde_json::{Value, json};
 // `use` 是「条目」，写在语句之后会让作用域看起来比实际更窄。
 use tauri_plugin_clipboard_manager::ClipboardExt as _;
 use tauri_plugin_dialog::DialogExt as _;
-use tauri_plugin_notification::NotificationExt as _;
 
 use crate::App;
 use crate::shutdown;
@@ -274,16 +273,15 @@ async fn platform_command(
                 .and_then(Value::as_str)
                 .unwrap_or("终端需要你确认");
             let detail = args.get("detail").and_then(Value::as_str);
-            let mut builder = app.notification().builder().title(title);
-            if let Some(detail) = detail {
-                builder = builder.body(detail);
-            }
-            // 通知发不出去**不该让调用失败**：用户没开通知权限、系统静音都是常态，
-            // 而发起通知的那条业务路径（终端在等确认）本身没有出错。
-            if let Err(error) = builder.show() {
-                tracing::debug!(%error, "系统通知发送失败");
-            }
-            Some(Ok(Value::Null))
+            Some(
+                crate::notification::show(app, title, detail)
+                    .await
+                    .map(|()| Value::Null)
+                    .map_err(|error| {
+                        tracing::warn!(%error, "系统通知发送失败");
+                        error
+                    }),
+            )
         }
         "app:exit-choice" => Some(resolve_exit_choice(app, args)),
         "app:command" => Some(run_app_command(app, args).await),
@@ -477,6 +475,9 @@ pub fn run(app: App) -> tauri::Result<()> {
 
     build(app)
         .setup(move |handle| {
+            if let Err(error) = crate::notification::register() {
+                tracing::warn!(%error, "系统通知身份注册失败");
+            }
             // 装入真实事件发射器。**必须在这里**：`App::start` 时尚无窗口，
             // 网关的记录钩子那时只能拿到占位发射器。
             {

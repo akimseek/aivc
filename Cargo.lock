@@ -35,10 +35,12 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
+ "tauri-winrt-notification",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "winreg 0.55.0",
  "wiremock",
 ]
 

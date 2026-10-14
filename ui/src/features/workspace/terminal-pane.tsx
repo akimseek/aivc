@@ -40,6 +40,7 @@ import type { TerminalSink } from "../../app/terminal-output";
  */
 export function TerminalPane({
   terminalId,
+  turnId = 0,
   active,
   running,
   /**
@@ -75,6 +76,7 @@ export function TerminalPane({
   targetId
 }: {
   terminalId: string;
+  turnId?: number;
   /** 是否在前台。非前台的仍然挂载——见下。 */
   active: boolean;
   /**
@@ -100,6 +102,8 @@ export function TerminalPane({
 }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
+  const turnIdRef = useRef(turnId);
+  turnIdRef.current = turnId;
   const fitRef = useRef<FitAddon | null>(null);
   // 尺寸回调挂在 ResizeObserver 里，拿不到最新的 prop，因此用一个 ref 镜像它。
   const runningRef = useRef(running);
@@ -268,7 +272,40 @@ export function TerminalPane({
       host.dataset.scrollback = String(buffer.type === "normal" && buffer.baseY > 0);
     };
     syncScrollback();
-    const parsedSub = term.onWriteParsed(syncScrollback);
+    let sampleTimer: number | undefined;
+    let quietTimer: number | undefined;
+    let stableTimer: number | undefined;
+    let disposed = false;
+    const reportScreen = (quiet: boolean) => {
+      if (disposed || !runningRef.current) return;
+      const buffer = term.buffer.active;
+      const lines: string[] = [];
+      // baseY is the live screen. viewportY would inspect history while scrolling.
+      for (let row = 0; row < term.rows; row += 1) {
+        const line = buffer.getLine(buffer.baseY + row);
+        const text = line?.translateToString(true) ?? "";
+        if (line?.isWrapped && lines.length) lines[lines.length - 1] += text;
+        else lines.push(text);
+      }
+      const cursorLine = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true) ?? "";
+      void api.reportTerminalScreen({
+        terminalId, turnId: turnIdRef.current,
+        text: lines.join("\n").slice(-65536), quiet,
+        inputReady: /^\s*[›❯>]\s*/u.test(cursorLine)
+      }).catch((error: unknown) => console.error("终端状态同步失败", error));
+    };
+    const parsedSub = term.onWriteParsed(() => {
+      syncScrollback();
+      // Throttle observations while drawing, then require two quiet snapshots.
+      if (sampleTimer === undefined) sampleTimer = window.setTimeout(() => {
+        sampleTimer = undefined;
+        reportScreen(false);
+      }, 100);
+      window.clearTimeout(quietTimer);
+      window.clearTimeout(stableTimer);
+      quietTimer = window.setTimeout(() => reportScreen(true), 1800);
+      stableTimer = window.setTimeout(() => reportScreen(true), 3000);
+    });
     const bufferSub = term.buffer.onBufferChange(syncScrollback);
     const resizeSub = term.onResize(syncScrollback);
 
@@ -363,6 +400,10 @@ export function TerminalPane({
     return () => {
       window.cancelAnimationFrame(initial);
       observer.disconnect();
+      disposed = true;
+      window.clearTimeout(sampleTimer);
+      window.clearTimeout(quietTimer);
+      window.clearTimeout(stableTimer);
       parsedSub.dispose();
       bufferSub.dispose();
       resizeSub.dispose();

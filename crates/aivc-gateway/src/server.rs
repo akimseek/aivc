@@ -396,39 +396,38 @@ impl GatewayState {
         Some(updated)
     }
 
-    /// 供应商被停用后立即把仍绑定它的动态终端迁移到候选池中的下一家。
+    /// 候选池变化后立即重新评估动态终端，包括池曾为空、现在重新有候选的情况。
     ///
     /// 请求开始时仍会再次校验候选池；这里的主动迁移用于让正在使用的终端
     /// 立即显示真实供应商，并避免用户必须先发出下一条请求才能看到切换。
-    pub async fn reconcile_disabled_vendor(&self, vendor_id: &VendorId) {
+    pub async fn reconcile_candidate_pool(&self) {
         let vendors = self.source.vendors().await;
-        let route_ids = self
-            .routes
-            .read()
-            .await
-            .route_ids_for_vendor(vendor_id.as_str());
-        if route_ids.is_empty() {
-            return;
-        }
-        let mut health = self.health.lock().await;
+        let routes = self.routes.read().await.dynamic_routes();
         let now = now_ms();
-        for route_id in route_ids {
-            let Some(route) = self.routes.read().await.get(&route_id).cloned() else {
+        for route in routes {
+            let next_id = {
+                let mut health = self.health.lock().await;
+                choose_vendor(&vendors, route.provider_id, Some(&route.vendor_id), |id| {
+                    health.is_circuit_open(id, now)
+                })
+                .map(|vendor| vendor.id.as_str().to_owned())
+            };
+            let Some(next_id) = next_id.filter(|id| *id != route.vendor_id) else {
                 continue;
             };
-            let mut is_open = |id: &VendorId| health.is_circuit_open(id, now);
-            let Some(next) = choose_vendor(
-                &vendors,
-                route.provider_id,
-                Some(vendor_id.as_str()),
-                &mut is_open,
-            ) else {
-                continue;
+            let updated = {
+                let mut registry = self.routes.write().await;
+                let Some(current) = registry.get_mut(&route.route_id) else {
+                    continue;
+                };
+                // 不覆盖读取候选池期间发生的手动切换或锁定。
+                if current.mode != RouteMode::Dynamic || current.vendor_id != route.vendor_id {
+                    continue;
+                }
+                current.vendor_id = next_id;
+                current.clone()
             };
-            drop(health);
-            self.switch_route_vendor(&route_id, next.id.as_str(), Some("candidate-pool"))
-                .await;
-            health = self.health.lock().await;
+            self.notify_switch(&updated, Some("candidate-pool"));
         }
     }
 
@@ -1131,18 +1130,10 @@ async fn handle_inner(
                             attempt_vendor = next;
                             continue;
                         }
-                        tracker.set_error(Some("UPSTREAM_ERROR"), Some(&error_message));
-                        return json_error(StatusCode::BAD_GATEWAY, &error_message);
+                        return upstream_request_error(tracker, &error);
                     }
                     FailureAction::NoNext(_) | FailureAction::Stop => {
-                        let message = if error.is_timeout() {
-                            tracker.mark_timeout();
-                            messages::UPSTREAM_TIMEOUT.to_owned()
-                        } else {
-                            error_message
-                        };
-                        tracker.set_error(Some("UPSTREAM_ERROR"), Some(&message));
-                        return json_error(StatusCode::BAD_GATEWAY, &message);
+                        return upstream_request_error(tracker, &error);
                     }
                 }
             }
@@ -1374,6 +1365,19 @@ fn upstream_error_message(error: &reqwest::Error) -> String {
         cause = error.source();
     }
     message
+}
+
+/// 网络超时和连接失败有不同的 HTTP 语义；所有停止重试的路径统一处理。
+fn upstream_request_error(tracker: &mut RequestTracker, error: &reqwest::Error) -> Response<Body> {
+    if error.is_timeout() {
+        tracker.mark_timeout();
+        tracker.set_error(Some("UPSTREAM_TIMEOUT"), Some(messages::UPSTREAM_TIMEOUT));
+        json_error(StatusCode::GATEWAY_TIMEOUT, messages::UPSTREAM_TIMEOUT)
+    } else {
+        let message = upstream_error_message(error);
+        tracker.set_error(Some("UPSTREAM_ERROR"), Some(&message));
+        json_error(StatusCode::BAD_GATEWAY, &message)
+    }
 }
 
 /// 当前时间（毫秒）。
@@ -1620,9 +1624,15 @@ fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
 
-/// 构造 JSON 错误响应。
+/// 网关生成的错误使用 API 客户端可识别的 error.message，避免显示 Unknown error。
 fn json_error(status: StatusCode, message: &str) -> Response<Body> {
-    let body = serde_json::json!({ "error": message }).to_string();
+    let body = serde_json::json!({
+        "error": {
+            "message": message,
+            "type": "gateway_error"
+        }
+    })
+    .to_string();
     Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, "application/json; charset=utf-8")

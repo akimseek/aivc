@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 
 import * as api from "../ipc/commands";
 import type { AiTarget, TerminalAttention, TerminalDataPayload, TerminalStatusPayload } from "../types";
@@ -120,7 +121,10 @@ export type TerminalSession = {
   exitCode?: number;
 };
 
-export function useTerminals() {
+export function useTerminals(options: {
+  activeTerminalRef?: RefObject<string | undefined>;
+} = {}) {
+  const { activeTerminalRef } = options;
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
   /**
    * 还没发出去的「启动提示词」，按终端编号排队。
@@ -131,7 +135,7 @@ export function useTerminals() {
   const pendingPrompts = useRef<Map<string, string>>(new Map());
   /** 各终端待处理的提醒（等待确认等）。用户在界面上看过就该清掉。 */
   const [attention, setAttention] = useState<Record<string, TerminalAttention>>({});
-  /** 相同状态事件只弹一次系统通知；提醒清除或内容变化后才允许再次弹出。 */
+  /** 同一终端、轮次和提醒只通知一次；切标签和清除界面标记不重置去重。 */
   const lastNotifiedAttentionRef = useRef<Map<string, string>>(new Map());
   /** 各终端的输入侧界面状态（模式与输入框可见性）。见 [`TerminalUiState`]。 */
   const [uiStates, setUiStates] = useState<Record<string, TerminalUiState>>({});
@@ -193,16 +197,19 @@ export function useTerminals() {
       .listen<TerminalStatusPayload>(api.CHANNEL_TERMINAL_STATUS, (payload) => {
         if (payload.attention) {
           const signature = [
-            payload.attention.kind,
-            payload.attention.title,
-            payload.attention.detail ?? ""
+            payload.turnId ?? 0,
+            payload.attention.kind
           ].join("\u0000");
           if (lastNotifiedAttentionRef.current.get(payload.terminalId) !== signature) {
             lastNotifiedAttentionRef.current.set(payload.terminalId, signature);
             void api.notify(
               payload.attention.title,
-              payload.attention.detail ?? "切回应用可继续。"
-            );
+              payload.attention.detail ?? "切回此会话可继续。",
+              {
+                terminalId: payload.terminalId,
+                isCurrentSession: activeTerminalRef?.current === payload.terminalId
+              }
+            ).catch(() => undefined);
           }
         } else {
           lastNotifiedAttentionRef.current.delete(payload.terminalId);
@@ -213,7 +220,7 @@ export function useTerminals() {
             // 盖一个界面侧的时间戳，只用于**排序**（最新的在最上面）。
             next[payload.terminalId] = { ...payload.attention, updatedAt: Date.now() };
           } else {
-            // 状态变回「运行中/已完成」时提醒就不再成立，必须清掉——
+            // 状态变回「运行中」时旧提醒就不再成立，必须清掉——
             // 否则标签上的小点会一直亮着，用户会以为还有事没处理。
             delete next[payload.terminalId];
           }
@@ -228,7 +235,7 @@ export function useTerminals() {
       cancelled = true;
       unlisten?.();
     };
-  }, []);
+  }, [activeTerminalRef]);
 
   /* ── 退出：干净退出要**关掉**这一路的登记项，异常退出才保留 ──
    *
@@ -274,12 +281,14 @@ export function useTerminals() {
                 : item
             )
           );
-          setAttention((current) => {
-            const next = { ...current };
-            delete next[payload.terminalId];
-            return next;
-          });
-          lastNotifiedAttentionRef.current.delete(payload.terminalId);
+          if (clean) {
+            setAttention((current) => {
+              const next = { ...current };
+              delete next[payload.terminalId];
+              return next;
+            });
+            lastNotifiedAttentionRef.current.delete(payload.terminalId);
+          }
         }
       )
       .then((fn) => {

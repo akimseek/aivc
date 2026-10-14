@@ -40,6 +40,7 @@ export function Pager({
   disabled = false,
   extra,
   withLast = false,
+  pageCountKnown = true,
   labelClassName = "row-meta",
   ariaLive = false
 }: {
@@ -53,6 +54,8 @@ export function Pager({
   extra?: ReactNode;
   /** 末尾多一个「最后一页」。 */
   withLast?: boolean;
+  /** 尚未确定总页数时，只显示当前页码。 */
+  pageCountKnown?: boolean;
   /** 页码文字的类名：卡片头里是 `row-meta`，弹框里是 `messages-range`。 */
   labelClassName?: string;
   /** 页码变化要不要播报给读屏（弹框在消息区上方，翻页时它是不错的定位信息）。 */
@@ -74,7 +77,7 @@ export function Pager({
         上一页
       </Button>
       <span className={labelClassName} aria-live={ariaLive ? "polite" : undefined}>
-        第 {page} / {pageCount} 页
+        {pageCountKnown ? `第 ${page} / ${pageCount} 页` : `第 ${page} 页`}
       </span>
       <Button
         small

@@ -9,7 +9,7 @@ import { ActivityBar } from "../shell/activity-bar";
 import { AppShell } from "../shell/app-shell";
 import { StatusBar } from "../shell/status-bar";
 import { TitleBar } from "../shell/title-bar";
-import type { AiSession, AiTarget, ApiVendor } from "../types";
+import type { AiSession, AiTarget } from "../types";
 import { AppOverlays } from "./overlay-layer";
 import { supportsBranch, supportsCustomCwd, supportsDuplicate, supportsSessionSettings } from "./provider-capabilities";
 import { REQUEST_REFRESH_WINDOW_MS, createRefreshCoalescer } from "./refresh-coalescer";
@@ -22,6 +22,7 @@ import { useConsole } from "./use-console";
 import { useTerminals } from "./use-terminals";
 import { useTheme } from "./use-theme";
 import { useWorkspaceTabs } from "./use-workspace-tabs";
+import { useVendors } from "./use-vendors";
 
 /**
  * 应用外壳。
@@ -77,10 +78,14 @@ export function App() {
    */
   const toast = useToast();
   const console = useConsole({ notify: toast.show });
-  const terminals = useTerminals();
+  const activeTerminalRef = useRef<string | undefined>(undefined);
+  const terminals = useTerminals({ activeTerminalRef });
   const { selectedTarget } = console;
 
   const workspace = useWorkspaceTabs(terminals, console.selectedSession);
+  // Status listeners stay subscribed across tab switches, but must read the
+  // latest visible terminal when deciding whether a system reminder is needed.
+  activeTerminalRef.current = workspace.activeTab?.terminalId;
 
   /**
    * 画布当前该显示什么：**终端优先**，终端不在了才回落到历史，都没有就是空。
@@ -282,23 +287,7 @@ export function App() {
    * 用户认不出那是谁。**失败时留空数组**：工作台是概览，不该因为供应商列表读不到
    * 就整块变成错误（编号仍然显示得出来）。
    */
-  const [sidebarVendors, setSidebarVendors] = useState<ApiVendor[]>([]);
-  useEffect(() => {
-    if (!console.providerId) {
-      setSidebarVendors([]);
-      return;
-    }
-    let cancelled = false;
-    void api
-      .listVendors(console.providerId)
-      .then((list) => {
-        if (!cancelled) setSidebarVendors(list);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [console.providerId]);
+  const sidebarVendors = useVendors(console.providerId);
 
   /**
    * 最近一次供应商路由变更。
@@ -334,8 +323,10 @@ export function App() {
   useEffect(() => {
     const sessionId = workspace.activeTab?.sessionId;
     if (!sessionId) return;
-    console.setSelectedId(sessionId);
-  }, [workspace.activeTab?.sessionId, console.setSelectedId]);
+    const belongsToList = (!activeTerminal || activeTerminal.targetId === console.targetId) &&
+      console.sessions.some((session) => session.id === sessionId);
+    console.setSelectedId(belongsToList ? sessionId : "");
+  }, [workspace.activeTab?.sessionId, activeTerminal?.targetId, console.targetId, console.sessions, console.setSelectedId]);
   /**
    * 最近一次路由变更。
    *
@@ -484,7 +475,7 @@ export function App() {
    * `--resume` 的历史文件，恢复时必须保留原始工作目录」。
    */
   const beginResumeSession = useCallback(
-    async (target: AiTarget, session: AiSession) => {
+    async (target: AiTarget, session: AiSession, newBranch = false) => {
       // **防重入**：见 `resumingRef` 的说明。第二次触发只当没发生——
       // 它落在「两次点击之间、终端还没登记」的窗口里，若放行会起第二路进程。
       if (resumingRef.current.has(session.id)) return;
@@ -498,7 +489,7 @@ export function App() {
           标签的 effect 不会重跑，「原目录丢失」这一支尤其明显——它会弹出一个对话框，
           而对话框背后的画布还停在**别的**会话上，用户填工作目录时看不出这是给谁填的。
         */
-        console.openAt(target, session);
+        console.openAt(target, session, newBranch);
         workspace.selectSession(session);
 
         const cwd = session.cwd ?? "";
@@ -545,7 +536,7 @@ export function App() {
     if (!target) return false;
     const branch = await console.branchFromMessage(anchor, sessionId, target.id);
     if (!branch) return false;
-    await beginResumeSession(target, branch);
+    await beginResumeSession(target, branch, true);
     return true;
   }, [console.targetId, console.targets, console.branchFromMessage, beginResumeSession, detailTarget]);
 
@@ -913,6 +904,7 @@ export function App() {
               messages={console.messages}
               provider={selectedTarget?.provider}
               messageOffset={console.messageStart}
+              branchAnchors={console.messageBranchAnchors}
               canBranch={supportsBranch(console.providers, console.providerId)}
               hasEarlier={console.hasEarlier}
               loadingMore={console.loadingMore}

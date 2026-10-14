@@ -14,7 +14,7 @@
 //!
 //! - `session_meta`：`id` / `timestamp` / `cwd` / `model` / `model_provider` / `cli_version`
 //! - `event_msg`：`payload.message` 携带正文；`payload.type` 决定角色
-//!   （`user_message` → user、`agent_message` → assistant、其余 → unknown）；
+//!   （`user_message` → user、`agent_message` → assistant；状态事件不展示）；
 //!   其中 `token_count` 提供用量
 //! - `response_item`：仅 `payload.type == "message"` 时取 `payload.content` 里的
 //!   `text` / `input_text` / `output_text`
@@ -93,8 +93,8 @@ impl SessionParser {
     /// 构造。
     #[must_use]
     pub fn new(info: SessionFileInfo, mode: ParseMode) -> Self {
-        // 文件名为 `rollout-<时间戳>-<uuid>.jsonl`：先按文件名取出 uuid 作为兜底编号，
-        // 若 `session_meta` 提供了 id 则以后者为准。
+        // 原生分支可能保留父会话的 session_meta，优先使用 rollout 文件名中的 UUID。
+        // 文件名不包含 UUID 时才回退到 session_meta.id。
         let id = session_id_from_file_path(&info.file_path);
         Self {
             info,
@@ -356,6 +356,10 @@ pub fn extract_message(payload: &Value, kind: &str) -> Option<Message> {
     let object = payload.as_object()?;
 
     if kind == "event_msg"
+        && matches!(
+            object.get("type").and_then(Value::as_str),
+            Some("user_message" | "agent_message")
+        )
         && let Some(text) = object.get("message").and_then(Value::as_str)
     {
         return Some(Message {
@@ -820,7 +824,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_event_types_map_to_the_unknown_role() {
+    fn non_conversation_events_are_not_displayed() {
         let content = [
             meta_line("s1", "2026-09-16T12:00:00.000Z", "/w"),
             event_line("2026-09-16T12:00:01.000Z", "something_else", "内容"),
@@ -832,7 +836,8 @@ mod tests {
             ParseMode::Full,
         )
         .expect("session");
-        assert_eq!(session.preview[0].role, Role::Unknown);
+        assert!(session.preview.is_empty());
+        assert_eq!(session.message_count, 0);
     }
 
     #[test]

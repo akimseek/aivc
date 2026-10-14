@@ -1,4 +1,5 @@
 import { invoke } from "./client";
+import { vendorsChanged } from "./vendor-events";
 import type {
   AiProviderSummary,
   AiSession,
@@ -240,8 +241,11 @@ export const setVendorRouteMode = (routeId: string, mode: "dynamic" | "locked") 
   });
 
 /** 启用/禁用供应商。 */
-export const setVendorEnabled = (id: string, enabled: boolean) =>
-  invoke<ApiVendor>("vendor:set-enabled", { id, enabled });
+export const setVendorEnabled = async (id: string, enabled: boolean) => {
+  const vendor = await invoke<ApiVendor>("vendor:set-enabled", { id, enabled });
+  vendorsChanged();
+  return vendor;
+};
 
 /**
  * 把供应商的配置模板写进 CLI 配置文件（写前备份）。
@@ -292,10 +296,19 @@ export const saveVendor = (request: {
   balanceQuery?: unknown;
   /** 模型查询配置（后端 `ModelQueryConfig` 的结构化对象）。 */
   modelQuery?: unknown;
-}) => invoke<ApiVendor>("vendor:save", request);
+}) => {
+  return invoke<ApiVendor>("vendor:save", request).then((vendor) => {
+    vendorsChanged();
+    return vendor;
+  });
+};
 
 /** 删除供应商。 */
-export const deleteVendor = (id: string) => invoke<boolean>("vendor:delete", { id });
+export const deleteVendor = async (id: string) => {
+  const deleted = await invoke<boolean>("vendor:delete", { id });
+  if (deleted) vendorsChanged();
+  return deleted;
+};
 
 /**
  * 向供应商的 HTTP 接口查可用模型。
@@ -708,10 +721,15 @@ export const saveImage = (dataUrl: string) =>
 export const copyImage = (path: string) => invoke<null>("clipboard:write-image", { path });
 
 /** 发一条系统通知。权限缺失或系统静音时静默失败。 */
-export const notify = (title: string, detail?: string) =>
+export const notify = (
+  title: string,
+  detail?: string,
+  context?: { terminalId: string; isCurrentSession: boolean }
+) =>
   invoke<null>("terminal:attention-notification", {
     title,
-    ...(detail ? { detail } : {})
+    ...(detail ? { detail } : {}),
+    ...context
   }).catch(() => undefined);
 
 /** 网关端口状态。 */

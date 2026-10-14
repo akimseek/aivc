@@ -15,7 +15,7 @@ import { useSessionDetail } from "./use-session-detail";
  * 3. **切换会话必须回到第 1 页**——否则从 300 条的会话切到 20 条的会停在空白页。
  */
 
-type Page = { offset: number; messages: unknown[]; hasMore: boolean; messageCount: number };
+type Page = { offset: number; messages: unknown[]; hasMore: boolean; messageCount: number; fileRevision?: string };
 
 function fakeRuntime(pages: Map<number, Page>) {
   const calls: { offset: number; limit: number }[] = [];
@@ -159,8 +159,8 @@ describe("useSessionDetail", () => {
     // 清零之后页数算出来永远是 1，用户按「下一页」会跳到不存在的位置。
     const runtime = fakeRuntime(
       new Map([
-        [0, { offset: 0, messages: [], hasMore: true, messageCount: 120 }],
-        [50, { offset: 50, messages: [{ role: "user", text: "p2" }], hasMore: false, messageCount: 0 }]
+        [0, { offset: 0, messages: [], hasMore: true, messageCount: 120, fileRevision: "v1" }],
+        [50, { offset: 50, messages: [{ role: "user", text: "p2" }], hasMore: true, messageCount: 0, fileRevision: "v1" }]
       ])
     );
     const { get } = await renderDetail(50);

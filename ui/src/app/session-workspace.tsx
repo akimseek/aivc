@@ -49,6 +49,7 @@ export function SessionWorkspace({
   messages,
   provider = "codex",
   messageOffset = 0,
+  branchAnchors = [],
   canBranch = true,
   hasEarlier,
   loadingMore,
@@ -107,6 +108,7 @@ export function SessionWorkspace({
   messages: AiMessage[];
   provider?: "codex" | "claude" | "gemini" | "qoder";
   messageOffset?: number;
+  branchAnchors?: number[];
   canBranch?: boolean;
   hasEarlier: boolean;
   loadingMore: boolean;
@@ -149,6 +151,7 @@ export function SessionWorkspace({
         messages={messages}
         provider={provider}
         messageOffset={messageOffset}
+        branchAnchors={branchAnchors}
         canBranch={canBranch}
         hasEarlier={hasEarlier}
         loadingMore={loadingMore}

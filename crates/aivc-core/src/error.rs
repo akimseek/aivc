@@ -156,6 +156,19 @@ pub enum SessionError {
     #[error("分支位置已失效，请重新打开会话详情后再试。")]
     BranchAnchorStale,
 
+    /// 所选消息不是已完成轮次的最后一条助手回复。
+    #[error("只能从已完成轮次的最后一条助手回复创建分支，请重新加载消息。")]
+    BranchAnchorNotTurnEnd,
+
+    /// 无法确认官方创建的分支边界。保留原生分支供用户恢复。
+    #[error(
+        "Codex 创建了新会话 {id}，但未能确认分支轮次边界。请升级该目标的 Codex CLI 后重试，或在历史会话中检查这个新会话。"
+    )]
+    ForkBoundaryUnconfirmed {
+        /// 已创建的原生分支编号。
+        id: String,
+    },
+
     /// 未选择任何前置上下文。
     #[error("请选择至少一条前置上下文后再创建分支。")]
     BranchNeedsContext,

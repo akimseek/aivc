@@ -6,16 +6,13 @@
 //! 每一批数据单独跑正则：`Ask Codex to do anything` 的提示符完全可能被拆成两批。
 //! 检测器保留最近一段可识别文本，在**累积缓冲**上判定。
 //!
-//! # 「本轮已完成」为什么需要三个条件
+//! # 「本轮已完成」的起点是提交，而不是打字
 //!
-//! 提示符在终端里出现得很频繁：启动时、空闲时、回答结束时。只看「提示符可见」会把
-//! 启动界面立刻判定成「本轮已完成」。因此要求三件事都发生：
+//! 打字、粘贴草稿和终端协议应答都不能开始轮次。输入检测器保留草稿状态，只有括号粘贴
+//! 之外的回车才提交；确认界面的 Enter / y / n / Escape 只推进当前阶段。
 //!
-//! 1. 提示符曾经出现过（`prompt_was_visible`）；
-//! 2. 提示符消失过（说明有输出把界面推走了）；
-//! 3. 现在又出现（说明输出结束、回到空闲）。
-//!
-//! 三个条件缺一不可，`saw_output_without_prompt` 记录第 2 件事。
+//! 提交后必须见过实际输出，再回到空闲提示符才能判定完成。控制序列、输入回显，以及
+//! 被切成多批的提示符本身都不算实际输出。确认和异常独立检测，不依赖是否已提交提示词。
 //!
 //! # 重复输入为什么不能重置缓冲
 //!
@@ -123,13 +120,93 @@ impl PromptTracking {
     }
 }
 
+/// Track raw PTY input across writes. Newlines inside bracketed paste are draft
+/// text; cursor reports, mouse reports and navigation sequences are not submits.
+#[derive(Debug, Default)]
+struct InputTracking {
+    draft: String,
+    escape: String,
+    bracketed_paste: bool,
+    recalled_history: bool,
+}
+
+#[derive(Default)]
+struct InputAction {
+    submission: Option<String>,
+    confirmation_key: bool,
+}
+
+impl InputTracking {
+    fn record(&mut self, data: &str) -> InputAction {
+        let mut action = InputAction::default();
+        // An isolated Escape cancels a confirmation, unlike an arrow/DSR packet.
+        action.confirmation_key = data == "\u{1b}" && !self.bracketed_paste;
+        for ch in data.chars() {
+            if !self.escape.is_empty() {
+                self.escape.push(ch);
+                let finished = if self.escape.starts_with("\u{1b}[") {
+                    self.escape.len() > 2 && ('@'..='~').contains(&ch)
+                } else if self.escape.starts_with("\u{1b}]") {
+                    ch == '\u{7}' || self.escape.ends_with("\u{1b}\\")
+                } else {
+                    self.escape.len() > 1
+                };
+                if finished || self.escape.len() > 256 {
+                    match self.escape.as_str() {
+                        "\u{1b}[200~" => self.bracketed_paste = true,
+                        "\u{1b}[201~" => self.bracketed_paste = false,
+                        "\u{1b}[A" | "\u{1b}[B" => self.recalled_history = true,
+                        _ => {}
+                    }
+                    self.escape.clear();
+                }
+                continue;
+            }
+            if ch == '\u{1b}' {
+                self.escape.push(ch);
+                continue;
+            }
+            if self.bracketed_paste {
+                self.draft.push(ch);
+                continue;
+            }
+            match ch {
+                '\r' | '\n' => {
+                    action.confirmation_key = true;
+                    let draft = std::mem::take(&mut self.draft);
+                    if !draft.trim().is_empty() || self.recalled_history {
+                        action.submission = Some(draft);
+                    }
+                    self.recalled_history = false;
+                }
+                '\u{8}' | '\u{7f}' => {
+                    self.draft.pop();
+                }
+                '\u{3}' | '\u{15}' => {
+                    self.draft.clear();
+                    self.recalled_history = false;
+                }
+                ch if !ch.is_control() => {
+                    self.draft.push(ch);
+                    action.confirmation_key |= matches!(ch, 'y' | 'Y' | 'n' | 'N');
+                }
+                _ => {}
+            }
+        }
+        truncate_front(&mut self.draft, MAX_BUFFER_CHARS);
+        action
+    }
+}
+
 /// 终端状态检测器。
 #[derive(Debug)]
 pub struct TerminalStatusDetector {
     provider_id: ProviderId,
     buffer: String,
     turn_active: bool,
-    has_user_submitted_input: bool,
+    stopped: bool,
+    input: InputTracking,
+    submitted_text: String,
     turn_id: u64,
     last_status: Option<TerminalStatus>,
     last_attention_key: String,
@@ -144,7 +221,9 @@ impl TerminalStatusDetector {
             provider_id,
             buffer: String::new(),
             turn_active: false,
-            has_user_submitted_input: false,
+            stopped: false,
+            input: InputTracking::default(),
+            submitted_text: String::new(),
             turn_id: 0,
             last_status: None,
             last_attention_key: String::new(),
@@ -168,19 +247,37 @@ impl TerminalStatusDetector {
     ///
     /// 返回需要发出的事件（可能是「无事件」）。
     pub fn mark_input(&mut self, data: &str) -> Option<TerminalStatusEvent> {
-        if !has_user_input(data) {
+        if self.stopped {
+            return None;
+        }
+        let action = self.input.record(data);
+        let answering_confirmation = self.last_status == Some(TerminalStatus::AwaitingConfirmation)
+            && action.confirmation_key;
+        if action.submission.is_none() && !answering_confirmation {
             return None;
         }
         // 同一轮中的后续输入不应重置检测缓冲：运行中的界面重绘可能把旧的空闲提示
         // 误判成「本轮已完成」。等待确认是例外——响应确认意味着进入下一阶段。
-        if self.turn_active && self.last_status != Some(TerminalStatus::AwaitingConfirmation) {
+        if self.turn_active && !answering_confirmation {
             return None;
         }
-        if !self.turn_active {
+        if !self.turn_active && !answering_confirmation {
             self.turn_id += 1;
         }
-        self.has_user_submitted_input = true;
-        self.turn_active = true;
+        if let Some(text) = action.submission {
+            self.submitted_text = text;
+        }
+        if answering_confirmation {
+            self.input.draft.clear();
+            if data == "\u{1b}" {
+                self.input.escape.clear();
+            }
+        }
+        // Answering a startup/trust prompt does not itself start an assistant
+        // turn. Otherwise the first real submission would be ignored as busy.
+        if !answering_confirmation {
+            self.turn_active = true;
+        }
         self.buffer.clear();
         self.prompt.reset();
         self.publish(TerminalStatus::Running, None)
@@ -188,7 +285,7 @@ impl TerminalStatusDetector {
 
     /// 检查一批 PTY 输出。
     pub fn inspect_output(&mut self, data: &str) -> Option<TerminalStatusEvent> {
-        if !self.turn_active || data.is_empty() {
+        if self.stopped || data.is_empty() {
             return None;
         }
         let cleaned = strip_ansi(data);
@@ -196,7 +293,7 @@ impl TerminalStatusDetector {
         truncate_front(&mut self.buffer, MAX_BUFFER_CHARS);
 
         let prompt_visible = is_prompt(self.provider_id, &self.buffer);
-        if !prompt_visible {
+        if self.turn_active && !prompt_visible && self.has_progress_output() {
             self.prompt.saw_output_without_prompt = true;
             if self.prompt.was_visible {
                 self.prompt.disappeared = true;
@@ -205,6 +302,9 @@ impl TerminalStatusDetector {
 
         let detection = detect_attention(self.provider_id, &self.buffer)?;
         if detection.kind == TerminalStatus::Completed {
+            if !self.turn_active || self.turn_id == 0 {
+                return None;
+            }
             // 提示符此刻不可见，说明还在输出——不能判定完成。
             if !prompt_visible {
                 return None;
@@ -216,11 +316,35 @@ impl TerminalStatusDetector {
                 return None;
             }
         }
-        self.turn_active = !matches!(
+        if matches!(
             detection.kind,
             TerminalStatus::Completed | TerminalStatus::Error
-        );
+        ) {
+            self.turn_active = false;
+        }
         self.publish(detection.kind, Some(detection))
+    }
+
+    /// A split idle prompt or the submitted text being echoed is not evidence
+    /// that the assistant has started answering.
+    fn has_progress_output(&self) -> bool {
+        let prompt = match self.provider_id {
+            ProviderId::Codex => "Ask Codex to do anything",
+            ProviderId::Gemini => "Ask Gemini to do anything",
+            ProviderId::Claude => "Ask Claude to do anything",
+            ProviderId::Qoder => "Ask Qoder to do anything",
+        };
+        self.buffer.lines().any(|line| {
+            let text = line.trim().trim_start_matches(['›', '❯', '>']).trim();
+            !text.is_empty()
+                && !prompt.starts_with(text)
+                && !(self.provider_id == ProviderId::Qoder
+                    && "Ask anything to do anything".starts_with(text))
+                && !self
+                    .submitted_text
+                    .lines()
+                    .any(|input| input.trim().starts_with(text))
+        })
     }
 
     /// 记录进程退出。
@@ -228,10 +352,7 @@ impl TerminalStatusDetector {
         self.turn_active = false;
         // 正常退出只表示终端生命周期结束，不代表助手完成了一轮回答：
         // 历史会话启动、CLI 自行结束或恢复失败都不应伪造「本轮已完成」提醒。
-        if exit_code == 0 {
-            return None;
-        }
-        if !self.has_user_submitted_input {
+        if self.stopped || exit_code == 0 {
             return None;
         }
         self.publish(
@@ -244,20 +365,24 @@ impl TerminalStatusDetector {
         )
     }
 
+    /// 用户主动关闭终端，不应把随后的强制退出当成异常提醒。
+    pub fn mark_stopped(&mut self) {
+        self.stopped = true;
+        self.turn_active = false;
+    }
+
     /// 去重后发出。
     fn publish(
         &mut self,
         status: TerminalStatus,
         attention: Option<TerminalAttention>,
     ) -> Option<TerminalStatusEvent> {
-        let key = attention.as_ref().map_or_else(String::new, |item| {
-            format!(
-                "{}\0{}\0{}",
-                item.kind.as_str(),
-                item.title,
-                item.detail.as_deref().unwrap_or_default()
-            )
-        });
+        // Details are diagnostic text and may contain a changing URL, retry
+        // count, or upstream body. They must not defeat same-type de-duplication
+        // within one submitted turn.
+        let key = attention
+            .as_ref()
+            .map_or_else(String::new, |item| item.kind.as_str().to_owned());
         if self.last_status == Some(status) && key == self.last_attention_key {
             return None;
         }
@@ -500,14 +625,16 @@ mod tests {
     }
 
     #[test]
-    fn the_first_real_input_starts_a_turn() {
+    fn submitting_the_first_draft_starts_a_turn() {
         let mut d = detector(ProviderId::Codex);
         assert_eq!(d.turn_id(), 0);
         // 控制输入不开始轮次。
         assert!(d.mark_input("\u{1b}[A").is_none());
         assert_eq!(d.turn_id(), 0);
 
-        let event = d.mark_input("hello").expect("event");
+        assert!(d.mark_input("hello").is_none(), "输入草稿不算提交");
+        assert_eq!(d.turn_id(), 0);
+        let event = d.mark_input("\r").expect("event");
         assert_eq!(event.status, TerminalStatus::Running);
         assert_eq!(event.turn_id, Some(1));
         assert!(d.is_turn_active());
@@ -518,7 +645,7 @@ mod tests {
         // 同一轮里的后续输入（确认授权、补充按键）不该重置检测缓冲，
         // 否则运行中的界面重绘会把旧的空闲提示误判成「本轮已完成」。
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("first").expect("first");
+        d.mark_input("first\r").expect("first");
         assert!(d.mark_input("second").is_none());
         assert_eq!(d.turn_id(), 1);
     }
@@ -527,7 +654,7 @@ mod tests {
     fn input_while_awaiting_confirmation_advances_the_turn() {
         // 响应确认意味着进入下一阶段，此时应当重置缓冲。
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("first").expect("first");
+        d.mark_input("first\r").expect("first");
         d.inspect_output("Do you want to proceed? (y/n)")
             .expect("confirmation");
         assert_eq!(d.last_status, Some(TerminalStatus::AwaitingConfirmation));
@@ -547,14 +674,14 @@ mod tests {
     fn the_startup_prompt_alone_never_means_completed() {
         // 关键：提示符可见但从未消失过 → 不能判定完成。
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("hello").expect("input");
+        d.mark_input("hello\r").expect("input");
         assert!(d.inspect_output(CODEX_PROMPT).is_none(), "首次出现不算完成");
     }
 
     #[test]
     fn completion_requires_the_prompt_to_disappear_and_return() {
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("hello").expect("input");
+        d.mark_input("hello\r").expect("input");
         // 输出把提示符推走。
         assert!(d.inspect_output("thinking...\n").is_none());
         // 提示符回来 → 完成。
@@ -567,7 +694,7 @@ mod tests {
     fn a_prompt_split_across_chunks_is_still_recognized() {
         // PTY 输出按任意边界到达，因此判定必须基于累积缓冲。
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("hello").expect("input");
+        d.mark_input("hello\r").expect("input");
         d.inspect_output("output\n");
         assert!(d.inspect_output("\n› Ask Codex to do ").is_none());
         let event = d.inspect_output("anything\n").expect("completed");
@@ -577,7 +704,7 @@ mod tests {
     #[test]
     fn errors_are_reported_with_their_detail() {
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("hello").expect("input");
+        d.mark_input("hello\r").expect("input");
         let event = d
             .inspect_output("stream disconnected before completion: broken pipe")
             .expect("error");
@@ -674,7 +801,7 @@ mod tests {
     #[test]
     fn duplicate_events_are_suppressed() {
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("hello").expect("input");
+        d.mark_input("hello\r").expect("input");
         d.inspect_output("out\n");
         d.inspect_output(CODEX_PROMPT).expect("first");
         // 同样的状态与提醒不再重复发出。
@@ -685,7 +812,7 @@ mod tests {
     fn mark_exit_with_zero_is_silent() {
         // 正常退出只表示终端生命周期结束，不代表助手完成了一轮回答。
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("hello").expect("input");
+        d.mark_input("hello\r").expect("input");
         assert!(d.mark_exit(0).is_none());
         assert!(!d.is_turn_active());
     }
@@ -693,7 +820,7 @@ mod tests {
     #[test]
     fn a_non_zero_exit_after_input_reports_an_error() {
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("hello").expect("input");
+        d.mark_input("hello\r").expect("input");
         let event = d.mark_exit(1).expect("error");
         assert_eq!(event.status, TerminalStatus::Error);
         let attention = event.attention.expect("attention");
@@ -702,10 +829,10 @@ mod tests {
     }
 
     #[test]
-    fn a_non_zero_exit_without_any_input_is_silent() {
-        // 历史会话启动失败不该伪装成用户的会话出错。
+    fn a_non_zero_exit_without_any_input_reports_startup_failure() {
+        // 启动阶段的异常也需要提醒，不依赖用户已提交过提示词。
         let mut d = detector(ProviderId::Codex);
-        assert!(d.mark_exit(1).is_none());
+        assert_eq!(d.mark_exit(1).expect("error").status, TerminalStatus::Error);
     }
 
     #[test]
@@ -760,7 +887,7 @@ mod tests {
     fn a_carriage_return_does_not_break_prompt_detection() {
         // PTY 用 `\r\n` 换行，判定前必须统一。
         let mut d = detector(ProviderId::Codex);
-        d.mark_input("hello").expect("input");
+        d.mark_input("hello\r").expect("input");
         d.inspect_output("out\r\n");
         let event = d
             .inspect_output("\r\n› Ask Codex to do anything\r\n")

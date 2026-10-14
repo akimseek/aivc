@@ -40,11 +40,10 @@ export function isVisibleConversationMessage(message: AiMessage) {
 export function buildConversationTurns(messages: AiMessage[], offset = 0) {
   const turns: ConversationTurn[] = [];
   let currentTurn: ConversationTurn | null = null;
-  let visibleIndex = offset;
 
-  messages.forEach((message) => {
+  messages.forEach((message, index) => {
     if (!isVisibleConversationMessage(message)) return;
-    const entry = { message, index: visibleIndex++ };
+    const entry = { message, index: offset + index };
     if (message.role === "user") {
       currentTurn = { user: entry, replies: [] };
       turns.push(currentTurn);
@@ -71,12 +70,17 @@ export function branchAnchorForTurn(provider: AiProviderId, turn: ConversationTu
   return branchAnchor(provider, assistant.message, assistant.index);
 }
 
+function branchEntryIndexForTurn(turn: ConversationTurn) {
+  return [...turn.replies].reverse().find((entry) => entry.message.role === "assistant")?.index;
+}
+
 /** 将一轮展开为消息行，并把唯一的分支入口标在该轮最后一行。 */
 export function flattenConversationTurns(
   messages: AiMessage[],
   offset: number,
   provider: AiProviderId,
-  lastTurnComplete = true
+  lastTurnComplete = true,
+  completedBranchAnchors: readonly number[] = []
 ) {
   const turns = buildConversationTurns(messages, offset);
   return turns.flatMap((turn, turnIndex) => {
@@ -89,10 +93,16 @@ export function flattenConversationTurns(
     // are safe to branch from here.
     const isIncompleteTail = !lastTurnComplete && turnIndex === turns.length - 1;
     const anchor = isIncompleteTail ? undefined : branchAnchorForTurn(provider, turn);
-    const lastIndex = entries.at(-1)?.index;
+    const anchorEntryIndex = isIncompleteTail ? undefined : branchEntryIndexForTurn(turn);
     return entries.map((entry) => ({
       entry,
-      branchAnchor: entry.index === lastIndex ? anchor : undefined
+      // The anchor belongs to the final assistant response, even when a
+      // trailing tool/system record is present in the same turn.
+      branchAnchor: provider === "codex"
+        ? entry.message.role === "assistant" && entry.message.sourceLine !== undefined && completedBranchAnchors.includes(entry.message.sourceLine)
+          ? entry.message.sourceLine
+          : undefined
+        : entry.index === anchorEntryIndex ? anchor : undefined
     }));
   });
 }

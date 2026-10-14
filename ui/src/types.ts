@@ -163,8 +163,11 @@ export type AiSession = {
 export type SessionMessagePage = {
   offset: number;
   messages: AiMessage[];
+  /** Codex 已完成轮次的最后一条助手消息的原始行号。 */
+  branchAnchors?: number[];
+  fileRevision?: string;
   hasMore: boolean;
-  /** 会话的可见消息**总数**；`0` 表示本次无从得知。详情路径是全量解析，所以这里是精确值。 */
+  /** 精确总数；hasMore 为 true 且为 0 时，表示尚未扫描到文件末尾。 */
   messageCount: number;
 };
 
@@ -270,6 +273,7 @@ export type TerminalStatusPayload = {
   terminalId: string;
   status: TerminalStatus;
   attention?: TerminalAttention;
+  turnId?: number;
 };
 
 /** `terminal:data` 事件的载荷：**原始字节**（base64 文本），不是文本。解码见 `app/terminal-data.ts`。 */

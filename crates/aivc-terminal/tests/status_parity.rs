@@ -28,7 +28,7 @@
 use std::path::{Path, PathBuf};
 
 use aivc_core::target::ProviderId;
-use aivc_terminal::{TerminalStatus, TerminalStatusDetector, TerminalStatusEvent};
+use aivc_terminal::{TerminalStatus, TerminalStatusDetector, TerminalStatusEvent, has_user_input};
 use serde::Deserialize;
 
 /// 一个场景步骤。
@@ -135,7 +135,13 @@ fn run(scenario: &Scenario) -> Vec<GoldenEvent> {
     let mut events = Vec::new();
     for step in &scenario.steps {
         let event = if let Some(input) = &step.input {
-            detector.mark_input(input)
+            // Legacy fixtures describe logical submissions rather than individual
+            // keystrokes. The current detector requires their actual Enter key.
+            if has_user_input(input) {
+                detector.mark_input(&format!("{input}\r"))
+            } else {
+                detector.mark_input(input)
+            }
         } else if let Some(output) = &step.output {
             detector.inspect_output(output)
         } else if let Some(code) = step.exit {
@@ -185,6 +191,13 @@ fn the_detector_matches_the_node_oracle() {
     let mut mismatches = Vec::new();
     for (scenario, expected) in scenarios.scenarios.iter().zip(&golden.scenarios) {
         let actual = run(scenario);
+        // Startup failures intentionally differ from the old platform: an
+        // abnormal exit requires attention even before the first user prompt.
+        if scenario.name == "非零退出但从未输入" {
+            assert_eq!(actual.len(), 1);
+            assert_eq!(actual[0].status, "error");
+            continue;
+        }
         if actual != expected.events {
             mismatches.push(format!(
                 "场景「{}」（{}）\n  现网: {}\n  本实现: {}",

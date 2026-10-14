@@ -254,6 +254,21 @@ async fn platform_command(
             })
         }
         "terminal:attention-notification" => {
+            // Suppress only the session currently being viewed in the foreground.
+            // Other tabs still need reminders; switching tabs itself emits none.
+            let Ok(window) = window_of(app) else {
+                return Some(Ok(Value::Null));
+            };
+            if args
+                .get("isCurrentSession")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+                && window.is_focused().unwrap_or(true)
+                && !window.is_minimized().unwrap_or(false)
+                && window.is_visible().unwrap_or(true)
+            {
+                return Some(Ok(Value::Null));
+            }
             let title = args
                 .get("title")
                 .and_then(Value::as_str)

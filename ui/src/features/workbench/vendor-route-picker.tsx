@@ -32,6 +32,7 @@ import { Badge, Icon, Popover, StatusDot, errorText, type StatusDotTone } from "
 import * as api from "../../ipc/commands";
 import type { AiProviderId, ApiVendor, GatewayVendorHealth } from "../../types";
 import type { TerminalSession, VendorRouteMode } from "../../app/use-terminals";
+import { useVendors } from "../../app/use-vendors";
 
 /** 健康快照里的状态 → 界面文案。`healthy` 与未知值都不标注（见 `healthBadge`）。 */
 function healthBadge(status: string): { label: string; tone: StatusDotTone } | null {
@@ -49,7 +50,6 @@ export function VendorRoutePicker({
   onSwitch: (terminalId: string, vendorId: string) => Promise<void>;
   onSetMode: (terminalId: string, mode: VendorRouteMode) => Promise<void>;
 }) {
-  const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -68,29 +68,7 @@ export function VendorRoutePicker({
   const terminalId = terminal?.id ?? "";
   const vendorId = terminal?.vendorId;
   const mode = terminal?.vendorMode ?? "dynamic";
-
-  /* 取该平台的供应商。
-   *
-   * **即使当前没有绑定也要取**：没有绑定时界面需要能说清「为什么没有」——
-   * 是因为这一家都没配，还是因为都被禁用了。一个空的选择器说不出这件事。 */
-  useEffect(() => {
-    if (!provider) {
-      setVendors([]);
-      return;
-    }
-    let cancelled = false;
-    void api
-      .listVendors(provider)
-      .then((list) => {
-        if (!cancelled) setVendors(list);
-      })
-      .catch(() => {
-        if (!cancelled) setVendors([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [provider]);
+  const vendors = useVendors(provider, `${open}:${vendorId ?? ""}`);
 
   /* 打开浮层时取一次健康快照。
    *

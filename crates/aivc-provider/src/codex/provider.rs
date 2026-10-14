@@ -44,11 +44,12 @@ use aivc_infra::db::{MessageIndexEntry, SessionIndexKey};
 
 use super::appserver::{APP_SERVER_TIMEOUT, AppServerLauncher, with_app_server};
 use super::branch::{
-    ForkResult, build_branch_session_text, build_duplicate_session_text,
-    canonicalize_forked_session, find_branch_turn_id,
+    ForkResult, build_duplicate_session_text, canonicalize_forked_session, find_branch_turn_id,
 };
 use super::listing::{LIST_HEAD_BYTES, list_sessions_from_files, walk_local_session_files};
-use super::parser::{ParseMode, SessionFileInfo, parse_content, session_id_from_file_path};
+use super::parser::{
+    ParseMode, SessionFileInfo, SessionParser, parse_content, session_id_from_file_path,
+};
 use super::paths::{CodexLayout, SESSION_FILE_GLOB, build_session_file_name};
 use crate::common::list_cached_sessions;
 use crate::context::ProviderContext;
@@ -314,7 +315,9 @@ impl CodexProvider {
             )
             .await?;
 
-        let outcome = folder.finish(session.message_count);
+        let mut outcome = folder.finish(session.message_count);
+        outcome.page.file_revision =
+            Some(format!("{}:{}:{}", key.mtime_ms, key.change_ms, key.size));
         // 索引写入失败只记日志：分页结果已经拿到了，不该因为索引写不进去而报错。
         if let Err(error) = ctx
             .message_index()
@@ -338,7 +341,6 @@ impl CodexProvider {
         file_path: &str,
     ) -> Result<Option<Session>> {
         let store = ctx.store_for(target);
-        let content = store.read_text(file_path).await?;
         let (mtime_ms, change_ms, size) = self.file_fingerprint(ctx, target, file_path).await;
         let info = SessionFileInfo {
             file_path: file_path.to_owned(),
@@ -346,7 +348,45 @@ impl CodexProvider {
             change_ms: Some(change_ms),
             size,
         };
-        Ok(parse_content(info, &content, ParseMode::Full))
+        let mut parser = SessionParser::new(info, ParseMode::Full);
+        store
+            .read_lines(
+                file_path,
+                ReadStart::BEGINNING,
+                ReadOptions::none(),
+                Box::new(|line, line_number, _offset| {
+                    parser.push(line, line_number);
+                    aivc_core::ports::LineControl::Continue
+                }),
+            )
+            .await?;
+        Ok(parser.finish())
+    }
+
+    /// Load the metadata and preview for a native fork without retaining its
+    /// full transcript in memory. The complete transcript is loaded on demand
+    /// by the paginated message endpoint.
+    async fn load_fork_summary(
+        &self,
+        ctx: &ProviderContext,
+        target: &Target,
+        file_path: &str,
+    ) -> Result<Option<Session>> {
+        let store = ctx.store_for(target);
+        let (mtime_ms, change_ms, size) = self.file_fingerprint(ctx, target, file_path).await;
+        let info = SessionFileInfo {
+            file_path: file_path.to_owned(),
+            mtime_ms,
+            change_ms: Some(change_ms),
+            size,
+        };
+        let head = store.read_head(file_path, LIST_HEAD_BYTES).await?;
+        Ok(
+            parse_content(info, &head, ParseMode::List).map(|mut session| {
+                session.message_count_is_lower_bound = size > head.len() as u64;
+                session
+            }),
+        )
     }
 
     /// 附着元数据（标题、收藏、分支信息）。
@@ -564,7 +604,14 @@ impl SessionProvider for CodexProvider {
         limit: u32,
     ) -> BoxFuture<'a, Result<MessagePage>> {
         Box::pin(async move {
-            let session = self.get_session_summary(ctx, target, id).await?;
+            let mut session = self.get_session_summary(ctx, target, id).await?;
+            // Refresh the fingerprint before reusing message anchors: an open
+            // terminal can append to the file while the list cache stays valid.
+            let (mtime, change, size) =
+                self.file_fingerprint(ctx, target, &session.file_path).await;
+            session.file_mtime_ms = Some(mtime);
+            session.file_change_ms = Some(change);
+            session.file_size = Some(size);
             self.read_page(ctx, target, &session, cursor, limit).await
         })
     }
@@ -597,7 +644,8 @@ impl SessionProvider for CodexProvider {
                         change_ms: Some(change_ms),
                         size,
                     };
-                    if let Some(session) = parse_content(info, &head, ParseMode::List) {
+                    if let Some(mut session) = parse_content(info, &head, ParseMode::List) {
+                        session.message_count_is_lower_bound = size > head.len() as u64;
                         return self.attach(ctx, target, session).await;
                     }
                 }
@@ -1119,7 +1167,7 @@ impl CodexProvider {
                     "thread/fork",
                     // `lastTurnId` 在创建原生分支的同时原子地完成截断；
                     // 分页线程不接受 `thread/rollback`，因此只能走这个参数。
-                    serde_json::json!({ "threadId": parent_id, "lastTurnId": turn, "excludeTurns": true }),
+                    serde_json::json!({ "threadId": parent_id, "lastTurnId": turn, "excludeTurns": true, "deferGoalContinuation": true }),
                     APP_SERVER_TIMEOUT,
                 )
                 .await?;
@@ -1136,41 +1184,29 @@ impl CodexProvider {
             if thread_id.is_empty() || file_path.is_empty() {
                 return Err(SessionError::ForkUnavailable.into());
             }
-            Ok(ForkResult {
+            let fork = ForkResult {
                 thread_id: thread_id.to_owned(),
                 file_path: file_path.to_owned(),
-            })
+            };
+            // Validate the receipt before reading any returned path.
+            canonicalize_forked_session(&Self::layout(target), session, session.clone(), &fork)?;
+            // A CLI that silently ignores lastTurnId must not open a fork of
+            // the entire thread. Verify with one metadata-only official page.
+            let turns = client.request(
+                "thread/turns/list",
+                serde_json::json!({"threadId": fork.thread_id, "sortDirection":"desc", "limit":1, "itemsView":"notLoaded"}),
+                APP_SERVER_TIMEOUT,
+            ).await;
+            let confirmed = turns.as_ref().ok().and_then(|value| value["data"].as_array())
+                .and_then(|data| data.first())
+                .is_some_and(|last| last["id"].as_str() == Some(turn.as_str()) && last["status"].as_str() == Some("completed"));
+            if !confirmed {
+                tracing::warn!(thread_id = %fork.thread_id, ?turns, "无法确认官方分支轮次边界，保留已创建的原生会话");
+                return Err(SessionError::ForkBoundaryUnconfirmed { id: fork.thread_id }.into());
+            }
+            Ok(fork)
         })
         .await
-    }
-
-    /// 不用 app-server 的分支回退：截断文件并重写编号。
-    async fn branch_via_file(
-        &self,
-        ctx: &ProviderContext,
-        target: &Target,
-        session: &Session,
-        message_line: u64,
-    ) -> Result<Session> {
-        let layout = Self::layout(target);
-        let store = ctx.store_for(target);
-        let source_text = store.read_text(&session.file_path).await?;
-        let branch_id = uuid::Uuid::new_v4().to_string();
-        let now = ctx.clock().now();
-        let text = build_branch_session_text(&source_text, &branch_id, &now, message_line)?;
-        let path = layout.branch_path_for(&session.file_path, &branch_id, &now)?;
-        store.write_text(&path, &text).await?;
-        parse_content(
-            SessionFileInfo {
-                file_path: path,
-                mtime_ms: 0.0,
-                change_ms: None,
-                size: text.len() as u64,
-            },
-            &text,
-            ParseMode::Full,
-        )
-        .ok_or_else(|| SessionError::DuplicateFailed.into())
     }
 
     /// 把分支来源写进元数据，并刷新缓存。
@@ -1190,62 +1226,26 @@ impl CodexProvider {
             created_by: Some(BranchOrigin::Branch),
         };
         let file_path = branch.file_path.clone();
-        ctx.session_metadata()
+        if let Err(error) = ctx
+            .session_metadata()
             .set_branch(&target.id, &branch.id, &metadata)
-            .await?;
+            .await
+        {
+            // The official fork already exists. A failure in our local metadata
+            // must not delete it or create a second replacement fork.
+            tracing::warn!(%error, "保存分支关系失败");
+        }
+        let branch = Session {
+            metadata: Some(aivc_core::session::SessionMetadata {
+                branch: Some(metadata),
+                ..branch.metadata.clone().unwrap_or_default()
+            }),
+            ..branch
+        };
         // 新分支要立刻出现在列表里，因此清掉活跃视图的缓存条目。
         self.evict_cache(ctx, target, SessionView::Active, &[file_path])
             .await;
-        self.attach(ctx, target, branch).await
-    }
-
-    /// 分支失败时清理已落盘的文件。
-    ///
-    /// app-server 可能在响应之后才完成落盘，因此要重试几次——否则清理窗口之后才出现的
-    /// 文件会重新污染会话列表。
-    async fn cleanup_failed_fork(
-        &self,
-        ctx: &ProviderContext,
-        target: &Target,
-        fork: &ForkResult,
-        parent: &Session,
-    ) {
-        let layout = Self::layout(target);
-        if fork.file_path.is_empty() || fork.thread_id.is_empty() {
-            return;
-        }
-        // 绝不能把父会话文件当成失败分支删掉。
-        if super::branch::same_path(&fork.file_path, &parent.file_path, &layout) {
-            return;
-        }
-        if !layout.is_strictly_inside(&fork.file_path, &layout.sessions_root()) {
-            return;
-        }
-        let store = ctx.store_for(target);
-        for attempt in 0..6 {
-            if store.exists(&fork.file_path).await.unwrap_or(false) {
-                let _ = store.remove(&fork.file_path).await;
-                break;
-            }
-            if attempt < 5 {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
-        }
-        self.evict_cache(
-            ctx,
-            target,
-            SessionView::Active,
-            std::slice::from_ref(&fork.file_path),
-        )
-        .await;
-        // 非分支身份（例如 CLI 错误返回父编号）不能删除其元数据。
-        if fork.thread_id == parent.id.as_str() {
-            return;
-        }
-        let _ = ctx
-            .session_metadata()
-            .delete(&target.id, &SessionId::from(fork.thread_id.clone()))
-            .await;
+        Ok(branch)
     }
 }
 
@@ -1259,94 +1259,38 @@ impl Branchable for CodexProvider {
     ) -> BoxFuture<'a, Result<Session>> {
         Box::pin(async move {
             let session = self.get_session_summary(ctx, target, id).await?;
-            // 先把消息行号映射成轮次编号：官方接口只认轮次。
+            Self::layout(target).assert_readable(&session.file_path)?;
+            self.verify_session_id(ctx, target, &session.file_path, id)
+                .await?;
             let turn_id =
-                match find_branch_turn_id(&ctx.store_for(target), &session.file_path, message_line)
-                    .await
-                {
-                    Ok(turn_id) => turn_id,
-                    Err(Error::Session(SessionError::BranchAnchorStale)) => {
-                        // 老版本日志没有轮次编号；文件路径仍严格校验选中的消息行。
-                        let branch = self
-                            .branch_via_file(ctx, target, &session, message_line)
-                            .await?;
-                        return self
-                            .record_branch(ctx, target, &session, message_line, branch)
-                            .await;
-                    }
-                    Err(error) => return Err(error),
-                };
-
-            match self
+                find_branch_turn_id(&ctx.store_for(target), &session.file_path, message_line)
+                    .await?;
+            let fork = self
                 .fork_via_app_server(ctx, target, &session, &turn_id)
+                .await?;
+            // Keep the receipt recoverable even if the new rollout is not yet
+            // readable. Never delete a valid native fork after a metadata error.
+            let parsed = match self.load_fork_summary(ctx, target, &fork.file_path).await {
+                Ok(Some(summary)) => summary,
+                result => {
+                    tracing::warn!(?result, thread_id = %fork.thread_id, "原生分支摘要暂不可读");
+                    Session {
+                        message_count: 0,
+                        message_count_is_lower_bound: true,
+                        preview: Vec::new(),
+                        preview_offset: None,
+                        metadata: None,
+                        file_mtime_ms: None,
+                        file_change_ms: None,
+                        file_size: None,
+                        ..session.clone()
+                    }
+                }
+            };
+            let branch =
+                canonicalize_forked_session(&Self::layout(target), &session, parsed, &fork)?;
+            self.record_branch(ctx, target, &session, message_line, branch)
                 .await
-            {
-                Ok(fork) => {
-                    let outcome = async {
-                        let parsed = self
-                            .load_full(ctx, target, &fork.file_path)
-                            .await?
-                            .ok_or(SessionError::DuplicateFailed)?;
-                        let branch = canonicalize_forked_session(
-                            &Self::layout(target),
-                            &session,
-                            parsed,
-                            &fork,
-                        )?;
-                        // 旧 CLI 可能忽略未知的 lastTurnId，返回完整复制。验证实际上下文，
-                        // 避免把选中轮次之后的内容悄悄带进分支。
-                        let source = ctx.store_for(target).read_text(&session.file_path).await?;
-                        let expected_text = build_branch_session_text(
-                            &source,
-                            branch.id.as_str(),
-                            &ctx.clock().now(),
-                            message_line,
-                        )?;
-                        let expected = parse_content(
-                            SessionFileInfo {
-                                file_path: branch.file_path.clone(),
-                                mtime_ms: 0.0,
-                                change_ms: None,
-                                size: expected_text.len() as u64,
-                            },
-                            &expected_text,
-                            ParseMode::Full,
-                        )
-                        .ok_or(SessionError::DuplicateFailed)?;
-                        if !branch
-                            .preview
-                            .iter()
-                            .map(|m| (&m.role, &m.text))
-                            .eq(expected.preview.iter().map(|m| (&m.role, &m.text)))
-                        {
-                            return Err(SessionError::ForkUnavailable.into());
-                        }
-                        self.record_branch(ctx, target, &session, message_line, branch)
-                            .await
-                    }
-                    .await;
-                    if outcome.is_err() {
-                        self.cleanup_failed_fork(ctx, target, &fork, &session).await;
-                        let branch = self
-                            .branch_via_file(ctx, target, &session, message_line)
-                            .await?;
-                        return self
-                            .record_branch(ctx, target, &session, message_line, branch)
-                            .await;
-                    }
-                    outcome
-                }
-                Err(error) => {
-                    // 官方服务不可用（未安装、版本过旧、启动超时）时回退到文件截断。
-                    // 分支是核心功能，不能因为外部 CLI 不可用就完全不可用。
-                    tracing::warn!(%error, "Codex App Server 分支失败，回退到文件截断");
-                    let branch = self
-                        .branch_via_file(ctx, target, &session, message_line)
-                        .await?;
-                    self.record_branch(ctx, target, &session, message_line, branch)
-                        .await
-                }
-            }
         })
     }
 }

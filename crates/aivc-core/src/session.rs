@@ -542,6 +542,12 @@ pub struct MessagePage {
     pub offset: u64,
     /// 本页消息。
     pub messages: Vec<Message>,
+    /// Codex 已完成轮次的最后一条助手消息的原始行号。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_anchors: Vec<u64>,
+    /// 文件指纹，用于界面保留同一版本的精确总数。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_revision: Option<String>,
     /// 是否还有更多（向更新的方向）。
     pub has_more: bool,
     /// 该会话的可见消息**总数**；`0` 表示本次无从得知。

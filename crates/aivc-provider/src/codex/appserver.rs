@@ -303,7 +303,9 @@ impl AppServerClient {
                     "version": CLIENT_VERSION,
                 },
                 "capabilities": {
-                    "experimentalApi": false,
+                    // deferGoalContinuation prevents a fork with an active
+                    // goal from starting work in this short-lived server.
+                    "experimentalApi": true,
                     "requestAttestation": false,
                 },
             }),

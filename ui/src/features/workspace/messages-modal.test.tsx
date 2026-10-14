@@ -40,6 +40,7 @@ function setup(overrides: Partial<Parameters<typeof MessagesModal>[0]> = {}) {
   const props: Parameters<typeof MessagesModal>[0] = {
     session: session(),
     messages,
+    branchAnchors: [4],
     total: 120,
     page: 1,
     pageSize: 50,
@@ -68,6 +69,13 @@ function setup(overrides: Partial<Parameters<typeof MessagesModal>[0]> = {}) {
 }
 
 describe("MessagesModal", () => {
+  it("列表消息数只是下界且当前页还有数据时，仍可继续翻页并隐藏不准确的末页入口", () => {
+    const { view, byText } = setup({ total: 8, totalKnown: false, page: 1, pageHasMore: true });
+    expect(view.container.textContent).toContain("第 1 页");
+    expect(byText("下一页").disabled).toBe(false);
+    expect(view.container.querySelector('button[title="最后一页"]')).toBeNull();
+  });
+
   it("头部有分支图标、标题与 ID 短编号", () => {
     const { view } = setup();
     const head = view.container.querySelector(".messages-head")!;
@@ -157,6 +165,7 @@ describe("MessagesModal", () => {
   it("过滤非会话合成节点，并保留每轮的最后节点", () => {
     const { view } = setup({
       total: 4,
+      branchAnchors: [8],
       messages: [
         { role: "user", text: "<turn_aborted>" },
         { role: "user", text: "真实问题", sourceLine: 7 },
@@ -273,7 +282,7 @@ describe("MessagesModal", () => {
 
   it("加载中显示进度，且分页按钮禁用（避免并发翻页）", () => {
     const { view, byText } = setup({ loading: true });
-    expect(view.container.textContent).toContain("正在加载完整会话");
+    expect(view.container.textContent).toContain("正在加载本页消息");
     expect(byText("下一页").disabled).toBe(true);
   });
 
@@ -394,6 +403,7 @@ describe("MessagesModalContainer 的分支接线", () => {
           offset: 0,
           hasMore: false,
           messageCount: 1,
+          branchAnchors: [10],
           messages: [
             { role: "user", text: "第一句", sourceLine: 9 },
             { role: "assistant", text: "回答", sourceLine: 10 }
@@ -447,6 +457,6 @@ describe("MessagesModalContainer 的分支接线", () => {
     expect(onBranch).toHaveBeenCalledTimes(1);
     expect(onBranch).toHaveBeenCalledWith(102, "source", `${provider}:local`);
     expect(onClose).not.toHaveBeenCalled();
-    expect(view.container.textContent).toContain("分支创建失败");
+    expect(view.container.textContent).toContain("分支未创建");
   });
 });

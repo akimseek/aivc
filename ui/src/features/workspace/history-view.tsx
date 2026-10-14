@@ -31,6 +31,7 @@ export function HistoryView({
   messages,
   provider = "codex",
   messageOffset = 0,
+  branchAnchors = [],
   canBranch = true,
   hasEarlier,
   loadingMore,
@@ -46,6 +47,7 @@ export function HistoryView({
   messages: AiMessage[];
   provider?: "codex" | "claude" | "gemini" | "qoder";
   messageOffset?: number;
+  branchAnchors?: number[];
   canBranch?: boolean;
   hasEarlier: boolean;
   loadingMore: boolean;
@@ -131,7 +133,7 @@ export function HistoryView({
           </div>
         )}
 
-        {flattenConversationTurns(messages, messageOffset, provider).map(({ entry, branchAnchor: anchor }) => (
+        {flattenConversationTurns(messages, messageOffset, provider, true, branchAnchors).map(({ entry, branchAnchor: anchor }) => (
           <HistoryMessage
             key={`${entry.message.sourceLine ?? entry.index}`}
             message={entry.message}

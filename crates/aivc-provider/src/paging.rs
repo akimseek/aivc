@@ -34,6 +34,7 @@ use aivc_core::time::Timestamp;
 
 use crate::claude::parser::extract_content_text;
 use crate::codex::parser::{extract_message, extract_usage};
+use crate::codex::turns::TurnTracker;
 use crate::gemini::parser::{should_keep_gemini_message, to_message as to_gemini_message};
 use crate::qoder::parser::to_message as to_qoder_message;
 
@@ -84,7 +85,8 @@ pub struct PageFolder {
     usage: Option<SessionUsage>,
     start_line: u64,
     start_byte: Option<u64>,
-    anchor_message_count: u64,
+    codex_turns: TurnTracker,
+    branch_anchors: Vec<u64>,
 }
 
 impl PageFolder {
@@ -124,7 +126,8 @@ impl PageFolder {
             // 首屏必须从头读：要的是末尾若干条，锚点帮不上忙。
             start_line: usable.map_or(1, |item| item.line_number.max(1)),
             start_byte: usable.map(|item| item.byte_offset),
-            anchor_message_count: usable.map_or(0, |item| item.message_count),
+            codex_turns: TurnTracker::default(),
+            branch_anchors: Vec::new(),
         }
     }
 
@@ -153,7 +156,21 @@ impl PageFolder {
     /// 一行可能产出**多条**消息（Gemini 的 `$set.messages` 补丁），因此内部按序处理，
     /// 一旦某条要求停止就立即返回。
     pub fn push_line(&mut self, line: &str, line_number: u64, byte_offset: u64) -> bool {
-        let Some(parsed) = parse_line(line, self.policy) else {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            return true;
+        };
+        if self.policy == LinePolicy::Codex {
+            if let Some(completed) = self.codex_turns.push(&value, line_number) {
+                if self
+                    .messages
+                    .iter()
+                    .any(|message| message.source_line == Some(completed.message_line))
+                {
+                    self.branch_anchors.push(completed.message_line);
+                }
+            }
+        }
+        let Some(parsed) = parse_line(&value, self.policy) else {
             return true;
         };
         // 用量必须在「是否可见消息」判断**之前**提取：`token_count` 记录不是消息，
@@ -219,7 +236,10 @@ impl PageFolder {
             self.messages.push_back(visible);
             // 滑动窗口：只保留最后 limit 条。
             if self.messages.len() as u64 > self.limit {
-                self.messages.pop_front();
+                if let Some(removed) = self.messages.pop_front() {
+                    self.branch_anchors
+                        .retain(|line| Some(*line) != removed.source_line);
+                }
             }
         } else if self.visible_index >= self.page_offset {
             self.messages.push_back(visible);
@@ -230,14 +250,13 @@ impl PageFolder {
 
     /// 结束并产出结果。
     ///
-    /// `session_message_count` 来自会话摘要；`has_more` 时不得把已读条数当成总数
-    /// （后面还有没读的），因此那一项取 0。
+    /// 保留摘要计数参数以兼容调用方；精确总数仅由本次读到 EOF 决定。
     #[must_use]
-    pub fn finish(self, session_message_count: u64) -> PageOutcome {
+    pub fn finish(self, _session_message_count: u64) -> PageOutcome {
         let read_count = self.visible_index;
-        let message_count = session_message_count
-            .max(self.anchor_message_count)
-            .max(if self.has_more { 0 } else { read_count });
+        // Only EOF establishes an exact total. Cached summaries and anchor
+        // counts may be lower bounds or stale and must not be advertised as totals.
+        let message_count = if self.has_more { 0 } else { read_count };
         let page = MessagePage {
             offset: if self.latest {
                 // 首屏：回填窗口首条消息的真实绝对序号。
@@ -251,6 +270,8 @@ impl PageFolder {
                 self.has_more
             },
             messages: self.messages.into_iter().collect(),
+            branch_anchors: self.branch_anchors,
+            file_revision: None,
             // 随页带回，界面上的会话头要用它——那里的 `Session` 来自列表，条数只是下界。
             message_count,
         };
@@ -293,11 +314,7 @@ struct PendingMessage {
 }
 
 /// 解析一行，提取可能存在的消息与用量。
-fn parse_line(line: &str, policy: LinePolicy) -> Option<ParsedLine> {
-    if line.is_empty() {
-        return None;
-    }
-    let value: Value = serde_json::from_str(line).ok()?;
+fn parse_line(value: &Value, policy: LinePolicy) -> Option<ParsedLine> {
     let object = value.as_object()?;
     let timestamp = object
         .get("timestamp")
@@ -314,7 +331,7 @@ fn parse_line(line: &str, policy: LinePolicy) -> Option<ParsedLine> {
                 Some("turn_context") => "turn_context",
                 _ => "other",
             };
-            let payload = object.get("payload").cloned().unwrap_or(Value::Null);
+            let payload = object.get("payload").unwrap_or(&Value::Null);
             let usage = extract_usage(&payload, timestamp.as_ref().map(Timestamp::as_str), kind);
             let messages = extract_message(&payload, kind)
                 .filter(|message| should_keep_message(&message.text))
@@ -649,13 +666,13 @@ mod tests {
     }
 
     #[test]
-    fn message_count_prefers_the_largest_known_value() {
-        // 已读 3 条但摘要声称 10 条 → 取 10。
+    fn message_count_uses_eof_instead_of_a_stale_summary() {
+        // 已读到 EOF：实际 3 条，陈旧摘要的 10 条必须忽略。
         let outcome = fold_page(&content(3), PageCursor::Latest, 10, None, 10);
-        assert_eq!(outcome.message_count, 10);
+        assert_eq!(outcome.message_count, 3);
         // **同一页也要带上它**：界面上的会话头读的是分页响应，不是 `PageOutcome`。
         // 两处取不同的值就会出现「索引里 10 条、界面显示 3 条」这种自相矛盾。
-        assert_eq!(outcome.page.message_count, 10);
+        assert_eq!(outcome.page.message_count, 3);
 
         // 摘要过小（陈旧）时取实际读到的条数。
         let outcome = fold_page(&content(5), PageCursor::Latest, 10, None, 1);
@@ -674,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    fn anchor_message_count_is_kept_when_available() {
+    fn anchor_count_is_not_treated_as_an_exact_total() {
         let anchor = MessageAnchor {
             message_offset: 100,
             byte_offset: 0,
@@ -682,7 +699,7 @@ mod tests {
             message_count: 150,
         };
         let outcome = fold_page(&content(0), PageCursor::Offset(100), 10, Some(&anchor), 0);
-        assert_eq!(outcome.message_count, 150);
+        assert_eq!(outcome.message_count, 100);
     }
 
     #[test]

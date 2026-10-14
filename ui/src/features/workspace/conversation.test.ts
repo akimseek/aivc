@@ -34,10 +34,13 @@ describe("conversation", () => {
     const rows = flattenConversationTurns(
       [message("user", "问题", 10), message("assistant", "回答", 11), message("tool", "工具", 12)],
       0,
-      "codex"
+      "codex",
+      true,
+      [11]
     );
     expect(rows.filter((row) => row.branchAnchor !== undefined)).toHaveLength(1);
-    expect(rows.at(-1)?.branchAnchor).toBe(11);
+    expect(rows[1]?.branchAnchor).toBe(11);
+    expect(rows[2]?.branchAnchor).toBeUndefined();
   });
 
   it("没有助手回复的未完成轮次不提供分支入口", () => {

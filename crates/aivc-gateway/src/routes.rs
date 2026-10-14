@@ -347,15 +347,13 @@ impl RouteRegistry {
         self.routes.get_mut(route_id)
     }
 
-    /// 返回绑定指定供应商的本地动态路由。
+    /// 返回可随候选池变化调整的本地动态路由快照。
     #[must_use]
-    pub fn route_ids_for_vendor(&self, vendor_id: &str) -> Vec<String> {
+    pub fn dynamic_routes(&self) -> Vec<VendorRoute> {
         self.routes
             .values()
-            .filter(|route| {
-                !route.external && route.mode == RouteMode::Dynamic && route.vendor_id == vendor_id
-            })
-            .map(|route| route.route_id.clone())
+            .filter(|route| !route.external && route.mode == RouteMode::Dynamic)
+            .cloned()
             .collect()
     }
 

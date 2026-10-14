@@ -38,6 +38,7 @@ function setup(overrides: {
   loadingMore?: boolean;
   onResume?: () => void;
   messageTotal?: number | null;
+  branchAnchors?: number[];
 } = {}) {
   const handlers = {
     onLoadEarlier: vi.fn(),
@@ -49,6 +50,7 @@ function setup(overrides: {
     <HistoryView
       session={overrides.session === undefined ? session : overrides.session}
       messageTotal={overrides.messageTotal ?? null}
+      branchAnchors={overrides.branchAnchors ?? [11]}
       messages={
         overrides.messages ?? [
           message({ role: "user", text: "帮我看看这个报错" }),
@@ -104,9 +106,9 @@ describe("HistoryView", () => {
     const { view, onBranch } = setup();
     const blocks = [...view.container.querySelectorAll(".history-message")];
     expect(blocks[0]!.querySelector(".history-branch")).toBeNull();
-    expect(blocks[1]!.querySelector(".history-branch")).toBeNull();
+    expect(blocks[2]!.querySelector(".history-branch")).toBeNull();
 
-    fireEvent.click(blocks[2]!.querySelector(".history-branch")!);
+    fireEvent.click(blocks[1]!.querySelector(".history-branch")!);
     // 行号 + **这条视图的会话编号**：分支要分到正在看的这条上。
     expect(onBranch).toHaveBeenCalledWith(11, session.id);
   });
@@ -117,7 +119,8 @@ describe("HistoryView", () => {
         message({ role: "user", text: "<permissions instructions>内部提示" }),
         message({ role: "user", text: "真实问题", sourceLine: 7 }),
         message({ role: "assistant", text: "回答", sourceLine: 8 })
-      ]
+      ],
+      branchAnchors: [8]
     });
     expect(view.container.textContent).not.toContain("内部提示");
     expect(view.container.textContent).toContain("真实问题");

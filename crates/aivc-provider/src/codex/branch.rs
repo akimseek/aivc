@@ -7,10 +7,8 @@
 //! - `threadId`：父会话编号；
 //! - `lastTurnId`：**轮次**编号，不是消息行号。
 //!
-//! 官方注释写明「分页线程拒绝 `thread/rollback`，`lastTurnId` 在创建原生分支的同时
-//! 原子地完成截断」，因此分支点必须由轮次表达。而 UI 选中的是**消息行号**，两者之间
-//! 需要一次映射：从文件头顺序扫描，记住最近一个 `task_started.turn_id`，当扫到目标
-//! 行号时，那个 `turn_id` 就是该消息所属轮次。
+//! `lastTurnId` 包含所选轮次并排除后续轮次。消息行号只有在显式的 `task_complete`
+//! 确认它是该轮最后一条助手回复之后，才可以映射为分支轮次。分页与动作校验共用此规则。
 //!
 //! # 复制
 //!
@@ -35,6 +33,7 @@ use aivc_core::time::Timestamp;
 
 use super::parser::extract_message;
 use super::paths::CodexLayout;
+use super::turns::TurnTracker;
 
 /// `app-server` 返回的分支结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,14 +44,12 @@ pub struct ForkResult {
     pub file_path: String,
 }
 
-/// 找出消息行号所属的轮次编号。
+/// 找出已完成轮次的最后一条助手消息所属的轮次编号。
 ///
 /// `message_line` 是**原始 JSONL 的绝对行号**（1 起），必须指向一条可见会话消息；
 /// 否则返回 [`SessionError::BranchAnchorNotMessage`]。
 ///
-/// 找不到所属轮次（该行之前没有 `task_started`）时返回
-/// [`SessionError::BranchAnchorStale`]——这通常意味着详情页是旧版本打开的，
-/// 让用户重新打开比给一个错误的轮次更安全。
+/// 未完成的轮次、中途回复或缺少完成记录的旧日志不能作为分支锚点。
 pub async fn find_branch_turn_id(
     store: &dyn SessionStore,
     file_path: &str,
@@ -62,11 +59,10 @@ pub async fn find_branch_turn_id(
         return Err(SessionError::BranchNeedsContext.into());
     }
 
-    let mut active_turn_id = String::new();
-    let mut selected_turn_id: Option<String> = None;
-    let mut selected_message = false;
-    let mut anchor_error: Option<SessionError> = None;
-
+    let mut tracker = TurnTracker::default();
+    let mut selected = false;
+    let mut turn_id = None;
+    let mut anchor_error = None;
     store
         .read_lines(
             file_path,
@@ -74,46 +70,42 @@ pub async fn find_branch_turn_id(
             ReadOptions::none(),
             Box::new(|line: &str, line_number: u64, _offset: u64| {
                 let Ok(value) = serde_json::from_str::<Value>(line) else {
-                    return LineControl::Continue;
-                };
-                let Some(object) = value.as_object() else {
-                    return LineControl::Continue;
-                };
-                let kind = object
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                let payload = object.get("payload").cloned().unwrap_or(Value::Null);
-
-                // 记住最近一个轮次起点。
-                if let Some(turn_id) = record_turn_id(&value) {
-                    turn_id.clone_into(&mut active_turn_id);
-                }
-
-                if line_number != message_line {
-                    return LineControl::Continue;
-                }
-
-                // 到达目标行：必须是一条可见消息，且它所属轮次已知。
-                match extract_message(&payload, kind) {
-                    Some(message) if should_keep_message(&message.text) => {
-                        selected_message = true;
-                        selected_turn_id = Some(active_turn_id.clone());
+                    if line_number == message_line {
+                        anchor_error = Some(SessionError::BranchAnchorNotMessage);
+                        return LineControl::Stop;
                     }
-                    _ => anchor_error = Some(SessionError::BranchAnchorNotMessage),
+                    return LineControl::Continue;
+                };
+                if line_number == message_line {
+                    let message = extract_message(
+                        &value["payload"],
+                        value["type"].as_str().unwrap_or_default(),
+                    );
+                    if !message.is_some_and(|message| should_keep_message(&message.text)) {
+                        anchor_error = Some(SessionError::BranchAnchorNotMessage);
+                        return LineControl::Stop;
+                    }
+                    selected = true;
                 }
-                LineControl::Stop
+                if let Some(completed) = tracker.push(&value, line_number) {
+                    if selected {
+                        if completed.message_line == message_line {
+                            turn_id = Some(completed.id);
+                        }
+                        return LineControl::Stop;
+                    }
+                }
+                LineControl::Continue
             }),
         )
         .await?;
-
     if let Some(error) = anchor_error {
         return Err(error.into());
     }
-    if !selected_message || selected_turn_id.as_deref().unwrap_or_default().is_empty() {
+    if !selected {
         return Err(SessionError::BranchAnchorStale.into());
     }
-    Ok(selected_turn_id.unwrap_or_default())
+    turn_id.ok_or_else(|| SessionError::BranchAnchorNotTurnEnd.into())
 }
 
 /// 校验并归一化 `app-server` 返回的分支。
@@ -220,85 +212,6 @@ pub fn build_duplicate_session_text(
     }
     // 现网在末尾补一个换行，保持一致。
     Ok(format!("{}\n", lines.join("\n")))
-}
-
-/// 构造分支后的会话文本：保留选中消息所属整轮并重写编号。
-///
-/// 这是**不使用 app-server 时的回退路径**：官方服务不可用（未安装、版本过旧、
-/// 启动超时）时，用文件截断得到一份语义等价的分支。官方路径仍优先，因为它能原子地
-/// 完成截断并生成 Codex 原生可识别的分支。
-pub fn build_branch_session_text(
-    source_text: &str,
-    branch_id: &str,
-    now: &Timestamp,
-    message_line: u64,
-) -> Result<String> {
-    let cutoff = branch_cutoff_line(source_text, message_line)?;
-    let mut kept: Vec<&str> = Vec::new();
-    for (index, raw_line) in source_text.split('\n').enumerate() {
-        let line_number = index as u64 + 1;
-        if line_number > cutoff {
-            break;
-        }
-        kept.push(raw_line.trim_end_matches('\r'));
-    }
-    // 截断后的文本必然以换行结尾，否则 Codex 可能读不到最后一行。
-    let truncated = format!("{}\n", kept.join("\n"));
-    build_duplicate_session_text(&truncated, branch_id, now)
-}
-
-fn record_turn_id(value: &Value) -> Option<&str> {
-    let kind = value.get("type")?.as_str()?;
-    let payload = value.get("payload")?;
-    if kind == "turn_context"
-        || (kind == "event_msg" && payload.get("type")?.as_str()? == "task_started")
-    {
-        payload.get("turn_id")?.as_str().filter(|id| !id.is_empty())
-    } else {
-        None
-    }
-}
-
-/// 老日志没有轮次编号时退回消息截断；有轮次编号时与原生 fork 保持一致。
-fn branch_cutoff_line(source: &str, message_line: u64) -> Result<u64> {
-    if message_line == 0 {
-        return Err(SessionError::BranchNeedsContext.into());
-    }
-    let mut active_turn = None;
-    let mut selected_turn = None;
-    let mut selected = false;
-    let mut cutoff = 0;
-    for (index, line) in source.lines().enumerate() {
-        let line_number = index as u64 + 1;
-        let value = serde_json::from_str::<Value>(line).ok();
-        if let Some(id) = value.as_ref().and_then(record_turn_id) {
-            if selected && selected_turn.as_deref() != Some(id) {
-                break;
-            }
-            active_turn = Some(id.to_owned());
-        }
-        if line_number == message_line {
-            let message = value.as_ref().and_then(|value| {
-                extract_message(
-                    &value["payload"],
-                    value["type"].as_str().unwrap_or_default(),
-                )
-            });
-            if !message.is_some_and(|message| should_keep_message(&message.text)) {
-                return Err(SessionError::BranchAnchorNotMessage.into());
-            }
-            selected = true;
-            selected_turn.clone_from(&active_turn);
-        }
-        cutoff = line_number;
-        if selected && selected_turn.is_none() {
-            break;
-        }
-    }
-    if !selected {
-        return Err(SessionError::BranchAnchorStale.into());
-    }
-    Ok(cutoff)
 }
 
 #[cfg(test)]
@@ -437,18 +350,28 @@ mod tests {
         CodexLayout::new("/home/a/.codex", StoreKind::Wsl)
     }
 
+    fn assistant(text: &str) -> String {
+        json!({"type":"event_msg","payload":{"type":"agent_message","message":text}}).to_string()
+    }
+
+    fn complete(id: &str) -> String {
+        json!({"type":"event_msg","payload":{"type":"task_complete","turn_id":id}}).to_string()
+    }
+
     // --- find_branch_turn_id ---
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn the_turn_id_is_the_last_task_started_before_the_message() {
+    async fn only_the_completed_turns_final_assistant_is_eligible() {
         let store = store(vec![
             meta("s1"),
             task_started("turn-1"),
-            user("第一条"),
+            assistant("第一条"),
+            complete("turn-1"),
             task_started("turn-2"),
-            user("第二条"),
+            assistant("第二条"),
+            complete("turn-2"),
         ]);
-        // 第 3 行属于 turn-1，第 5 行属于 turn-2。
+        // 第 3、6 行分别是已完成轮次的最后一条助手消息。
         assert_eq!(
             find_branch_turn_id(&store, "/a.jsonl", 3)
                 .await
@@ -456,7 +379,7 @@ mod tests {
             "turn-1"
         );
         assert_eq!(
-            find_branch_turn_id(&store, "/a.jsonl", 5)
+            find_branch_turn_id(&store, "/a.jsonl", 6)
                 .await
                 .expect("turn"),
             "turn-2"
@@ -472,7 +395,7 @@ mod tests {
             .expect_err("必须拒绝");
         assert_eq!(
             error.to_string(),
-            "分支位置已失效，请重新打开会话详情后再试。"
+            "只能从已完成轮次的最后一条助手回复创建分支，请重新加载消息。"
         );
     }
 
@@ -509,12 +432,13 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn scanning_stops_at_the_target_line() {
+    async fn scanning_waits_for_completion_and_ignores_later_turns() {
         // 目标行之后即使还有内容也不应影响结果（提前停止）。
         let store = store(vec![
             meta("s1"),
             task_started("turn-1"),
-            user("目标"),
+            assistant("目标"),
+            complete("turn-1"),
             task_started("turn-2"),
             user("之后"),
         ]);
@@ -678,62 +602,6 @@ mod tests {
             text.ends_with('\n'),
             "缺少结尾换行会让 Codex 读不到最后一行"
         );
-    }
-
-    // --- build_branch_session_text ---
-
-    #[test]
-    fn branching_keeps_content_up_to_the_anchor_line() {
-        let source = [meta("old"), user("第一条"), user("第二条"), user("第三条")].join("\n");
-        let text = build_branch_session_text(&source, "branch-id", &stamp(), 3).expect("branch");
-        let lines: Vec<&str> = text.trim_end().split('\n').collect();
-        assert_eq!(lines.len(), 3, "第 3 行之后的内容必须被截掉");
-        assert!(lines[1].contains("第一条"));
-        assert!(lines[2].contains("第二条"));
-        assert!(!text.contains("第三条"));
-
-        let first: Value = serde_json::from_str(lines[0]).expect("meta");
-        assert_eq!(first["payload"]["id"], "branch-id");
-    }
-
-    #[test]
-    fn branching_needs_at_least_one_context_line() {
-        let source = meta("old");
-        let error = build_branch_session_text(&source, "b", &stamp(), 0).expect_err("必须拒绝");
-        assert_eq!(error.to_string(), "请选择至少一条前置上下文后再创建分支。");
-    }
-
-    #[test]
-    fn branching_beyond_the_file_rejects_a_stale_anchor() {
-        let source = [meta("old"), user("唯一一条")].join("\n");
-        assert!(build_branch_session_text(&source, "b", &stamp(), 99).is_err());
-    }
-
-    #[test]
-    fn file_fallback_keeps_the_selected_turn_and_stops_before_the_next_context() {
-        let source = [
-            meta("old"),
-            task_started("t1"),
-            user("选中"),
-            r#"{"type":"event_msg","payload":{"type":"agent_message","message":"本轮后续"}}"#
-                .into(),
-            r#"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}}"#.into(),
-            r#"{"type":"turn_context","payload":{"turn_id":"t2"}}"#.into(),
-            task_started("t2"),
-            user("下一轮"),
-        ]
-        .join("\n");
-        let text = build_branch_session_text(&source, "b", &stamp(), 3).unwrap();
-        assert!(text.contains("本轮后续"));
-        assert!(text.contains("task_complete"));
-        assert!(!text.contains("t2"));
-        assert!(!text.contains("下一轮"));
-    }
-
-    #[test]
-    fn file_fallback_rejects_metadata_as_a_branch_anchor() {
-        let source = [meta("old"), user("消息")].join("\n");
-        assert!(build_branch_session_text(&source, "b", &stamp(), 1).is_err());
     }
 
     #[test]

@@ -614,15 +614,24 @@ impl CommandRouter {
 
             // --- 供应商 ---
             "vendor:list" => to_value(VendorCommands::list(ctx, &args).await?),
-            "vendor:save" => to_value(VendorCommands::save(ctx, &args).await?),
-            "vendor:delete" => to_value(VendorCommands::delete(ctx, &args).await?),
+            "vendor:save" => {
+                let vendor = VendorCommands::save(ctx, &args).await?;
+                if let Some(gateway) = &self.gateway {
+                    gateway.reconcile_candidate_pool().await;
+                }
+                to_value(vendor)
+            }
+            "vendor:delete" => {
+                let deleted = VendorCommands::delete(ctx, &args).await?;
+                if let Some(gateway) = &self.gateway {
+                    gateway.reconcile_candidate_pool().await;
+                }
+                to_value(deleted)
+            }
             "vendor:set-enabled" => {
-                let enabled = require_boolean(args.get("enabled"), "enabled")?;
                 let vendor = VendorCommands::set_enabled(ctx, &args).await?;
-                if !enabled {
-                    if let Some(gateway) = &self.gateway {
-                        gateway.reconcile_disabled_vendor(&vendor.id).await;
-                    }
+                if let Some(gateway) = &self.gateway {
+                    gateway.reconcile_candidate_pool().await;
                 }
                 to_value(vendor)
             }

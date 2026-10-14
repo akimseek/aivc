@@ -408,6 +408,18 @@ impl TerminalCommands {
     /// 会话不存在时返回错误。
     pub async fn stop(&self, args: &Value) -> Result<Value> {
         let terminal_id = require_string(args, "terminalId")?;
+        // Retire detection before killing the PTY: its output pump may observe
+        // a nonzero exit immediately, which is expected for an explicit close.
+        let handle = self
+            .detectors
+            .lock()
+            .ok()
+            .and_then(|map| map.get(&terminal_id).cloned());
+        if let Some(handle) = handle {
+            if let Ok(mut detector) = handle.lock() {
+                detector.mark_stopped();
+            }
+        }
         let stopped = self.registry.stop(&terminal_id).await?;
         // 检测器随之退休：它按会话持有输出缓冲，留着不清理会随终端开关持续增长。
         if let Ok(mut map) = self.detectors.lock() {

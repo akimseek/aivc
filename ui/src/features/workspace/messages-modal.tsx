@@ -36,6 +36,8 @@ export function MessagesModal({
   session,
   messages,
   total,
+  totalKnown = true,
+  branchAnchors = [],
   page,
   pageSize,
   loading,
@@ -59,8 +61,10 @@ export function MessagesModal({
   session: AiSession;
   /** 当前页的消息。 */
   messages: AiMessage[];
-  /** 精确总数（详情路径全量解析得来）。 */
+  /** 已知消息数；totalKnown 为 false 时是下界。 */
   total: number;
+  totalKnown?: boolean;
+  branchAnchors?: number[];
   /** 页码从 1 起。 */
   page: number;
   pageSize: number;
@@ -90,9 +94,12 @@ export function MessagesModal({
   onExport: (format: ExportFormat) => void;
   onClose: () => void;
 }) {
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  // The session list may only know a lower-bound count. Keep the next page
+  // reachable while the current page proves that more data exists.
+  const pageCount = Math.max(1, Math.ceil(total / pageSize), pageHasMore ? page + 1 : page);
   const exportRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
 
   // Escape 关闭。有更内层的东西开着（导出浮层、退出确认框）时让给它——不判断的话
@@ -112,6 +119,10 @@ export function MessagesModal({
   useEffect(() => {
     panelRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [session.id, page, pageSize]);
 
   return (
     <div
@@ -148,7 +159,7 @@ export function MessagesModal({
         {error && (
           // 读不到时**说一声**再继续显示空列表：静默失败会让用户以为会话真的没有消息。
           <div className="messages-error" role="status">
-            会话详情读取失败：{error}
+            {error}
           </div>
         )}
 
@@ -162,12 +173,13 @@ export function MessagesModal({
             page={page}
             pageCount={pageCount}
             onPage={onPageChange}
-            disabled={loading}
+            disabled={loading || branching}
             extra={
               <>
                 <Field label="每页数量">
                   <Select
                     value={String(pageSize)}
+                    disabled={loading || branching}
                     onChange={(event) =>
                       onPageSizeChange(Number.parseInt(event.target.value, 10))
                     }
@@ -183,15 +195,16 @@ export function MessagesModal({
                 <span className="spacer" />
               </>
             }
-            withLast
+            withLast={totalKnown}
+            pageCountKnown={totalKnown}
             labelClassName="messages-range"
             ariaLive
           />
         </div>
 
-        <div className="messages-scroll" aria-label="会话时间线">
+        <div className="messages-scroll" ref={scrollRef} aria-label="会话时间线" aria-busy={loading || branching}>
           {loading ? (
-            <LoadingBlock label="正在加载完整会话…" />
+            <LoadingBlock label="正在加载本页消息…" />
           ) : messages.length === 0 ? (
             <EmptyState
               message="这一页没有可显示的消息。"
@@ -202,14 +215,16 @@ export function MessagesModal({
               messages,
               messageOffset,
               provider,
-              nextMessageRole === undefined ? !pageHasMore : nextMessageRole === "user"
+              nextMessageRole === undefined ? !pageHasMore : nextMessageRole === "user",
+              branchAnchors
             ).map(({ entry, branchAnchor: anchor }) => (
               <MessageCard
                 key={`${entry.message.sourceLine ?? entry.index}`}
                 message={entry.message}
+                branchDisabled={branching}
                 branchHint="保留这一轮会话的全部上下文，创建独立分支"
                 onBranch={
-                  !canBranch || branching || anchor === undefined
+                  !canBranch || anchor === undefined
                     ? undefined
                     : () => onBranch(anchor)
                 }
@@ -219,8 +234,8 @@ export function MessagesModal({
         </div>
 
         <footer className="messages-foot">
-          <span className="messages-count">共 {total} 条历史消息</span>
-          <Button small onClick={onReload} disabled={loading} title="重新加载">
+          <span className="messages-count" role="status">{branching ? "正在创建分支…" : loading ? "正在加载消息…" : totalKnown ? `共 ${total} 条历史消息` : `至少 ${total} 条历史消息`}</span>
+          <Button small onClick={onReload} disabled={loading || branching} title="重新加载">
             <Icon name="refresh" size={13} />
             重新加载
           </Button>
@@ -290,7 +305,7 @@ export function MessagesModal({
  * 我 = 蓝底、AI = 强调色底：同一条时间线里两个头像必须**一眼可辨**。
  * 工具 / 系统不是对话，用中性底。
  */
-function MessageCard({ message, onBranch, branchHint }: { message: AiMessage; onBranch?: () => void; branchHint?: string }) {
+function MessageCard({ message, onBranch, branchHint, branchDisabled }: { message: AiMessage; onBranch?: () => void; branchHint?: string; branchDisabled?: boolean }) {
   const mine = message.role === "user";
   const avatar = mine ? "我" : message.role === "assistant" ? "AI" : roleLabel(message.role).slice(0, 1);
 
@@ -307,9 +322,8 @@ function MessageCard({ message, onBranch, branchHint }: { message: AiMessage; on
               {formatWhen(message.timestamp)}
             </time>
           )}
-          {/* 悬停才显形：分支是低频动作，常驻会干扰阅读。 */}
           {onBranch && (
-            <button type="button" className="messages-branch" onClick={onBranch} title={branchHint}>
+            <button type="button" className="messages-branch" disabled={branchDisabled} onClick={onBranch} title={branchHint}>
               从此处分支
             </button>
           )}
@@ -338,7 +352,7 @@ function MessageText({ text }: { text: string }) {
  * 第几页、每页多少条、加载中」会让它继续膨胀。这里只暴露「要看哪一条」（受控，
  * 因为关掉之后要回到原来的视图）与几个动作。
  */
-export function MessagesModalContainer({
+function SessionMessagesModalContainer({
   session,
   target,
   canBranch = true,
@@ -372,6 +386,11 @@ export function MessagesModalContainer({
   const [branching, setBranching] = useState(false);
   const branchPending = useRef(false);
   const [branchError, setBranchError] = useState("");
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   if (!session) return null;
 
@@ -379,12 +398,14 @@ export function MessagesModalContainer({
     <MessagesModal
       session={session}
       messages={detail.messages}
-      // 后端的 `messageCount` 为 0 表示「本次无从得知」，那时退回列表里的下界。
-      total={detail.total || session.messageCount}
+      // 未到 EOF 时，只显示本次分页实际确认的消息数下界。
+      total={detail.totalKnown ? detail.total : detail.offset + detail.messages.length + (detail.hasMore ? 1 : 0)}
+      totalKnown={detail.totalKnown}
+      branchAnchors={detail.branchAnchors}
       page={detail.page}
       pageSize={pageSize}
       loading={detail.loading}
-      error={branchError || detail.error}
+      error={branchError || (detail.error ? `会话消息读取失败：${detail.error}` : "")}
       provider={target?.provider}
       messageOffset={detail.offset}
       pageHasMore={detail.hasMore}
@@ -405,13 +426,14 @@ export function MessagesModalContainer({
         setBranchError("");
         try {
           const succeeded = await onBranch(anchor, session.id, target?.id);
+          if (!mounted.current) return;
           if (succeeded !== false) onClose();
-          else setBranchError("分支创建失败，请查看错误提示后重试。");
+          else setBranchError("分支未创建，详情请查看右上角提示。");
         } catch (error) {
-          setBranchError(String(error));
+          if (mounted.current) setBranchError(error instanceof Error ? error.message : String(error));
         } finally {
           branchPending.current = false;
-          setBranching(false);
+          if (mounted.current) setBranching(false);
         }
       }}
       canBranch={canBranch}
@@ -425,4 +447,10 @@ export function MessagesModalContainer({
       onClose={onClose}
     />
   );
+}
+
+/** Closing or changing the session disposes of all page/branch UI state. */
+export function MessagesModalContainer(props: Parameters<typeof SessionMessagesModalContainer>[0]) {
+  if (!props.session) return null;
+  return <SessionMessagesModalContainer key={JSON.stringify([props.target?.id, props.session.id])} {...props} />;
 }

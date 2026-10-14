@@ -283,14 +283,18 @@ impl ProviderContext {
         self.paths.performance_log_path()
     }
 
-    /// 本机为 `local`，WSL 为 `wsl-<净化后的发行版名>`：发行版名可能含路径分隔符，
-    /// 直接拼进缓存键会污染缓存文件路径。
+    /// SQLite 中的缓存命名空间，按平台、目标及会话根目录隔离。
+    /// 不读取旧的 local/wsl 公共键，避免其他平台或旧目录的摘要混入列表。
     #[must_use]
     pub fn cache_key(&self, target: &Target) -> String {
-        match target.distro() {
-            Some(distro) => format!("wsl-{}", aivc_core::path::sanitize_wsl_distro(distro)),
-            None => "local".to_owned(),
-        }
+        serde_json::json!([
+            "sessions-v2",
+            target.provider.as_str(),
+            target.id.as_str(),
+            target.distro(),
+            target.codex_home
+        ])
+        .to_string()
     }
 }
 

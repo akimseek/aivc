@@ -198,6 +198,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [messages, setMessages] = useState<AiMessage[]>([]);
+  const [messageBranchAnchors, setMessageBranchAnchors] = useState<number[]>([]);
   /**
    * 消息窗口的**代际**。
    *
@@ -219,6 +220,12 @@ export function useConsole(options: { notify?: Notify } = {}) {
   const [gateway, setGateway] = useState<GatewayPortStatus | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // 异步动作（尤其是创建分支）返回时必须读取当前选择，而不是启动时的闭包。
+  const selectionRef = useRef({ providerId, targetId, view, query });
+  selectionRef.current = { providerId, targetId, view, query };
+  const targetsSeqRef = useRef(0);
+  const requestSeqRef = useRef(0);
+  const [sessionRevision, setSessionRevision] = useState(0);
 
   /* ── 侧栏的三个视图 ── */
   const [pane, setPane] = useState<SidebarPane>("sessions");
@@ -294,6 +301,9 @@ export function useConsole(options: { notify?: Notify } = {}) {
    */
   const loadTargets = useCallback(
     async (wantedProvider: string) => {
+      const seq = ++targetsSeqRef.current;
+      const isCurrent = () => seq === targetsSeqRef.current &&
+        wantedProvider === selectionRef.current.providerId;
       if (!wantedProvider) {
         setTargets([]);
         setTargetId("");
@@ -302,20 +312,20 @@ export function useConsole(options: { notify?: Notify } = {}) {
       setBusy(true);
       try {
         const cached = await api.listCachedTargets(wantedProvider);
+        if (!isCurrent()) return;
         if (cached.length > 0) {
           setTargets(cached);
-          // `preferred` 只传**当前值**：列表刷新时别把用户已经选的那个丢掉。
-          // 不再传「上次记住的目标」——那会让打开应用就选中一个目标。
-          setTargetId((current) => pickTarget(cached, [current]));
+          // 缓存可能尚未包含刚从收藏或分支打开的目标，不用它清除当前选择。
         }
         const fresh = await api.listTargets(wantedProvider);
+        if (!isCurrent()) return;
         setTargets(fresh);
         setTargetId((current) => pickTarget(fresh, [current]));
         setError("");
       } catch (problem) {
-        setError(errorText(problem));
+        if (isCurrent()) setError(errorText(problem));
       } finally {
-        setBusy(false);
+        if (isCurrent()) setBusy(false);
       }
     },
     []
@@ -330,9 +340,11 @@ export function useConsole(options: { notify?: Notify } = {}) {
    * 这里有一个真实的竞态：输入搜索词会连续触发请求，而**后发的可能先回**。
    * 用一个自增的请求号，只有最新那次的结果才允许落地。
    */
-  const requestSeqRef = useRef(0);
   const loadSessions = useCallback(
     async (wantedTarget: string, wantedView: SidebarView, wantedQuery: string) => {
+      const matchesSelection = () => wantedTarget === selectionRef.current.targetId &&
+        wantedView === selectionRef.current.view && wantedQuery === selectionRef.current.query;
+      if (!matchesSelection()) return;
       if (!wantedTarget) {
         setSessions([]);
         setSelectedId("");
@@ -348,20 +360,22 @@ export function useConsole(options: { notify?: Notify } = {}) {
       // 列表接口只认 `active` / `trash`；收藏夹在上面已经返回了。
       const listView: SessionView = wantedView === "trash" ? "trash" : "active";
       const seq = ++requestSeqRef.current;
+      const isCurrent = () => seq === requestSeqRef.current && matchesSelection();
       const keyword = wantedQuery.trim();
       if (keyword) setSearching(true);
       try {
         if (!keyword) {
           const cached = await api.listCachedSessions(wantedTarget, listView);
           // 只有最新那次请求可以落地；否则旧结果会把新结果盖掉。
-          if (seq === requestSeqRef.current && cached.length > 0) setSessions(cached);
+          if (!isCurrent()) return;
+          if (cached.length > 0) setSessions(cached);
         }
         const fresh = keyword
           ? await api.searchSessions(wantedTarget, listView, keyword)
           : listView === "trash"
             ? await api.listTrashSessions(wantedTarget)
             : await api.listSessions(wantedTarget);
-        if (seq !== requestSeqRef.current) return;
+        if (!isCurrent()) return;
         setSessions(fresh);
         /*
           会话：列表刷新后**只在原选中还在时保留它**，否则不选。
@@ -379,10 +393,10 @@ export function useConsole(options: { notify?: Notify } = {}) {
         setError("");
         return true;
       } catch (problem) {
-        if (seq === requestSeqRef.current) setError(errorText(problem));
+        if (isCurrent()) setError(errorText(problem));
         return false;
       } finally {
-        if (seq === requestSeqRef.current) setSearching(false);
+        if (isCurrent()) setSearching(false);
       }
     },
     []
@@ -390,14 +404,19 @@ export function useConsole(options: { notify?: Notify } = {}) {
 
   // 搜索防抖：连续输入只发最后一次。
   useEffect(() => {
+    ++requestSeqRef.current;
+    setSearching(false);
     // 收藏夹的数据来自 `quickAccess`（它自己按 view 变化取一次），**不发列表请求**；
     // 从收藏夹切回全部 / 回收站时这个 effect 会重跑，列表照常刷新。
     if (!shouldLoadSessionList(view)) return;
     const timer = window.setTimeout(() => {
       void loadSessions(targetId, view, query);
     }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
-    return () => window.clearTimeout(timer);
-  }, [targetId, view, query, loadSessions]);
+    return () => {
+      window.clearTimeout(timer);
+      ++requestSeqRef.current;
+    };
+  }, [targetId, view, query, sessionRevision, loadSessions]);
 
   /* ── 消息：选中会话后取**最后一页**，再按需往前翻 ── */
   useEffect(() => {
@@ -405,6 +424,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
     const seq = ++messagesSeqRef.current;
     if (!targetId || !selectedId) {
       setMessages([]);
+      setMessageBranchAnchors([]);
       setMessageStart(0);
       setMessageTotal(null);
       setError("");
@@ -416,6 +436,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         const page = await api.getSessionMessagesPage(targetId, selectedId, -1, MESSAGE_PAGE_SIZE);
         if (cancelled || seq !== messagesSeqRef.current) return;
         setMessages(page.messages);
+        setMessageBranchAnchors(page.branchAnchors ?? []);
         setMessageStart(page.offset);
         // 0 表示后端也拿不到总数——那时界面回退到列表的下界。
         setMessageTotal(page.messageCount > 0 ? page.messageCount : null);
@@ -454,6 +475,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
       const fresh = page.messages.slice(0, Math.max(0, messageStart - page.offset));
       // **插到前面**——往前翻的是更早的消息，追加到末尾就全乱了。
       setMessages((current) => [...fresh, ...current]);
+      setMessageBranchAnchors((current) => [...new Set([...(page.branchAnchors ?? []), ...current])]);
       setMessageStart(page.offset);
       setError("");
     } catch (problem) {
@@ -499,6 +521,10 @@ export function useConsole(options: { notify?: Notify } = {}) {
     (next: AiProviderId | "") => {
       // `""` 是合法的（未选平台），其余必须在清单里。
       if (next !== "" && !providers.some((item) => item.id === next)) return;
+      if (next === selectionRef.current.providerId) return;
+      selectionRef.current = { ...selectionRef.current, providerId: next, targetId: "" };
+      ++targetsSeqRef.current;
+      ++requestSeqRef.current;
       setProviderId(next);
       // 平台变了，目标与会话都作废——留着会让界面显示另一个平台的会话。
       setTargets([]);
@@ -511,6 +537,9 @@ export function useConsole(options: { notify?: Notify } = {}) {
   );
 
   const selectTarget = useCallback((next: string) => {
+    if (next === selectionRef.current.targetId) return;
+    selectionRef.current = { ...selectionRef.current, targetId: next };
+    ++requestSeqRef.current;
     setTargetId(next);
     setSessions([]);
     setSelectedId("");
@@ -753,8 +782,6 @@ export function useConsole(options: { notify?: Notify } = {}) {
    * 会把分支分到**别的会话**上去——与 [`exportCurrent`] 同一条理由、同一种做法。
    */
   const branchPendingRef = useRef(false);
-  const currentTargetIdRef = useRef(targetId);
-  useEffect(() => { currentTargetIdRef.current = targetId; }, [targetId]);
   const branchFromMessage = useCallback(
     async (messageLine: number, sessionId?: string, sourceTargetId = targetId) => {
       const id = sessionId ?? selectedId;
@@ -763,19 +790,9 @@ export function useConsole(options: { notify?: Notify } = {}) {
       try {
         const branch = await api.branchSession(sourceTargetId, id, messageLine);
         if (!branch.id || branch.id === id) throw new Error("分支编号无效，已停止打开原会话。");
-        let refreshed = true;
-        if (sourceTargetId === currentTargetIdRef.current) {
-          setView("active");
-          setQuery("");
-          refreshed = (await loadSessions(sourceTargetId, "active", "")) !== false;
-          // 列表有延迟或刷新失败时仍保留已经创建的分支。
-          if (sourceTargetId === currentTargetIdRef.current) {
-            setSessions((current) => [branch, ...current.filter((item) => item.id !== branch.id)]);
-            setSelectedId(branch.id);
-          }
-        }
         setError("");
-        notify(refreshed ? "已创建新的分支会话。" : "分支已创建，但会话列表刷新失败，请稍后手动刷新。");
+        // 打开分支时统一切换目标和刷新列表，避免这里与 openAt 重复加载。
+        notify("已创建新的分支会话。");
         return branch;
       } catch (problem) {
         setError(`分支失败：${errorText(problem)}`);
@@ -785,7 +802,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
         branchPendingRef.current = false;
       }
     },
-    [targetId, selectedId, loadSessions, notify]
+    [targetId, selectedId, notify]
   );
 
   /** 在系统文件管理器里打开当前会话所在的目录。 */
@@ -937,11 +954,21 @@ export function useConsole(options: { notify?: Notify } = {}) {
    * 重跑并把新目标的会话装回来，清空正是为了避免显示上一个目标的残留。
    */
   const openAt = useCallback(
-    (target: AiTarget, session: AiSession) => {
-      const plan = planTargetSwitch(providerId, targetId, target);
+    (target: AiTarget, session: AiSession, newBranch = false) => {
+      const current = selectionRef.current;
+      const plan = planTargetSwitch(current.providerId, current.targetId, target);
       if (plan.provider) selectProvider(plan.provider);
       // 平台或目标**确实**变了才走 `selectTarget`（它带清空副作用）。
       if (plan.target) selectTarget(plan.target);
+      if (plan.target) setTargets((items) => [...items.filter((item) => item.id !== target.id), target]);
+      if (newBranch) {
+        selectionRef.current = { ...selectionRef.current, view: "active", query: "" };
+        ++requestSeqRef.current;
+        setView("active");
+        setQuery("");
+        setSessions((items) => [session, ...items.filter((item) => item.id !== session.id)]);
+        setSessionRevision((value) => value + 1);
+      }
       setSelectedId(session.id);
       setPane("sessions");
       setError("");
@@ -958,7 +985,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
       setView((current) => (current === "favorites" ? "active" : current));
       void api.markSessionOpened(target.id, session.id).catch(() => undefined);
     },
-    [providerId, targetId, selectProvider, selectTarget, setView]
+    [selectProvider, selectTarget]
   );
 
   return {
@@ -984,6 +1011,7 @@ export function useConsole(options: { notify?: Notify } = {}) {
     messages,
     messageStart,
     messageTotal,
+    messageBranchAnchors,
     hasEarlier: messageStart > 0,
     loadEarlierMessages,
     loadingMore,
